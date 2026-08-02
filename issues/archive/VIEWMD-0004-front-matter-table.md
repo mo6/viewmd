@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0004
 title: Render YAML front matter as a table, clearly separated from the document body
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [c469bc6]
 related: []
 supersedes: []
-changelog:
+changelog: "[0.3.0]"
 reason:
 ---
 
