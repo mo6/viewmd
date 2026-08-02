@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0002
 title: Resolve symlinks in viewmd.sh so a symlinked launcher finds the real venv
-status: in-progress
+status: implemented
 area: [cli]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: gmo6nl@gmail.com
 accepted_at: 2026-08-02
-commits: []
+commits: [e41459d]
 related: []
 supersedes: []
-changelog:
+changelog: "[0.1.1]"
 reason:
 ---
 
