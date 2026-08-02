@@ -22,8 +22,14 @@ A change is done, and its issue may be archived, when, in this order:
 
 1. It is implemented against its issue's requirements.
 2. `./run-tests.sh` is green (pytest, ruff, `tools/issues.py --check`).
-3. It has been peer-reviewed, and every review (agent or maintainer) is recorded as its own line
-   in the issue's **Peer review** section, appended, never overwritten.
+3. It has been peer-reviewed by **at least two distinct reviewers, in this order**: the
+   reviewing agent's own pass, then the maintainer's own sign-off. Each is recorded as its own
+   line in the issue's **Peer review** section, appended, never overwritten (VIEWMD-0010). The
+   maintainer's line does not have to be typed by the maintainer's own hand -- an agent may
+   transcribe the maintainer's stated verdict, attributed to the maintainer, as long as it
+   reflects what the maintainer actually said rather than the agent's own opinion restated. A
+   "commit and close this out?" yes on its own, with no recorded maintainer review line, is not
+   this step.
 4. The maintainer has been shown the diff and the review findings and asked outright, "commit
    and close this out?" — and has said yes.
 

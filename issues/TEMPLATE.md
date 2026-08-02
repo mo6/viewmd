@@ -52,8 +52,11 @@ being written.
 ## Peer review
 
 Left blank until the change is implemented and tested. Filled in as part of the Definition of
-Done's landing gate ([AGILE.md](AGILE.md)): one line per reviewer, agent or human, appended
-(never overwritten) as each review happens.
+Done's landing gate ([AGILE.md](AGILE.md)): **at minimum two lines, in order** -- the reviewing
+agent's own pass, then the maintainer's own sign-off -- each appended (never overwritten) as the
+review happens. The maintainer's line may be transcribed by an agent from what the maintainer
+actually said, attributed to the maintainer as reviewer, but it must be a real recorded verdict,
+not inferred from a bare "commit and close this out?" yes.
 
 - **<reviewer name>** (agent|maintainer), YYYY-MM-DD: verdict, and a one-line pointer to any
   findings (fixed inline, or left as a follow-up issue).
