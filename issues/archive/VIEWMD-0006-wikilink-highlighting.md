@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0006
 title: Highlight Obsidian-style [[wikilinks]]; confirm standard Markdown links are highlighted
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [424ff46]
 related: [VIEWMD-0007]
 supersedes: []
-changelog:
+changelog: "[0.5.0]"
 reason:
 ---
 
