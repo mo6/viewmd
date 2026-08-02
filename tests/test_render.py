@@ -95,3 +95,31 @@ def test_empty_front_matter_block_renders_only_the_body():
     out = strip_ansi(render_markdown(md, width=80, color=False))
     assert "Body" in out
     assert "┌" not in out
+
+
+def test_empty_fields_are_omitted_from_the_table_by_default():
+    md = "---\ntitle: Hello\naccepted_by:\nreason:\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "title" in out
+    assert "Hello" in out
+    assert "accepted_by" not in out
+    assert "reason" not in out
+
+
+def test_full_front_matter_shows_empty_fields():
+    md = "---\ntitle: Hello\naccepted_by:\nreason:\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False, full_front_matter=True))
+    assert "title" in out
+    assert "accepted_by" in out
+    assert "reason" in out
+
+
+def test_all_empty_fields_render_no_table_by_default_but_do_with_full_front_matter():
+    md = "---\naccepted_by:\nreason:\n---\n# Body\n"
+    default_out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "┌" not in default_out
+    assert "Body" in default_out
+
+    full_out = strip_ansi(render_markdown(md, width=80, color=False, full_front_matter=True))
+    assert "accepted_by" in full_out
+    assert "reason" in full_out
