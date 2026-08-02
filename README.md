@@ -35,6 +35,10 @@ followed by a divider, ahead of the document body. Parsing covers flat `key: val
 with no value are omitted from the table by default; `--full-front-matter` shows every field,
 empty ones included.
 
+Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
+way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
+spans, which are left untouched.
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 

@@ -9,6 +9,7 @@ from rich.rule import Rule
 from rich.table import Table
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
+from viewmd.wikilinks import rewrite_wikilinks
 
 
 def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bool = False) -> str:
@@ -21,12 +22,15 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
-    (VIEWMD-0005).
+    (VIEWMD-0005). Obsidian-style ``[[wikilinks]]`` in the body are rewritten to ordinary
+    Markdown links before Rich sees them, so they pick up the same ``markdown.link_url``
+    highlight (VIEWMD-0006).
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
     if not full_front_matter:
         front_matter = drop_empty(front_matter)
+    body = rewrite_wikilinks(body)
 
     buffer = io.StringIO()
     console = Console(
