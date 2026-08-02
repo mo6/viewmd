@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0009
 title: Add docs/SECURITY.md and a pip-audit gate in run-tests.sh
-status: in-progress
+status: implemented
 area: [tools, docs]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [19657ab]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.1.0]"
 reason:
 ---
 
