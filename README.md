@@ -44,8 +44,10 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 ## Development
 
-- `./run-tests.sh` — the full check gate (pytest, ruff, `issues/` lint).
+- `./run-tests.sh` — the full check gate (pytest, ruff incl. security rules, `pip-audit`,
+  `issues/` lint).
 - `./tools.sh issues` — regenerate the `issues/README.md` index; `./tools.sh issues --check`
   lints without writing.
-- See [AGENTS.md](AGENTS.md) for the issue-first development process, and
-  [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale.
+- See [AGENTS.md](AGENTS.md) for the issue-first development process,
+  [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
+  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook.

@@ -4,16 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "viewmd"
-version = "1.0.0"
+version = "1.1.1"
 description = "View Markdown files from the command line, with color, tables, and paging into less."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 authors = [{ name = "George Moses", email = "gmo6nl@gmail.com" }]
 dependencies = ["rich>=13"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "pip-audit>=2.7"]
 
 [project.scripts]
 viewmd = "viewmd.__main__:main"
