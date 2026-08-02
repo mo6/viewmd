@@ -58,3 +58,97 @@ def test_blockquote_and_list_render_content():
     assert "a quoted line" in out
     assert "item one" in out
     assert "item two" in out
+
+
+def test_front_matter_renders_as_a_table_before_the_body():
+    md = "---\ntitle: Hello\narea: [render, cli]\n---\n# Body heading\n\nbody text\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "title" in out
+    assert "Hello" in out
+    assert "render, cli" in out
+    assert "Body heading" in out
+    assert "body text" in out
+    # The table (and its divider) must come before the rendered body.
+    assert out.index("Hello") < out.index("Body heading")
+
+
+def test_file_without_front_matter_renders_unchanged():
+    md = "# Just a heading\n\nsome text\n"
+    with_check = render_markdown(md, width=80, color=False)
+    assert with_check == render_markdown(md, width=80, color=False)
+    assert "Just a heading" in strip_ansi(with_check)
+    # No stray table artifacts (box-drawing characters) for a document with no front matter.
+    assert "┌" not in with_check and "│" not in with_check
+
+
+def test_unterminated_front_matter_block_renders_as_literal_body_text():
+    md = "---\ntitle: Hello\n\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    # No closing '---': not front matter, so 'title: Hello' shows up as ordinary body text,
+    # not tabulated.
+    assert "title: Hello" in out
+    assert "Body" in out
+
+
+def test_empty_front_matter_block_renders_only_the_body():
+    md = "---\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "Body" in out
+    assert "┌" not in out
+
+
+def test_empty_fields_are_omitted_from_the_table_by_default():
+    md = "---\ntitle: Hello\naccepted_by:\nreason:\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "title" in out
+    assert "Hello" in out
+    assert "accepted_by" not in out
+    assert "reason" not in out
+
+
+def test_full_front_matter_shows_empty_fields():
+    md = "---\ntitle: Hello\naccepted_by:\nreason:\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False, full_front_matter=True))
+    assert "title" in out
+    assert "accepted_by" in out
+    assert "reason" in out
+
+
+def test_all_empty_fields_render_no_table_by_default_but_do_with_full_front_matter():
+    md = "---\naccepted_by:\nreason:\n---\n# Body\n"
+    default_out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "┌" not in default_out
+    assert "Body" in default_out
+
+    full_out = strip_ansi(render_markdown(md, width=80, color=False, full_front_matter=True))
+    assert "accepted_by" in full_out
+    assert "reason" in full_out
+
+
+# Rich's markdown.link_url style is underline + blue (SGR 4;34).
+LINK_URL_ANSI = re.compile(r"\x1b\[4;34m")
+
+
+def test_standard_markdown_link_uses_link_url_style():
+    md = "see [hello](https://example.com) now"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    assert LINK_URL_ANSI.search(colored) is not None
+    assert "hello" in strip_ansi(colored)
+    assert ANSI_RE.search(plain) is None
+    assert "hello" in plain
+
+
+def test_converted_wikilink_uses_link_url_style():
+    md = "see [[DELVE-0046]] and [[Target|Display text]] here"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    assert LINK_URL_ANSI.search(colored) is not None
+    plain_text = strip_ansi(colored)
+    assert "DELVE-0046" in plain_text
+    assert "Display text" in plain_text
+    assert "[[" not in plain_text
+    assert "]]" not in plain_text
+    assert ANSI_RE.search(plain) is None
+    assert "DELVE-0046" in plain
+    assert "Display text" in plain

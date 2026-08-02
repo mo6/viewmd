@@ -6,7 +6,7 @@ area: [render, pager, cli]
 effort: medium
 created: 2026-08-02
 updated: 2026-08-02
-accepted_by: gmo6nl@gmail.com
+accepted_by: George Moses
 accepted_at: 2026-08-02
 commits: [2e725e4]
 related: []
