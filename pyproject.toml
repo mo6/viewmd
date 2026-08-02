@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "viewmd"
+version = "0.1.0"
+description = "View Markdown files from the command line, with color, tables, and paging into less."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "George Moses", email = "gmo6nl@gmail.com" }]
+dependencies = ["rich>=13"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+viewmd = "viewmd.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["viewmd"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest assert is the test idiom; S101 would be pure noise.
+"tests/**" = ["S101"]
+# Maintainer tooling: fixed argv lists to known binaries, no shell, no user input as argv0.
+"tools/**" = ["S101", "S603", "S607"]
+# Deliberate subprocess use for the pager; command comes from $PAGER or a fixed default, never
+# built from unsanitized user input.
+"viewmd/pager.py" = ["S603"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
