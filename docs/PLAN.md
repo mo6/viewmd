@@ -23,6 +23,19 @@ to correctly handle nested maps, multi-line scalars, and anchors that this tool 
 render as a table anyway (a table wants flat rows, not nested structure). A value that doesn't
 fit the flat shape renders as its raw string rather than failing.
 
+## Wikilinks: a text-level rewrite into ordinary Markdown links, not a custom inline rule
+
+`rich.markdown.Markdown.__init__` builds its `MarkdownIt` parser internally with no public
+extension point, so adding a real `[[wikilink]]` inline rule would mean subclassing undocumented
+internals across Rich versions. `viewmd/wikilinks.py` instead rewrites `[[Target]]` /
+`[[Target|Display]]` into an ordinary Markdown link (`[Display](wikilink:Target)`) as a
+text-level preprocessing pass, before the body reaches Rich at all — so it picks up Rich's
+existing `markdown.link_url` highlight for free, with no new style to define or keep in sync.
+The `wikilink:` scheme is inert (never expected to be opened). The pass tracks fenced-code-block
+state (tolerant of leading indentation, so a fence nested under a list item still counts) and
+skips single-backtick inline code spans, so wikilink-shaped text inside real code (e.g. a Lua
+long-bracket string literal `[[...]]`) is left untouched.
+
 ## Out of scope
 
 - **Image-to-ASCII conversion.** `![alt](image.png)` renders as Rich's default (a link/alt-text placeholder), not an ASCII-art rendering of the image itself. Decided explicitly when scoping VIEWMD-0001: ASCII art support means *fenced code blocks render verbatim*, not image conversion. Revisit only if a real need for viewing image-heavy Markdown shows up.
