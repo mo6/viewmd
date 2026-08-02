@@ -18,8 +18,14 @@ python3 -m venv .venv
 ./viewmd.sh README.md --no-pager   # print rendered ANSI straight to stdout, no pager
 cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --color=never  # plain text, no ANSI color
-./viewmd.sh notes.md --width 80     # override terminal width detection
+./viewmd.sh notes.md --width 80     # render at exactly 80 columns
+./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ```
+
+Render width defaults to `min(100, detected terminal width)` — 100 columns is a common prose
+line-length standard, so a wide terminal doesn't stretch prose or tables edge to edge. `--width N`
+picks an exact width instead; `--width full` uses the full terminal width regardless of the
+100-column default.
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
