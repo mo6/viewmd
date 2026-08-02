@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.1.1] — 2026-08-02
+
+- **Require an explicit, recorded maintainer peer-review line before landing** (VIEWMD-0010, docs): `issues/AGILE.md`'s Definition of Done now requires two distinct recorded peer-review lines (the reviewing agent's pass, then the maintainer's own sign-off) before an issue can land, not just an informal "commit and close this out?" yes. Process-only change; no code affected.
+
 ## [1.1.0] — 2026-08-02
 
 - **Add a security gate: `docs/SECURITY.md` and `pip-audit` in `run-tests.sh`** (VIEWMD-0009, tools/docs): documents the existing ruff `S`-rule coverage and adds `pip-audit` as a `[dev]` dependency and a gate step, failing on any advisory or a failed advisory-data fetch (no offline-means-clean path).

@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0010
 title: Require an explicit, recorded maintainer peer-review line before landing
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [8409483]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.1.1]"
 reason:
 ---
 
