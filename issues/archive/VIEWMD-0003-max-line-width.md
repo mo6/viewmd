@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0003
 title: Cap render width to 100 columns by default; --width overrides or goes full-terminal
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [0121d6c]
 related: []
 supersedes: []
-changelog:
+changelog: "[0.2.0]"
 reason:
 ---
 
