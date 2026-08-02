@@ -27,6 +27,11 @@ line-length standard, so a wide terminal doesn't stretch prose or tables edge to
 picks an exact width instead; `--width full` uses the full terminal width regardless of the
 100-column default.
 
+A file that opens with a YAML-style front-matter block (`--- ... ---`) — common in this project's
+own `issues/*.md`, and in static-site-generator posts — renders that block as a key/value table,
+followed by a divider, ahead of the document body. Parsing covers flat `key: value` pairs and
+`[a, b]`-style lists; it is not a full YAML parser (see [docs/PLAN.md](docs/PLAN.md)).
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
