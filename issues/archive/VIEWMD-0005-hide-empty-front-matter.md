@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0005
 title: Hide empty front-matter fields by default; --full-front-matter shows them all
-status: in-progress
+status: implemented
 area: [render, cli]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [a5778fb]
 related: [VIEWMD-0004]
 supersedes: []
-changelog:
+changelog: "[0.4.0]"
 reason:
 ---
 
