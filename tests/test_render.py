@@ -58,3 +58,40 @@ def test_blockquote_and_list_render_content():
     assert "a quoted line" in out
     assert "item one" in out
     assert "item two" in out
+
+
+def test_front_matter_renders_as_a_table_before_the_body():
+    md = "---\ntitle: Hello\narea: [render, cli]\n---\n# Body heading\n\nbody text\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "title" in out
+    assert "Hello" in out
+    assert "render, cli" in out
+    assert "Body heading" in out
+    assert "body text" in out
+    # The table (and its divider) must come before the rendered body.
+    assert out.index("Hello") < out.index("Body heading")
+
+
+def test_file_without_front_matter_renders_unchanged():
+    md = "# Just a heading\n\nsome text\n"
+    with_check = render_markdown(md, width=80, color=False)
+    assert with_check == render_markdown(md, width=80, color=False)
+    assert "Just a heading" in strip_ansi(with_check)
+    # No stray table artifacts (box-drawing characters) for a document with no front matter.
+    assert "┌" not in with_check and "│" not in with_check
+
+
+def test_unterminated_front_matter_block_renders_as_literal_body_text():
+    md = "---\ntitle: Hello\n\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    # No closing '---': not front matter, so 'title: Hello' shows up as ordinary body text,
+    # not tabulated.
+    assert "title: Hello" in out
+    assert "Body" in out
+
+
+def test_empty_front_matter_block_renders_only_the_body():
+    md = "---\n---\n# Body\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "Body" in out
+    assert "┌" not in out

@@ -2,8 +2,13 @@
 
 import io
 
+from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.rule import Rule
+from rich.table import Table
+
+from viewmd.frontmatter import parse_front_matter, split_front_matter
 
 
 def render_markdown(text: str, *, width: int, color: bool) -> str:
@@ -11,7 +16,14 @@ def render_markdown(text: str, *, width: int, color: bool) -> str:
 
     Rendering is pure (writes to an in-memory buffer, never real stdout) so callers decide
     separately whether/how to display the result (see pager.py).
+
+    A leading YAML-style front-matter block (`--- ... ---`) renders as a table, followed by a
+    divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
+    unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     """
+    raw_front_matter, body = split_front_matter(text)
+    front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
+
     buffer = io.StringIO()
     console = Console(
         file=buffer,
@@ -21,5 +33,19 @@ def render_markdown(text: str, *, width: int, color: bool) -> str:
         width=width,
         highlight=False,
     )
-    console.print(Markdown(text, code_theme="monokai"))
+    if front_matter:
+        console.print(_front_matter_table(front_matter))
+        # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
+        # mistakes this divider for document content.
+        console.print(Rule(characters="═", style="dim"))
+    console.print(Markdown(body, code_theme="monokai"))
     return buffer.getvalue()
+
+
+def _front_matter_table(data: dict[str, str]) -> Table:
+    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value")
+    for key, value in data.items():
+        table.add_row(key, value)
+    return table
