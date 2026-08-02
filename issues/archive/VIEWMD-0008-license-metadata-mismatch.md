@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0008
 title: Fix pyproject.toml license metadata to match the MIT LICENSE file
-status: in-progress
+status: implemented
 area: [tools]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: George Moses
 accepted_at: 2026-08-02
-commits: []
+commits: [964efa9]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.0.1]"
 reason:
 ---
 
