@@ -27,5 +27,6 @@ A change is done, and its issue may be archived, when, in this order:
 4. The maintainer has been shown the diff and the review findings and asked outright, "commit
    and close this out?" — and has said yes.
 
-Only after all four does the change get committed, merged to `main` (`--no-ff`, no
-squash/rebase), and the issue moved to `issues/archive/` with its commit id(s) filled in.
+Only after all four does the change get committed, merged to `develop` (`--no-ff`, no
+squash/rebase), and the issue moved to `issues/archive/` with its commit id(s) filled in. `main`
+only moves on an explicit, separate release step (see [AGENTS.md](../AGENTS.md)).

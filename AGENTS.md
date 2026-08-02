@@ -3,7 +3,15 @@
 A command-line Markdown viewer: renders a `.md` file's headers, tables, code blocks, and other
 formatting to ANSI in the terminal, auto-paging into `less` the way `git log`/`bat` do. Design
 rationale in [docs/PLAN.md](docs/PLAN.md) (the *why*). This file is the process: how a change
-gets from idea to `main`.
+gets from idea to a release.
+
+**`main` is releases only; `develop` is where issues land.** Every `bug|feature|story/VIEWMD-NNNN`
+branch is cut from `develop` and merges back into `develop` (Definition of Done, below) — never
+into `main` directly. `main` only advances by merging `develop` into it as an explicit release
+step (`git checkout main && git merge --no-ff develop && git tag vX.Y.Z`), matching the version
+bump in `CHANGELOG.md`/`pyproject.toml`/`viewmd/__init__.py`. A release is its own explicit
+maintainer decision ("cut a release?"), separate from any single issue's landing gate — do not
+merge `develop` into `main` as a side effect of closing out an issue.
 
 **Issues live in [issues/](issues/README.md)** — one Markdown file per change (front matter plus
 testable prose), stating *what* a change must do, distinct from `docs/` (*why*) and
@@ -31,18 +39,18 @@ yes, fill `accepted_by:`/`accepted_at:` on the issue's front matter and move `st
 
 **A finished branch is not yet approved to land.** The Definition of Done ([issues/AGILE.md](issues/AGILE.md))
 has the same gate at the other end: once a change is implemented, `run-tests.sh` is green, and it
-has been peer-reviewed, do not commit, merge to `main`, or archive the issue on your own
+has been peer-reviewed, do not commit, merge to `develop`, or archive the issue on your own
 initiative, however clean the review came back. Show the diff and the review findings to the
 maintainer and ask outright, "commit and close this out?" Only on an explicit yes do you commit,
-merge (`--no-ff`, no squash/rebase), archive the issue, and delete the branch. Auto-committing
-small intermediate steps *within* ongoing work is still fine; this gate is specifically the
-"ready to land" boundary. **Before asking**, write every review that happened into the issue's
-own "Peer review" section (one line per reviewer, agent and maintainer both, never overwritten):
-that section is the track record the "commit and close this out?" answer is based on, not a step
-that follows it.
+merge into `develop` (`--no-ff`, no squash/rebase), archive the issue, and delete the branch.
+Auto-committing small intermediate steps *within* ongoing work is still fine; this gate is
+specifically the "ready to land" boundary. **Before asking**, write every review that happened
+into the issue's own "Peer review" section (one line per reviewer, agent and maintainer both,
+never overwritten): that section is the track record the "commit and close this out?" answer is
+based on, not a step that follows it.
 
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
-issue it implements.
+issue it implements, cut from `develop`.
 
 **Markdown paragraphs are single lines, never hard-wrapped.** This applies to every Markdown file
 this project generates or edits (`issues/`, `docs/`, `CHANGELOG.md`): write each paragraph as one

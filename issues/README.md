@@ -28,11 +28,12 @@ issues/
 An issue moves through `status:` values and, once built, moves on disk:
 
 1. **proposed**: authored in the `issues/` root. Describes work not yet started.
-2. **in-progress**: being built, on its own branch (`bug|feature|story/VIEWMD-NNNN`, per
-   [AGENTS.md](../AGENTS.md)), not on `main`.
-3. **implemented**: built, verified, committed, merged back into `main` (`git checkout main &&
-   git merge --no-ff <branch>`, then the branch deleted). **Move the file into `archive/`** and
-   fill in `commits:`. That move is the single source of truth for "this is done."
+2. **in-progress**: being built, on its own branch (`bug|feature|story/VIEWMD-NNNN`, cut from
+   `develop`, per [AGENTS.md](../AGENTS.md)), not yet merged.
+3. **implemented**: built, verified, committed, merged back into `develop` (`git checkout develop
+   && git merge --no-ff <branch>`, then the branch deleted). **Move the file into `archive/`** and
+   fill in `commits:`. That move is the single source of truth for "this is done." `main` only
+   receives it later, as part of an explicit release (`develop` merged into `main`, tagged).
 4. **superseded**: replaced by a later issue. Stays in `archive/`, sets `supersedes` on the
    replacement and keeps its own `related` back-link.
 5. **rejected**: considered and turned down without being built. **Move the file into
