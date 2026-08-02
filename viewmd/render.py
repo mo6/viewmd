@@ -8,10 +8,10 @@ from rich.markdown import Markdown
 from rich.rule import Rule
 from rich.table import Table
 
-from viewmd.frontmatter import parse_front_matter, split_front_matter
+from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 
 
-def render_markdown(text: str, *, width: int, color: bool) -> str:
+def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bool = False) -> str:
     """Render `text` to an ANSI string, `width` columns wide.
 
     Rendering is pure (writes to an in-memory buffer, never real stdout) so callers decide
@@ -20,9 +20,13 @@ def render_markdown(text: str, *, width: int, color: bool) -> str:
     A leading YAML-style front-matter block (`--- ... ---`) renders as a table, followed by a
     divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
+    Fields with an empty value are omitted from the table unless `full_front_matter` is True
+    (VIEWMD-0005).
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
+    if not full_front_matter:
+        front_matter = drop_empty(front_matter)
 
     buffer = io.StringIO()
     console = Console(

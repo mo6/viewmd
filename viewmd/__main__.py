@@ -54,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--width", type=_width_arg, default=None,
                         help=f"render width in columns, or 'full' for the full terminal width "
                              f"(default: min({DEFAULT_MAX_WIDTH}, detected terminal width))")
+    parser.add_argument("--full-front-matter", action="store_true",
+                        help="show every front-matter field, including empty ones "
+                             "(default: empty fields are omitted)")
     args = parser.parse_args(argv)
 
     try:
@@ -69,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     width = _resolve_width(args.width, shutil.get_terminal_size().columns)
 
     from viewmd.render import render_markdown
-    ansi_text = render_markdown(text, width=width, color=color)
+    ansi_text = render_markdown(text, width=width, color=color,
+                                full_front_matter=args.full_front_matter)
 
     from viewmd.pager import display
     display(ansi_text, no_pager=args.no_pager)

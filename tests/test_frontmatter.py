@@ -1,4 +1,4 @@
-from viewmd.frontmatter import parse_front_matter, split_front_matter
+from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 
 
 def test_split_returns_none_when_no_leading_dashes():
@@ -57,3 +57,21 @@ def test_parse_skips_lines_without_a_colon():
 def test_parse_empty_block_yields_empty_dict():
     assert parse_front_matter("") == {}
     assert parse_front_matter("# just a comment\n") == {}
+
+
+def test_drop_empty_removes_blank_and_whitespace_only_values():
+    data = {"title": "Hello", "accepted_by": "", "reason": "   "}
+    assert drop_empty(data) == {"title": "Hello"}
+
+
+def test_drop_empty_keeps_non_empty_values():
+    data = {"title": "Hello", "status": "draft"}
+    assert drop_empty(data) == data
+
+
+def test_drop_empty_of_empty_dict_is_empty_dict():
+    assert drop_empty({}) == {}
+
+
+def test_drop_empty_all_blank_yields_empty_dict():
+    assert drop_empty({"a": "", "b": "  "}) == {}

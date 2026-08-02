@@ -43,3 +43,9 @@ def parse_front_matter(raw: str) -> dict[str, str]:
         if key:
             data[key] = value
     return data
+
+
+def drop_empty(data: dict[str, str]) -> dict[str, str]:
+    """Front-matter fields whose value is empty (or all whitespace) carry no information for the
+    table (VIEWMD-0005); --full-front-matter bypasses this to see every parsed field."""
+    return {key: value for key, value in data.items() if value.strip()}
