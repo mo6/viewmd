@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0001
 title: Render a Markdown file to ANSI in the terminal, auto-paged into less
-status: in-progress
+status: implemented
 area: [render, pager, cli]
 effort: medium
 created: 2026-08-02
 updated: 2026-08-02
 accepted_by: gmo6nl@gmail.com
 accepted_at: 2026-08-02
-commits: []
+commits: [2e725e4]
 related: []
 supersedes: []
-changelog:
+changelog: "[0.1.0]"
 reason:
 ---
 
