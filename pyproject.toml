@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "View Markdown files from the command line, with color, tables, and paging into less."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 authors = [{ name = "George Moses", email = "gmo6nl@gmail.com" }]
 dependencies = ["rich>=13"]
 
