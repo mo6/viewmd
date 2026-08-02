@@ -2,8 +2,9 @@
 
 A command-line Markdown viewer: renders a `.md` file's headers, tables, code blocks, and other
 formatting to ANSI in the terminal, auto-paging into `less` the way `git log`/`bat` do. Design
-rationale in [docs/PLAN.md](docs/PLAN.md) (the *why*). This file is the process: how a change
-gets from idea to a release.
+rationale in [docs/PLAN.md](docs/PLAN.md) (the *why*), the security gate's runbook in
+[docs/SECURITY.md](docs/SECURITY.md). This file is the process: how a change gets from idea to a
+release.
 
 **`main` is releases only; `develop` is where issues land.** Every `bug|feature|story/VIEWMD-NNNN`
 branch is cut from `develop` and merges back into `develop` (Definition of Done, below) — never

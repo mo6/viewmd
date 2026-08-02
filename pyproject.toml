@@ -13,7 +13,7 @@ authors = [{ name = "George Moses", email = "gmo6nl@gmail.com" }]
 dependencies = ["rich>=13"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "pip-audit>=2.7"]
 
 [project.scripts]
 viewmd = "viewmd.__main__:main"
