@@ -6,7 +6,7 @@ area: [cli]
 effort: low
 created: 2026-08-02
 updated: 2026-08-02
-accepted_by: gmo6nl@gmail.com
+accepted_by: George Moses
 accepted_at: 2026-08-02
 commits: [e41459d]
 related: []

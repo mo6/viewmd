@@ -12,6 +12,33 @@ import sys
 
 from viewmd import __version__
 
+# A common prose line-length standard; the render width default, capped further by a narrower
+# terminal. --width overrides it, either to an exact column count or to "full" (VIEWMD-0003).
+DEFAULT_MAX_WIDTH = 100
+
+
+def _width_arg(value: str) -> str:
+    """argparse type for --width: the literal 'full', or a positive integer as a string.
+
+    Kept as a string here (not converted to int) so _resolve_width can treat 'full' and a numeric
+    override uniformly without argparse's type system needing a union return type.
+    """
+    if value == "full":
+        return value
+    if not value.lstrip("-").isdigit() or int(value) <= 0:
+        raise argparse.ArgumentTypeError(
+            f"invalid width {value!r}: must be a positive integer or 'full'"
+        )
+    return value
+
+
+def _resolve_width(width_arg: str | None, terminal_width: int) -> int:
+    if width_arg is None:
+        return min(DEFAULT_MAX_WIDTH, terminal_width)
+    if width_arg == "full":
+        return terminal_width
+    return int(width_arg)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
@@ -24,8 +51,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="print to stdout, never invoke a pager")
     parser.add_argument("--color", choices=["auto", "always", "never"], default="auto",
                         help="when to emit ANSI color (default: auto)")
-    parser.add_argument("--width", type=int, default=None,
-                        help="render width in columns (default: detected terminal width)")
+    parser.add_argument("--width", type=_width_arg, default=None,
+                        help=f"render width in columns, or 'full' for the full terminal width "
+                             f"(default: min({DEFAULT_MAX_WIDTH}, detected terminal width))")
     args = parser.parse_args(argv)
 
     try:
@@ -38,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     color = _resolve_color(args.color)
-    width = args.width if args.width is not None else shutil.get_terminal_size().columns
+    width = _resolve_width(args.width, shutil.get_terminal_size().columns)
 
     from viewmd.render import render_markdown
     ansi_text = render_markdown(text, width=width, color=color)
