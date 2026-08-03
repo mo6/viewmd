@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.1.2] — 2026-08-03
+
+- **Investigate advanced front-matter feature support** (VIEWMD-0011, docs/tests): recorded, against real test documents under `tests/fixtures/frontmatter-advanced/`, how nested objects, array-of-objects, block-list arrays, multiline block scalars, and TOML/JSON front matter actually render today. Found one correctness bug -- a nested key can silently overwrite an unrelated top-level key of the same name -- filed as VIEWMD-0012. No code changes; investigation only.
+
 ## [1.1.1] — 2026-08-02
 
 - **Require an explicit, recorded maintainer peer-review line before landing** (VIEWMD-0010, docs): `issues/AGILE.md`'s Definition of Done now requires two distinct recorded peer-review lines (the reviewing agent's pass, then the maintainer's own sign-off) before an issue can land, not just an informal "commit and close this out?" yes. Process-only change; no code affected.

@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0011
 title: Check whether advanced YAML/TOML/JSON front-matter features render correctly
-status: in-progress
+status: implemented
 area: [render, docs]
 effort: low
 created: 2026-08-03
 updated: 2026-08-03
 accepted_by: George Moses
 accepted_at: 2026-08-03
-commits: []
-related: [VIEWMD-0004, VIEWMD-0005]
+commits: [f8555e3]
+related: [VIEWMD-0004, VIEWMD-0005, VIEWMD-0012]
 supersedes: []
-changelog:
+changelog: "[1.1.2]"
 reason:
 ---
 
