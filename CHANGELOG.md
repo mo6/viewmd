@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.2.0] — 2026-08-03
+
+- **Accept multiple Markdown files as arguments** (VIEWMD-0013, cli/render/pager): `viewmd *.md` now renders every matched file, in the order given, into a single pager session -- each file preceded by a heading naming its path and separated from the next by the same double-line divider used before front matter (VIEWMD-0004). A single-file invocation renders byte-for-byte identical to before. Mixing stdin (`-`) with a file path is rejected; a per-file read error (missing file, bad permissions, invalid UTF-8) is reported and the remaining files still render, with a non-zero exit if any file failed. Unlike `less`, there's no per-file navigation -- all files are concatenated into one continuous scroll.
+
 ## [1.1.3] — 2026-08-03
 
 - **Parse nested mappings, block-list/array-of-object values, and block scalars in front matter** (VIEWMD-0012, render): fixes a correctness bug found by VIEWMD-0011 where a nested key (e.g. `seo.title`) could silently overwrite an unrelated top-level key of the same name (`title`); nested mappings now flatten to dotted keys instead. Also adds support for block-list (`- item`) arrays (rendering the same as the existing `[a, b, c]` form), arrays of `- field: value` objects (every item now visible, not just the last), and literal (`|`)/folded (`>`) block scalars. No new dependency; TOML/JSON front matter remains unsupported (falls back unchanged, as before).
