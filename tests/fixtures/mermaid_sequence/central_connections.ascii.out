@@ -1,0 +1,13 @@
++---+     +---+
+| A |     | B |
++-+-+     +-+-+
+  |         |
+  | central both ends
+  o-------->o
+  |         |
+  | central from
+  o-------->|
+  |         |
+  | central to
+  +-------->o
+  |         |

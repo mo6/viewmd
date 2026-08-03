@@ -1,0 +1,6 @@
+sequenceDiagram
+    A->>B: hi
+    loop retry
+        Note over A,B: inside loop
+        A->>B: poll
+    end
