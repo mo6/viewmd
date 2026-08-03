@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.3.0] — 2026-08-03
+
+- **Render Mermaid sequence diagrams as box-drawing ASCII art** (VIEWMD-0014, render/mermaid): a fenced ` ```mermaid ` block containing a `sequenceDiagram` now renders as box-drawing art in place of its source -- all 10 arrow types, central connections, self-messages, notes (`over`/`left of`/`right of`), fragments (`loop`/`opt`/`alt`/`par`/`critical`/`break`/`rect`) including nesting and dividers, `autonumber`, and participant aliasing. Ported from scratch to Python from `pkg/sequence` of `github.com/AlexanderGrooff/mermaid-ascii` (Go, MIT licensed; see `THIRD_PARTY_NOTICES.md`) rather than shelling out to a bundled per-platform binary, verified byte-for-byte against the real Go binary across 84 golden-file cases. Other diagram types, and any block that fails to parse, render unchanged rather than erroring. Also introduces a general preprocessor-plugin pipeline (`viewmd/preprocessors.py`) that wikilinks and this new renderer both run through, so future Markdown extensions plug in the same way. New dependency: `wcwidth` (pure Python).
+
 ## [1.2.0] — 2026-08-03
 
 - **Accept multiple Markdown files as arguments** (VIEWMD-0013, cli/render/pager): `viewmd *.md` now renders every matched file, in the order given, into a single pager session -- each file preceded by a heading naming its path and separated from the next by the same double-line divider used before front matter (VIEWMD-0004). A single-file invocation renders byte-for-byte identical to before. Mixing stdin (`-`) with a file path is rejected; a per-file read error (missing file, bad permissions, invalid UTF-8) is reported and the remaining files still render, with a non-zero exit if any file failed. Unlike `less`, there's no per-file navigation -- all files are concatenated into one continuous scroll.

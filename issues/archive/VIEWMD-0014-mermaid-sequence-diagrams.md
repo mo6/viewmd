@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0014
 title: Render Mermaid sequence diagrams as box-drawing ASCII art
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-03
 updated: 2026-08-03
 accepted_by: George Moses
 accepted_at: 2026-08-03
-commits: []
+commits: [e357e8f]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.3.0]"
 reason:
 ---
 
