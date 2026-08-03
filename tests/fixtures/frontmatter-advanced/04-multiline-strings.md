@@ -12,7 +12,4 @@ folded_block: >
 
 # Multiline strings
 
-`literal_block` (`|`) should preserve its internal line breaks; `folded_block` (`>`) should
-collapse its internal line breaks into spaces. Check whether the front-matter table shows either
-value correctly, shows only the first line, or shows the raw block-scalar text (including the `|`
-and `>` markers) unparsed.
+`literal_block` (`|`) should preserve its internal line breaks; `folded_block` (`>`) should collapse its internal line breaks into spaces. Check whether the front-matter table shows either value correctly, shows only the first line, or shows the raw block-scalar text (including the `|` and `>` markers) unparsed.

@@ -15,6 +15,4 @@ social:
 
 # Nested objects
 
-The `seo` and `social` keys above are YAML mappings nested under a top-level key, not flat
-`key: value` pairs. Check whether the front-matter table shows the nested structure meaningfully,
-shows it as raw indented text, or drops it.
+The `seo` and `social` keys above are YAML mappings nested under a top-level key, not flat `key: value` pairs. Check whether the front-matter table shows the nested structure meaningfully, shows it as raw indented text, or drops it.
