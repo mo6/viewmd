@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         prog="viewmd", description="View a Markdown file in the terminal, paged into less."
     )
     parser.add_argument("--version", action="version", version=f"viewmd {__version__}")
-    parser.add_argument("path", nargs="+", default=["-"],
+    parser.add_argument("path", nargs="*", default=["-"],
                         help="Markdown file(s) to render; '-' or omitted reads stdin")
     parser.add_argument("--no-pager", action="store_true",
                         help="print to stdout, never invoke a pager")

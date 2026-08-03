@@ -1,4 +1,5 @@
 import argparse
+import io
 
 import pytest
 
@@ -72,6 +73,18 @@ def test_multiple_files_render_in_order_with_heading_and_divider(tmp_path, capsy
     assert "b.md" in out
     assert out.index("First") < out.index("b.md") < out.index("Second")
     assert "═" in out  # the reused front-matter divider style separates the two files
+
+
+def test_no_args_reads_stdin(monkeypatch, capsys):
+    from viewmd.render import render_markdown
+
+    text = "# Hello\n\nbody text\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO(text))
+
+    main(["--no-pager", "--color", "never", "--width", "80"])
+    out = capsys.readouterr().out
+
+    assert out == render_markdown(text, width=80, color=False)
 
 
 def test_mixing_stdin_with_a_file_path_is_rejected(tmp_path, capsys):

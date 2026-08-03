@@ -1,0 +1,34 @@
+┌───┐     ┌───┐
+│ A │     │ B │
+└─┬─┘     └─┬─┘
+  │         │
+  │ solid arrow
+  ├────────►│
+  │         │
+  │ dotted arrow
+  ├┈┈┈┈┈┈┈┈►│
+  │         │
+  │ solid open
+  ├─────────│
+  │         │
+  │ dotted open
+  ├┈┈┈┈┈┈┈┈┈│
+  │         │
+  │ solid cross
+  ├────────×│
+  │         │
+  │ dotted cross
+  ├┈┈┈┈┈┈┈┈×│
+  │         │
+  │ solid point
+  ├────────)│
+  │         │
+  │ dotted point
+  ├┈┈┈┈┈┈┈┈)│
+  │         │
+  │ bidirectional solid
+  ├◄───────►│
+  │         │
+  │ bidirectional dotted
+  ├◄┈┈┈┈┈┈┈►│
+  │         │

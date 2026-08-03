@@ -45,6 +45,10 @@ Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highli
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
 
+A fenced ` ```mermaid ` code block containing a `sequenceDiagram` renders as box-drawing ASCII
+art in place of its source. Other Mermaid diagram types, and any block that fails to parse, are
+left as plain source text rather than causing an error.
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
