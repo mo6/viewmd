@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    participant A as Alice
+    participant B as Bob
+    participant C as Carol
+    A->>B: hello
+    Note over A,B: greeting
+    loop retry until ack
+        B-->>A: ack?
+        alt got ack
+            A->>B: yes
+        else
+            A-)B: nope
+        end
+    end
+    B->>C: forward
+    C--xB: failed
+    C->>C: self check

@@ -1,0 +1,11 @@
+sequenceDiagram
+    A->>B: hi
+    loop outer
+        alt condition
+            opt maybe
+                A->>B: deep
+            end
+        else
+            B->>A: no
+        end
+    end

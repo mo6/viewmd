@@ -1,0 +1,6 @@
+sequenceDiagram
+    critical connect
+        A->>B: try
+    option network failure
+        A->>B: retry
+    end
