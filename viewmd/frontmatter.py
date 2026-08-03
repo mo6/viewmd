@@ -1,8 +1,10 @@
 """Split and parse a leading YAML-style front-matter block (`--- ... ---`).
 
-Not a full YAML parser: flat `key: value` pairs, one per line, plus `[a, b, c]`-style bracketed
-lists rendered as a comma-joined string. This mirrors tools/issues.py's own front-matter parser
-rather than adding a YAML dependency for a narrow, known input shape (docs/PLAN.md).
+Not a full YAML parser: flat and indented `key: value` mappings, `[a, b, c]`-style bracketed
+lists, block-list (`- item`) arrays (including arrays of `- field: value` objects), and `|`/`>`
+block scalars. This mirrors tools/issues.py's own front-matter parser in spirit rather than
+adding a YAML dependency for a narrow, known input shape (docs/PLAN.md). Anchors/aliases, flow
+mappings (`{a: b}`), and multi-document streams are out of scope (VIEWMD-0012 Non-goals).
 """
 
 
@@ -24,24 +26,115 @@ def split_front_matter(text: str) -> tuple[str | None, str]:
     return None, text
 
 
-def parse_front_matter(raw: str) -> dict[str, str]:
-    """Parse a flat `key: value` block into a dict of display-ready strings."""
-    data: dict[str, str] = {}
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or ":" not in line:
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def _strip_quotes(value: str) -> str:
+    return value.strip().strip("'\"")
+
+
+Node = str | list | dict
+
+
+def _parse_mapping(lines: list[str], idx: int, indent: int) -> tuple[dict[str, Node], int]:
+    result: dict[str, Node] = {}
+    while (
+        idx < len(lines)
+        and _indent(lines[idx]) == indent
+        and not lines[idx].strip().startswith("- ")
+    ):
+        key, sep, value = lines[idx].strip().partition(":")
+        idx += 1
+        if not sep:
             continue
-        key, _, value = line.partition(":")
         key = key.strip()
         value = value.strip()
-        if value.startswith("[") and value.endswith("]"):
+        if value in ("|", ">"):
+            content: list[str] = []
+            while idx < len(lines) and _indent(lines[idx]) > indent:
+                content.append(lines[idx].strip())
+                idx += 1
+            result[key] = ("\n" if value == "|" else " ").join(content)
+        elif value.startswith("[") and value.endswith("]"):
             inner = value[1:-1].strip()
-            items = [v.strip().strip("'\"") for v in inner.split(",") if v.strip()]
-            value = ", ".join(items)
+            result[key] = [v.strip().strip("'\"") for v in inner.split(",") if v.strip()]
+        elif value:
+            result[key] = _strip_quotes(value)
+        elif idx < len(lines) and _indent(lines[idx]) > indent:
+            child_indent = _indent(lines[idx])
+            if lines[idx].strip().startswith("- "):
+                result[key], idx = _parse_list(lines, idx, child_indent)
+            else:
+                result[key], idx = _parse_mapping(lines, idx, child_indent)
         else:
-            value = value.strip("'\"")
-        if key:
-            data[key] = value
+            result[key] = ""
+    return result, idx
+
+
+def _parse_list(lines: list[str], idx: int, indent: int) -> tuple[list[Node], int]:
+    items: list[Node] = []
+    while (
+        idx < len(lines)
+        and _indent(lines[idx]) == indent
+        and lines[idx].strip().startswith("- ")
+    ):
+        item_text = lines[idx].strip()[2:].strip()
+        idx += 1
+        key, sep, value = item_text.partition(":")
+        if not sep:
+            items.append(_strip_quotes(item_text))
+            continue
+        obj: dict[str, Node] = {}
+        value = value.strip()
+        if value:
+            obj[key.strip()] = _strip_quotes(value)
+        while (
+            idx < len(lines)
+            and _indent(lines[idx]) > indent
+            and not lines[idx].strip().startswith("- ")
+        ):
+            sub_key, sub_sep, sub_value = lines[idx].strip().partition(":")
+            if sub_sep and sub_value.strip():
+                obj[sub_key.strip()] = _strip_quotes(sub_value)
+            idx += 1
+        items.append(obj)
+    return items, idx
+
+
+def _flatten(node: Node, prefix: str, out: dict[str, str]) -> None:
+    if isinstance(node, dict):
+        for key, child in node.items():
+            _flatten(child, f"{prefix}.{key}" if prefix else key, out)
+    elif isinstance(node, list):
+        if all(isinstance(item, str) for item in node):
+            out[prefix] = ", ".join(node)
+        else:
+            parts = [
+                ", ".join(f"{k}: {v}" for k, v in item.items())
+                if isinstance(item, dict)
+                else str(item)
+                for item in node
+            ]
+            out[prefix] = "; ".join(parts)
+    else:
+        out[prefix] = node
+
+
+def parse_front_matter(raw: str) -> dict[str, str]:
+    """Parse a front-matter block into a dict of display-ready strings.
+
+    Nested mappings flatten to dotted keys (`seo: {title: ...}` becomes `seo.title`) so a nested
+    key can never collide with an unrelated top-level key of the same name. Lists of scalars
+    render comma-joined, matching the `[a, b, c]` bracket form; lists of `- field: value` objects
+    render as `; `-separated, comma-joined items so every item's data stays visible.
+    """
+    lines = [line for line in raw.splitlines() if line.strip() and not line.strip().startswith("#")]
+    if not lines:
+        return {}
+    tree, _ = _parse_mapping(lines, 0, _indent(lines[0]))
+    data: dict[str, str] = {}
+    _flatten(tree, "", data)
     return data
 
 
