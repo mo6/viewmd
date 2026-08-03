@@ -106,3 +106,15 @@ fixtures for this issue -- render them before/after to show the fix.
 
 ## Peer review
 
+- **Claude (Sonnet 5)** (agent), 2026-08-03: PASS. `./run-tests.sh` green (61 tests, ruff clean,
+  pip-audit clean, issues index current); 7 new unit tests in `tests/test_frontmatter.py` cover
+  requirements 1-4 directly plus a requirement-5 regression case. Manually re-rendered all five
+  VIEWMD-0011 fixtures with `./viewmd.sh --color=never`: `01-nested-objects.md`'s top-level
+  `title` no longer collides with `seo.title` (now two distinct rows); `02-array-of-objects.md`
+  shows both authors; `03-dash-list-arrays.md`'s `tags` renders identically to
+  `tags_bracket_form`; `04-multiline-strings.md` shows the literal block's actual line breaks and
+  the folded block's actual space-joined text, not the `|`/`>` markers; `09-kitchen-sink.md`
+  combines all of the above correctly in one document. Confirmed TOML/JSON front matter
+  (`07-toml-frontmatter.md`, `08-json-frontmatter.md`) still fall back unchanged (out of scope,
+  per Non-goals). Also dogfooded by rendering this issue's own front matter -- unaffected.
+
