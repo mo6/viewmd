@@ -12,7 +12,12 @@ into `main` directly. `main` only advances by merging `develop` into it as an ex
 step (`git checkout main && git merge --no-ff develop && git tag vX.Y.Z`), matching the version
 bump in `CHANGELOG.md`/`pyproject.toml`/`viewmd/__init__.py`. A release is its own explicit
 maintainer decision ("cut a release?"), separate from any single issue's landing gate — do not
-merge `develop` into `main` as a side effect of closing out an issue.
+merge `develop` into `main` as a side effect of closing out an issue. Bump the minor version for
+a backward-compatible feature/story, the patch version for a bug fix, matching ordinary semver.
+Once tagged and pushed (`git push origin main develop vX.Y.Z`), publish the matching GitHub
+release too (`gh release create vX.Y.Z --title vX.Y.Z --notes-file <path>`), using that version's
+`CHANGELOG.md` entry verbatim as the release notes — a version bump on `main` without a published
+GitHub release is an incomplete release.
 
 **Issues live in [issues/](issues/README.md)** — one Markdown file per change (front matter plus
 testable prose), stating *what* a change must do, distinct from `docs/` (*why*) and
@@ -49,6 +54,17 @@ specifically the "ready to land" boundary. **Before asking**, write every review
 into the issue's own "Peer review" section (one line per reviewer, agent and maintainer both,
 never overwritten): that section is the track record the "commit and close this out?" answer is
 based on, not a step that follows it.
+
+**Landing an issue is at least two commits on `develop`, not one.** First, the implementation
+commit itself (code + tests + the peer-review lines), made on the `bug|feature|story/VIEWMD-NNNN`
+branch and brought into `develop` via the `--no-ff` merge. Second, a separate "Archive
+VIEWMD-NNNN, bump to X.Y.Z" commit made directly on `develop` *after* that merge, which: moves the
+issue file to `issues/archive/`, sets `status: implemented`, sets `commits:` to the short SHA of
+the *implementation* commit (not this archive commit's own SHA, which doesn't exist yet at the
+time you're writing the file), sets `changelog:` to the `CHANGELOG.md` anchor (e.g. `"[1.2.0]"`),
+bumps `pyproject.toml`/`viewmd/__init__.py`, adds the `CHANGELOG.md` entry, and regenerates the
+issues index (`./tools.sh issues`). Only after that second commit is the issue fully closed out on
+`develop` — the `main`-merge/tag/GitHub-release step above is still separate again from this.
 
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
 issue it implements, cut from `develop`.
