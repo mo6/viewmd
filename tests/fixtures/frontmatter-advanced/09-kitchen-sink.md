@@ -28,8 +28,4 @@ summary: |
 
 # Advanced frontmatter, combined
 
-This mirrors the shape of the reference page's own end-to-end example: scalars, a plain
-`[a, b, c]`-style list would have been the "easy" case, but here `tags` and `authors` use the
-dash-list and array-of-objects forms, `seo`/`social` are nested objects, `draft` uses the `no`
-boolean alias, `date` is full ISO 8601 with a negative UTC offset, and `summary` is a literal
-block scalar. Check the front-matter table against this file's actual intent end to end.
+This mirrors the shape of the reference page's own end-to-end example: scalars, a plain `[a, b, c]`-style list would have been the "easy" case, but here `tags` and `authors` use the dash-list and array-of-objects forms, `seo`/`social` are nested objects, `draft` uses the `no` boolean alias, `date` is full ISO 8601 with a negative UTC offset, and `summary` is a literal block scalar. Check the front-matter table against this file's actual intent end to end.
