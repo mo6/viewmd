@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0012
 title: Parse nested mappings, list/array-of-object values, and multiline block scalars in front matter without cross-key corruption
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-03
 updated: 2026-08-03
 accepted_by: George Moses
 accepted_at: 2026-08-03
-commits: []
+commits: [e310ad5]
 related: [VIEWMD-0004, VIEWMD-0005, VIEWMD-0011]
 supersedes: []
-changelog:
+changelog: "[1.1.3]"
 reason:
 ---
 
