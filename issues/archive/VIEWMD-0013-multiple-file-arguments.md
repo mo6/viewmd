@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0013
 title: Accept multiple Markdown files as arguments
-status: in-progress
+status: implemented
 area: [cli, render, pager]
 effort: medium
 created: 2026-08-03
 updated: 2026-08-03
 accepted_by: George Moses
 accepted_at: 2026-08-03
-commits: []
+commits: [783fc6e]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.2.0]"
 reason:
 ---
 
