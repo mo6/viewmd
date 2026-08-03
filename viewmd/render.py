@@ -5,11 +5,23 @@ import io
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.rule import Rule
 from rich.table import Table
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 from viewmd.wikilinks import rewrite_wikilinks
+
+
+def _make_console(buffer: io.StringIO, *, width: int, color: bool) -> Console:
+    return Console(
+        file=buffer,
+        force_terminal=color,
+        no_color=not color,
+        color_system="truecolor" if color else None,
+        width=width,
+        highlight=False,
+    )
 
 
 def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bool = False) -> str:
@@ -33,20 +45,31 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     body = rewrite_wikilinks(body)
 
     buffer = io.StringIO()
-    console = Console(
-        file=buffer,
-        force_terminal=color,
-        no_color=not color,
-        color_system="truecolor" if color else None,
-        width=width,
-        highlight=False,
-    )
+    console = _make_console(buffer, width=width, color=color)
     if front_matter:
         console.print(_front_matter_table(front_matter))
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
     console.print(Markdown(body, code_theme="monokai"))
+    return buffer.getvalue()
+
+
+def render_file_heading(path: str, *, width: int, color: bool) -> str:
+    """Render a bold heading line naming `path`, printed ahead of each file's content when
+    multiple files are given on the command line (VIEWMD-0013)."""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(f"[bold]{escape(path)}[/bold]")
+    return buffer.getvalue()
+
+
+def render_divider(*, width: int, color: bool) -> str:
+    """Render the same double-line divider used between front matter and body (VIEWMD-0004),
+    reused here to separate consecutive files (VIEWMD-0013)."""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(Rule(characters="═", style="dim"))
     return buffer.getvalue()
 
 

@@ -1,6 +1,6 @@
 import re
 
-from viewmd.render import render_markdown
+from viewmd.render import render_divider, render_file_heading, render_markdown
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -152,3 +152,22 @@ def test_converted_wikilink_uses_link_url_style():
     assert ANSI_RE.search(plain) is None
     assert "DELVE-0046" in plain
     assert "Display text" in plain
+
+
+def test_render_file_heading_shows_the_path():
+    out = strip_ansi(render_file_heading("notes/one.md", width=80, color=False))
+    assert "notes/one.md" in out
+
+
+def test_render_file_heading_escapes_rich_markup_in_the_path():
+    out = strip_ansi(render_file_heading("[weird].md", width=80, color=False))
+    assert "[weird].md" in out
+
+
+def test_render_divider_matches_the_front_matter_divider_style():
+    md = "---\ntitle: Hello\n---\n# Body\n"
+    front_matter_out = render_markdown(md, width=80, color=False)
+    divider_out = render_divider(width=80, color=False)
+    # Both use the same "═" double-line rule (VIEWMD-0004), reused here (VIEWMD-0013).
+    assert "═" in front_matter_out
+    assert divider_out.strip("\n") in front_matter_out

@@ -45,8 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         prog="viewmd", description="View a Markdown file in the terminal, paged into less."
     )
     parser.add_argument("--version", action="version", version=f"viewmd {__version__}")
-    parser.add_argument("path", nargs="?", default="-",
-                        help="Markdown file to render; '-' or omitted reads stdin")
+    parser.add_argument("path", nargs="+", default=["-"],
+                        help="Markdown file(s) to render; '-' or omitted reads stdin")
     parser.add_argument("--no-pager", action="store_true",
                         help="print to stdout, never invoke a pager")
     parser.add_argument("--color", choices=["auto", "always", "never"], default="auto",
@@ -58,26 +58,62 @@ def main(argv: list[str] | None = None) -> int:
                         help="show every front-matter field, including empty ones "
                              "(default: empty fields are omitted)")
     args = parser.parse_args(argv)
+    paths = args.path
 
-    try:
-        text = _read_input(args.path)
-    except OSError as e:
-        print(f"viewmd: cannot read {args.path}: {e.strerror}", file=sys.stderr)
-        return 1
-    except UnicodeDecodeError as e:
-        print(f"viewmd: {args.path}: not valid UTF-8 ({e})", file=sys.stderr)
+    if "-" in paths and len(paths) > 1:
+        print("viewmd: cannot mix stdin ('-') with file arguments", file=sys.stderr)
         return 1
 
     color = _resolve_color(args.color)
     width = _resolve_width(args.width, shutil.get_terminal_size().columns)
 
     from viewmd.render import render_markdown
-    ansi_text = render_markdown(text, width=width, color=color,
-                                full_front_matter=args.full_front_matter)
+
+    # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
+    # existing single-file output stays byte-for-byte identical.
+    if len(paths) == 1:
+        path = paths[0]
+        try:
+            text = _read_input(path)
+        except OSError as e:
+            print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
+            return 1
+        except UnicodeDecodeError as e:
+            print(f"viewmd: {path}: not valid UTF-8 ({e})", file=sys.stderr)
+            return 1
+
+        ansi_text = render_markdown(text, width=width, color=color,
+                                    full_front_matter=args.full_front_matter)
+
+        from viewmd.pager import display
+        display(ansi_text, no_pager=args.no_pager)
+        return 0
+
+    from viewmd.render import render_divider, render_file_heading
+
+    had_error = False
+    parts: list[str] = []
+    for path in paths:
+        try:
+            text = _read_input(path)
+        except OSError as e:
+            print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
+            had_error = True
+            continue
+        except UnicodeDecodeError as e:
+            print(f"viewmd: {path}: not valid UTF-8 ({e})", file=sys.stderr)
+            had_error = True
+            continue
+
+        if parts:
+            parts.append(render_divider(width=width, color=color))
+        parts.append(render_file_heading(path, width=width, color=color))
+        parts.append(render_markdown(text, width=width, color=color,
+                                     full_front_matter=args.full_front_matter))
 
     from viewmd.pager import display
-    display(ansi_text, no_pager=args.no_pager)
-    return 0
+    display("".join(parts), no_pager=args.no_pager)
+    return 1 if had_error else 0
 
 
 def _read_input(path: str) -> str:

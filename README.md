@@ -21,6 +21,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width 80     # render at exactly 80 columns
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
+./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
 Render width defaults to `min(100, detected terminal width)` — 100 columns is a common prose
@@ -34,6 +35,11 @@ followed by a divider, ahead of the document body. Parsing covers flat `key: val
 `[a, b]`-style lists; it is not a full YAML parser (see [docs/PLAN.md](docs/PLAN.md)). Fields
 with no value are omitted from the table by default; `--full-front-matter` shows every field,
 empty ones included.
+
+Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
+preceded by a heading naming its path and separated by a divider, concatenated into a single
+`less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
+scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code

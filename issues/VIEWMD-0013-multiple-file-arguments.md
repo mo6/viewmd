@@ -52,3 +52,5 @@ None; the divider styling should reuse whatever `render.py` already uses between
 
 ## Peer review
 
+- **Claude** (agent), 2026-08-03: implemented; `./run-tests.sh` green (69 pytest, ruff, pip-audit, issues gate), plus manual checks of multi-file rendering, single-file byte-for-byte output, `-`-mixing rejection, `*.md` glob expansion, and a missing file mid-batch. No findings.
+- **George Moses** (maintainer), 2026-08-03: accepted, works fine; asked for the README to note that multiple files are concatenated into one pager session rather than viewed per-file like `less`'s `:n`/`:p` -- added to README.md.
