@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0017
 title: Support the "actor" keyword in Mermaid sequence diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-04
 updated: 2026-08-04
 accepted_by: George Moses
 accepted_at: 2026-08-04
-commits: []
+commits: [5a9255a]
 related: [VIEWMD-0020]
 supersedes: []
-changelog:
+changelog: "[1.3.1]"
 reason:
 ---
 
