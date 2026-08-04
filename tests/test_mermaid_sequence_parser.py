@@ -84,3 +84,17 @@ def test_actor_as_participant_name_still_parses_as_message():
     assert len(sd.messages) == 1
     assert sd.messages[0].from_.id == "actor"
     assert sd.messages[0].to.id == "B"
+
+
+def test_participant_is_actor_flag():
+    """VIEWMD-0020: the renderer needs to tell an `actor` declaration apart
+    from a `participant` one to draw its stick-figure glyph."""
+    sd = parse("sequenceDiagram\nactor U as User\nparticipant CU as Gateway\nU->>CU: hi")
+    assert [p.is_actor for p in sd.participants] == [True, False]
+
+
+def test_implicit_participant_is_not_an_actor():
+    """A participant introduced only by a message (never declared) defaults to
+    a plain box, not a stick figure."""
+    sd = parse("sequenceDiagram\nA->>B: hi")
+    assert [p.is_actor for p in sd.participants] == [False, False]

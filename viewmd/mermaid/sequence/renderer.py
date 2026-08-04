@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 
 from wcwidth import wcswidth
@@ -28,6 +29,19 @@ LABEL_LEFT_MARGIN = 2
 LABEL_BUFFER_SPACE = 10
 FRAME_INDENT = 2  # columns reserved per nested fragment level
 FRAME_LABEL_INSET = 2  # columns from the left corner to the "[label]" tab
+
+# Three-line stick figures drawn above an `actor` participant's label
+# (VIEWMD-0020), each row exactly 3 characters wide: (head, arms/torso, legs).
+# One is picked at random per actor; with more than one actor in a diagram
+# they're drawn round-robin from a shuffled copy of this list so adjacent
+# actors don't repeat needlessly before every figure has been used once.
+ACTOR_FIGURES: list[tuple[str, str, str]] = [
+    (" O ", "\\|/", "/ \\"),
+    (" o ", "/.7", "/ \\"),
+    (" o ", "<|>", "/ \\"),
+    (" o ", "(|)", "/ \\"),
+    ("\\o/", " | ", "/ \\"),
+]
 
 
 def _width(s: str) -> int:
@@ -90,6 +104,7 @@ def render(
     participant_spacing: int = DEFAULT_PARTICIPANT_SPACING,
     message_spacing: int = DEFAULT_MESSAGE_SPACING,
     self_message_width: int = DEFAULT_SELF_MESSAGE_WIDTH,
+    rng: random.Random | None = None,
 ) -> str:
     if not sd.participants:
         raise ValueError("no participants")
@@ -123,24 +138,74 @@ def render(
 
     lines: list[str] = []
 
-    lines.append(_build_line(sd.participants, layout, lambda i: (
-        chars.top_left + chars.horizontal * layout.participant_widths[i] + chars.top_right
-    )))
+    has_actor = any(p.is_actor for p in sd.participants)
+
+    def _box_width(i: int) -> int:
+        return layout.participant_widths[i] + BOX_BORDER_WIDTH
+
+    # Assign each actor a stick figure. Drawn round-robin from a shuffled copy
+    # of ACTOR_FIGURES so multiple actors in one diagram get different figures
+    # before any repeat (falls back to repeating once the pool is exhausted).
+    figure_for_index: dict[int, tuple[str, str, str]] = {}
+    if has_actor:
+        rng = rng or random.Random()  # noqa: S311 -- cosmetic glyph choice, not security-sensitive
+        pool = ACTOR_FIGURES.copy()
+        rng.shuffle(pool)
+        actor_indices = [i for i, p in enumerate(sd.participants) if p.is_actor]
+        for n, idx in enumerate(actor_indices):
+            figure_for_index[idx] = pool[n % len(pool)]
+
+    def _centered_3(i: int, glyph: str) -> str:
+        """Place a 3-char glyph centered at this participant's box center."""
+        w = _box_width(i)
+        center = w // 2
+        return " " * (center - 1) + glyph + " " * (w - center - 2)
+
+    # An `actor` participant draws a 3-line stick figure (head, arms/torso,
+    # legs) above its label instead of a box top. The head/arms rows are extra
+    # header rows a plain-box diagram doesn't have -- only reserve them when at
+    # least one actor is present, so a diagram with no actors renders
+    # byte-for-byte as before (VIEWMD-0020 requirement 4). The legs row merges
+    # into the existing top-border row below: an actor draws its legs there, a
+    # plain participant its usual box top, keeping every participant's header
+    # the same total height within one diagram.
+    if has_actor:
+        for row in (0, 1):
+            def _figure_line(i: int, row: int = row) -> str:
+                if i not in figure_for_index:
+                    return " " * _box_width(i)
+                return _centered_3(i, figure_for_index[i][row])
+
+            lines.append(_build_line(sd.participants, layout, _figure_line))
+
+    def _top_line(i: int) -> str:
+        if i in figure_for_index:
+            return _centered_3(i, figure_for_index[i][2])  # legs
+        return chars.top_left + chars.horizontal * layout.participant_widths[i] + chars.top_right
+
+    lines.append(_build_line(sd.participants, layout, _top_line))
 
     def _label_line(i: int) -> str:
-        w = layout.participant_widths[i]
-        label_len = _width(sd.participants[i].label)
-        pad = (w - label_len) // 2
         label = sd.participants[i].label
+        label_len = _width(label)
+        if i in figure_for_index:
+            w = _box_width(i)
+            pad = (w - label_len) // 2
+            return " " * pad + label + " " * (w - pad - label_len)
+        w = layout.participant_widths[i]
+        pad = (w - label_len) // 2
         return chars.vertical + " " * pad + label + " " * (w - pad - label_len) + chars.vertical
-
-    lines.append(_build_line(sd.participants, layout, _label_line))
 
     def _border_line(i: int) -> str:
         w = layout.participant_widths[i]
+        if i in figure_for_index:
+            box_width = _box_width(i)
+            center = box_width // 2
+            return " " * center + chars.vertical + " " * (box_width - center - 1)
         return (chars.bottom_left + chars.horizontal * (w // 2) + chars.tee_down
                 + chars.horizontal * (w - w // 2 - 1) + chars.bottom_right)
 
+    lines.append(_build_line(sd.participants, layout, _label_line))
     lines.append(_build_line(sd.participants, layout, _border_line))
 
     lines.extend(_render_events(events, layout, chars))
