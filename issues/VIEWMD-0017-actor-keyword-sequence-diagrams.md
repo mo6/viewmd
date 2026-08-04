@@ -9,7 +9,7 @@ updated: 2026-08-04
 accepted_by: George Moses
 accepted_at: 2026-08-04
 commits: []
-related: []
+related: [VIEWMD-0020]
 supersedes: []
 changelog:
 reason:
