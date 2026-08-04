@@ -13,7 +13,7 @@ SEQUENCE_DIAGRAM_KEYWORD = "sequenceDiagram"
 # --- regexes, transcribed 1:1 from parser.go ---
 
 _PARTICIPANT_RE = re.compile(
-    r'(?i)^\s*participant\s+(?:"([^"]+)"|(\S+))(?:\s+as\s+(.+))?$'
+    r'(?i)^\s*(?:participant|actor)\s+(?:"([^"]+)"|(\S+))(?:\s+as\s+(.+))?$'
 )
 # The arrow is one of mermaid's ten message types: ->> / -->> (arrowhead), ->
 # / --> (open), -x / --x (cross), -) / --) (async point), <<->> / <<-->>
