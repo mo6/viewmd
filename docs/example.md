@@ -121,6 +121,21 @@ sequenceDiagram
     end
 ```
 
+### Actors
+
+An `actor` declaration draws a random 3-line stick figure instead of a plain box; with more than
+one actor in a diagram, each gets a different figure before any repeat.
+
+```mermaid
+sequenceDiagram
+    actor Customer
+    participant Gateway
+    actor Support
+    Customer->>Gateway: submit request
+    Gateway->>Support: escalate
+    Support-->>Customer: follow up
+```
+
 ### Graceful fallback
 
 Diagram types other than `sequenceDiagram` — and any block that fails to parse — render as plain
