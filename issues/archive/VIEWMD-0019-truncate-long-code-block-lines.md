@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0019
 title: Long lines in code blocks should stay intact, not wrapped or cut off
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-04
 updated: 2026-08-04
 accepted_by: George Moses
 accepted_at: 2026-08-04
-commits: []
+commits: [9651967, 1f3de1b, b7aedb2]
 related: [VIEWMD-0018]
 supersedes: []
-changelog:
+changelog: "[1.4.1]"
 reason:
 ---
 

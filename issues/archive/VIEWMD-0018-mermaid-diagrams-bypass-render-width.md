@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0018
 title: Mermaid diagrams shouldn't be wrapped/capped to the render width
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-04
 updated: 2026-08-04
 accepted_by: George Moses
 accepted_at: 2026-08-04
-commits: []
+commits: [9651967, 1f3de1b, b7aedb2]
 related: [VIEWMD-0019]
 supersedes: []
-changelog:
+changelog: "[1.4.1]"
 reason:
 ---
 
