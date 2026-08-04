@@ -66,4 +66,5 @@ Source: https://github.com/mo6/viewmd/issues/1
 ## Peer review
 
 - **Cursor Grok** (agent), 2026-08-04: accept. One-line non-capturing `(?:participant|actor)` synonym matches Design notes; capture groups 1–3 unchanged; `actor->>B` still parses as a message (whitespace-bound keyword); actor renders as a box via existing participant path (VIEWMD-0020 stick figures untouched). Parser unit tests cover bare/`as`/quoted forms plus the name-collision case; golden `actor_alias` fixture matches the issue reproduction. `./run-tests.sh` green (184 passed).
+- **Claude** (agent), 2026-08-04: accept, independently re-verified. Confirmed `_parse_participant`'s capture-group usage is untouched, and directly tested `actor->>B: hi` still parses `actor` as a message id (req. 3) and the original issue's reproduction now renders as ASCII art end-to-end. `actor_alias` golden fixture's box formatting matches the existing `participant_alias` fixture's conventions (sizing/style), so it isn't a circular self-generated expected output. Full suite: 184 passed, ruff clean, pip-audit clean, issues index check green.
 
