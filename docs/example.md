@@ -58,6 +58,16 @@ def render(text: str, *, width: int, color: bool) -> str:
     return _console_render(text, width=width, color=color)
 ```
 
+### A line too wide for the render width
+
+Unlike a mermaid diagram, an ordinary code line longer than the render width is truncated, not
+wrapped (VIEWMD-0019). The line below is exactly 120 characters; at the default 100-column cap it
+should render as a single line, cut off mid-argument list, with nothing folding onto a second line:
+
+```python
+result = some_function(argument_one, argument_two, argument_three, argument_four, argument_five, argument_six, xxxxxxxx)
+```
+
 ## Wikilinks
 
 Obsidian-style wikilinks like [[Getting Started]] or [[Getting Started|a custom display name]]
