@@ -1,5 +1,6 @@
 import re
 
+from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import render_divider, render_file_heading, render_markdown
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -171,3 +172,79 @@ def test_render_divider_matches_the_front_matter_divider_style():
     # Both use the same "═" double-line rule (VIEWMD-0004), reused here (VIEWMD-0013).
     assert "═" in front_matter_out
     assert divider_out.strip("\n") in front_matter_out
+
+
+def test_long_code_block_line_is_not_truncated_or_wrapped():
+    # VIEWMD-0019 (revised): a line longer than the render width stays intact on one output
+    # line -- neither folded onto a second line nor cropped away -- so it scrolls horizontally
+    # in the pager (less -S) rather than losing content, matching how mermaid art already
+    # behaves (VIEWMD-0018).
+    long_line = "x" * 120
+    md = f"```\n{long_line}\n```\n"
+    out = strip_ansi(render_markdown(md, width=100, color=False))
+    content_lines = [line for line in out.splitlines() if line.strip()]
+    assert len(content_lines) == 1, f"expected 1 content line, got {content_lines!r}"
+    assert long_line in out
+
+
+def test_wide_mermaid_diagram_keeps_natural_width():
+    # VIEWMD-0018: each diagram row stays intact at the default width cap of 100.
+    md = (
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "    participant AAAAAAAAAA as First service with a long name\n"
+        "    participant BBBBBBBBBB as Second service with a long name\n"
+        "    participant CCCCCCCCCC as Third service with a long name\n"
+        "    AAAAAAAAAA->>BBBBBBBBBB: do something\n"
+        "    BBBBBBBBBB->>CCCCCCCCCC: forward it\n"
+        "```\n"
+    )
+    out = strip_ansi(render_markdown(md, width=100, color=False))
+    content_lines = [line for line in out.splitlines() if line.strip()]
+    assert content_lines, "expected diagram output"
+    assert any(len(line) > 100 for line in content_lines), (
+        "expected at least one diagram row wider than 100, got lens="
+        f"{[len(line) for line in content_lines]}"
+    )
+    # Actor labels must appear unbroken on a single row (not split across wrapped lines).
+    intact = any(
+        "First service with a long name" in line and "Third service with a long name" in line
+        for line in content_lines
+    )
+    assert intact, f"expected all three actor labels on one intact row, got: {content_lines}"
+    # No wrap-artifact: a line that is only the spilled tail of a label.
+    assert not any(line.lstrip().startswith("with a long name") for line in content_lines)
+
+
+def test_mermaid_sentinel_still_discriminates_code_and_diagram_render_paths():
+    # Regression: both an ordinary code fence and a mermaid fence now preserve full-width
+    # content (neither truncates), but the mermaid-rendered sentinel must still route them
+    # through different renderers -- Syntax (highlighted, padded) for code, raw Segments
+    # (unhighlighted, unpadded) for diagram art -- rather than collapsing into one path.
+    long_line = "y" * 120
+    code_md = f"```\n{long_line}\n```\n"
+    mermaid_md = (
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "    participant AAAAAAAAAA as First service with a long name\n"
+        "    participant BBBBBBBBBB as Second service with a long name\n"
+        "    participant CCCCCCCCCC as Third service with a long name\n"
+        "    AAAAAAAAAA->>BBBBBBBBBB: do something\n"
+        "```\n"
+    )
+    code_out = strip_ansi(render_markdown(code_md, width=100, color=False))
+    mermaid_out = strip_ansi(render_markdown(mermaid_md, width=100, color=False))
+
+    # Both preserve full content -- neither loses the wide content.
+    assert long_line in code_out
+    assert "First service with a long name" in mermaid_out
+    assert "Third service with a long name" in mermaid_out
+
+    # Code still gets Syntax's padding=1 (a blank line above/below); mermaid art doesn't.
+    code_lines = code_out.splitlines()
+    assert code_lines[0].strip() == "" and code_lines[-1].strip() == ""
+    mermaid_lines = mermaid_out.splitlines()
+    assert mermaid_lines[0].strip() != "" and mermaid_lines[-1].strip() != ""
+
+    # The sentinel info-string itself never leaks into rendered output.
+    assert MERMAID_RENDERED_INFO not in mermaid_out

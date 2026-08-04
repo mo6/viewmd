@@ -1,11 +1,12 @@
-"""Splice rendered Mermaid diagrams into a Markdown body as plain code fences.
+"""Splice rendered Mermaid diagrams into a Markdown body as tagged code fences.
 
 Rich has no public extension point for custom fenced-code-block rendering (the
 same constraint noted in wikilinks.py), so this runs as a text-level
 preprocessing pass before the body reaches `rich.markdown.Markdown`: it finds
 ` ```mermaid ` fences, renders their contents to box-drawing ASCII/Unicode art,
-and replaces the fence's info string so Rich treats the result as preformatted
-text rather than trying to syntax-highlight it as an unrecognized language.
+and replaces the fence's info string with `MERMAID_RENDERED_INFO` so the render
+path can treat diagram art differently from ordinary code (full natural width,
+no wrap/crop — VIEWMD-0018 / VIEWMD-0019).
 
 A fence that isn't a supported diagram type, or fails to parse, is left
 untouched -- the reader sees the original Mermaid source instead of a crash.
@@ -16,6 +17,11 @@ from __future__ import annotations
 import re
 
 from viewmd.mermaid import MermaidError, render
+
+# Sentinel info-string written onto fences that hold already-rendered diagram
+# art. Not a real language name; render.py's custom CodeBlock keys off this to
+# bypass the ordinary code-block truncation path (VIEWMD-0018 / VIEWMD-0019).
+MERMAID_RENDERED_INFO = "mermaid-rendered"
 
 _FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 
@@ -33,7 +39,7 @@ def render_mermaid_blocks(text: str) -> str:
             if end is not None:
                 rendered = _try_render("\n".join(body))
                 if rendered is not None:
-                    out.append(f"{indent}{fence}")
+                    out.append(f"{indent}{fence}{MERMAID_RENDERED_INFO}")
                     out.extend(rendered.rstrip("\n").split("\n"))
                     out.append(f"{indent}{fence}")
                     i = end + 1

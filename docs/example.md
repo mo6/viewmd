@@ -58,6 +58,17 @@ def render(text: str, *, width: int, color: bool) -> str:
     return _console_render(text, width=width, color=color)
 ```
 
+### A line too wide for the render width
+
+An ordinary code line longer than the render width stays intact on one line rather than folding
+onto a second (VIEWMD-0019) — same as a mermaid diagram (VIEWMD-0018). The line below is exactly
+120 characters; at the default 100-column cap it should still render as a single unbroken line,
+scrolling horizontally in the pager (`less -S`) instead of wrapping or being cut off:
+
+```python
+result = some_function(argument_one, argument_two, argument_three, argument_four, argument_five, argument_six, xxxxxxxx)
+```
+
 ## Wikilinks
 
 Obsidian-style wikilinks like [[Getting Started]] or [[Getting Started|a custom display name]]
@@ -134,6 +145,25 @@ sequenceDiagram
     Customer->>Gateway: submit request
     Gateway->>Support: escalate
     Support-->>Customer: follow up
+```
+
+### Full width, even wider than the terminal
+
+Diagram rows keep their natural width instead of being wrapped/padded to the render width
+(VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019). Try this one at the default
+100-column cap (`./viewmd.sh docs/example.md`) and notice every box stays intact on one row,
+scrolling horizontally in the pager instead of folding:
+
+```mermaid
+sequenceDiagram
+    participant AAAAAAAAAA as First service with a fairly long descriptive name
+    participant BBBBBBBBBB as Second service with a fairly long descriptive name
+    participant CCCCCCCCCC as Third service with a fairly long descriptive name
+    participant DDDDDDDDDD as Fourth service with a fairly long descriptive name
+    AAAAAAAAAA->>BBBBBBBBBB: forward the request
+    BBBBBBBBBB->>CCCCCCCCCC: forward it again
+    CCCCCCCCCC->>DDDDDDDDDD: and once more
+    DDDDDDDDDD-->>AAAAAAAAAA: finally, a response
 ```
 
 ### Graceful fallback
