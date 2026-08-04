@@ -17,16 +17,19 @@ from viewmd.preprocessors import preprocess
 
 
 class ViewmdCodeBlock(CodeBlock):
-    """Code fence that truncates ordinary lines and leaves mermaid art alone.
+    """Code fence that never wraps or loses content, mermaid art included.
 
     Rich 15's default ``CodeBlock`` hardcodes ``Syntax(..., word_wrap=True,
-    padding=1)``, which folds long lines and right-pads to the console width.
-    Ordinary fences here keep the original ``padding=1`` (same blank-line/
-    left-margin look as before) but set ``word_wrap=False`` so a line longer
-    than the render width is hard-cropped to that width instead of folding
-    (VIEWMD-0019). Mermaid-rendered fences (tagged with
-    ``MERMAID_RENDERED_INFO``) emit raw segments at the diagram's natural
-    width with no wrap, pad, or crop (VIEWMD-0018).
+    padding=1)``, which folds long lines onto extra rows instead of letting
+    them run wide. A line longer than the render width should stay intact and
+    scroll horizontally in the pager (``less -S``, set in pager.py) rather
+    than being torn onto a second line -- or, as an earlier version of this
+    class did, silently cropped and lost (VIEWMD-0019). Mermaid-rendered
+    fences (tagged with ``MERMAID_RENDERED_INFO``) already got this treatment
+    for VIEWMD-0018; ordinary fences now get the same one, via ``Syntax``
+    re-rendered at its own natural width (at least the console's width, so a
+    block whose lines all fit still fills the row as before) instead of the
+    console's declared width, so nothing is truncated.
     """
 
     def __rich_console__(
@@ -38,9 +41,13 @@ class ViewmdCodeBlock(CodeBlock):
                 yield Segment(line)
                 yield Segment.line()
             return
-        yield Syntax(
+        syntax = Syntax(
             code, self.lexer_name, theme=self.theme, word_wrap=False, padding=1
         )
+        natural_width = max((len(line) for line in code.splitlines()), default=0) + 2
+        wide_options = options.update(width=max(natural_width, options.max_width))
+        for line in console.render_lines(syntax, wide_options, pad=False, new_lines=True):
+            yield from line
 
 
 class ViewmdMarkdown(Markdown):
@@ -78,10 +85,11 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
     (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014).
 
-    ``crop=False`` on the body print lets mermaid diagram rows wider than ``width`` survive
-    intact (VIEWMD-0018); ordinary code fences still hard-crop to ``width`` inside
-    ``ViewmdCodeBlock`` (VIEWMD-0019). Paragraphs and other elements still wrap to ``width``
-    during render — only the final buffer crop is disabled.
+    ``crop=False`` on the body print lets fenced-code rows wider than ``width`` -- mermaid
+    diagram art (VIEWMD-0018) and ordinary code lines alike (VIEWMD-0019) -- survive intact
+    instead of being cropped away; ``ViewmdCodeBlock`` is what renders them at their own natural
+    width in the first place. Paragraphs, tables, and other elements still wrap to ``width``
+    during render — only fenced code is exempt, and only the final buffer crop is disabled.
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}

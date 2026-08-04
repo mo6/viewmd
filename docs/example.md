@@ -60,9 +60,10 @@ def render(text: str, *, width: int, color: bool) -> str:
 
 ### A line too wide for the render width
 
-Unlike a mermaid diagram, an ordinary code line longer than the render width is truncated, not
-wrapped (VIEWMD-0019). The line below is exactly 120 characters; at the default 100-column cap it
-should render as a single line, cut off mid-argument list, with nothing folding onto a second line:
+An ordinary code line longer than the render width stays intact on one line rather than folding
+onto a second (VIEWMD-0019) — same as a mermaid diagram (VIEWMD-0018). The line below is exactly
+120 characters; at the default 100-column cap it should still render as a single unbroken line,
+scrolling horizontally in the pager (`less -S`) instead of wrapping or being cut off:
 
 ```python
 result = some_function(argument_one, argument_two, argument_three, argument_four, argument_five, argument_six, xxxxxxxx)
@@ -149,9 +150,9 @@ sequenceDiagram
 ### Full width, even wider than the terminal
 
 Diagram rows keep their natural width instead of being wrapped/padded to the render width
-(VIEWMD-0018) — a code block's long lines are truncated instead (VIEWMD-0019), but a mermaid
-diagram never is. Try this one at the default 100-column cap (`./viewmd.sh docs/example.md`) and
-notice every box stays intact on one row, scrolling horizontally in the pager instead of folding:
+(VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019). Try this one at the default
+100-column cap (`./viewmd.sh docs/example.md`) and notice every box stays intact on one row,
+scrolling horizontally in the pager instead of folding:
 
 ```mermaid
 sequenceDiagram

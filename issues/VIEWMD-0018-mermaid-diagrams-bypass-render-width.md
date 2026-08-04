@@ -38,7 +38,7 @@ Redesigning the mermaid rendering algorithm itself, or changing how diagrams are
 
 ## Design notes / links
 
-This issue conflicts with the code-block truncation issue ([[VIEWMD-0019]]): since mermaid is currently rendered *as* a code block, a "truncate all code blocks" fix would also truncate diagrams. The two must be implemented together — the mermaid preprocessor should mark its output (sentinel info-string or a distinct render path) so diagrams and ordinary code get opposite treatment (diagrams: full natural width, no truncation; code: crop at render width).
+This issue conflicts with the code-block width issue ([[VIEWMD-0019]]): since mermaid is currently rendered *as* a code block, any change to how code blocks handle overly-wide lines needs to distinguish diagram art from ordinary code, via a sentinel info-string or a distinct render path. **Note:** VIEWMD-0019 originally planned "opposite treatment" (diagrams full-width, code cropped at render width), but was revised after testing to give both the same full-natural-width treatment — see VIEWMD-0019's peer review for why. The sentinel/distinguishing mechanism this issue calls for is still exactly what makes that possible; it just routes both to "don't lose content" instead of one path cropping.
 
 Source: https://github.com/mo6/viewmd/issues/2
 
