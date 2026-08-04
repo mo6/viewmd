@@ -1,4 +1,4 @@
-from viewmd.mermaid.preprocess import render_mermaid_blocks
+from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO, render_mermaid_blocks
 from viewmd.preprocessors import PREPROCESSORS, preprocess
 from viewmd.wikilinks import rewrite_wikilinks
 
@@ -11,5 +11,6 @@ def test_preprocess_runs_every_registered_step():
     text = "See [[Home]].\n\n```mermaid\nsequenceDiagram\nA->>B: hi\n```\n"
     got = preprocess(text)
     assert "[Home](wikilink:Home)" in got
-    assert "```mermaid" not in got
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
     assert "│" in got

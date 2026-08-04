@@ -13,8 +13,11 @@ SEQUENCE_DIAGRAM_KEYWORD = "sequenceDiagram"
 # --- regexes, transcribed 1:1 from parser.go ---
 
 _PARTICIPANT_RE = re.compile(
-    r'(?i)^\s*participant\s+(?:"([^"]+)"|(\S+))(?:\s+as\s+(.+))?$'
+    r'(?i)^\s*(?:participant|actor)\s+(?:"([^"]+)"|(\S+))(?:\s+as\s+(.+))?$'
 )
+# Which keyword introduced the declaration, checked separately so the capture
+# groups _parse_participant relies on stay untouched (VIEWMD-0017).
+_ACTOR_KEYWORD_RE = re.compile(r"(?i)^\s*actor\b")
 # The arrow is one of mermaid's ten message types: ->> / -->> (arrowhead), ->
 # / --> (open), -x / --x (cross), -) / --) (async point), <<->> / <<-->>
 # (bidirectional). Longer alternatives come first so e.g. "-->>" is never
@@ -106,6 +109,7 @@ class Participant:
     id: str
     label: str
     index: int
+    is_actor: bool = False
 
 
 @dataclass
@@ -330,7 +334,8 @@ def _parse_participant(
     if id_ in participants:
         return True, f'duplicate participant "{id_}"'
 
-    p = Participant(id=id_, label=label, index=len(sd.participants))
+    is_actor = bool(_ACTOR_KEYWORD_RE.match(line))
+    p = Participant(id=id_, label=label, index=len(sd.participants), is_actor=is_actor)
     sd.participants.append(p)
     participants[id_] = p
     return True, None

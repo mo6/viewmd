@@ -5,7 +5,10 @@ import shlex
 import subprocess
 import sys
 
-DEFAULT_PAGER = ["less", "-R", "-F", "-X"]
+# -S (chop long lines) so mermaid diagrams wider than the terminal stay on one
+# row inside less instead of soft-wrapping and destroying the 2D art
+# (VIEWMD-0018). Override via $PAGER if soft-wrap is preferred.
+DEFAULT_PAGER = ["less", "-R", "-F", "-X", "-S"]
 
 
 def should_page(no_pager_flag: bool) -> bool:
