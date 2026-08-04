@@ -171,3 +171,69 @@ def test_render_divider_matches_the_front_matter_divider_style():
     # Both use the same "═" double-line rule (VIEWMD-0004), reused here (VIEWMD-0013).
     assert "═" in front_matter_out
     assert divider_out.strip("\n") in front_matter_out
+
+
+def test_long_code_block_line_is_truncated_not_wrapped():
+    # VIEWMD-0019: a 120-char line at width 100 must stay one output line, hard-cropped.
+    long_line = "x" * 120
+    md = f"```\n{long_line}\n```\n"
+    out = strip_ansi(render_markdown(md, width=100, color=False))
+    content_lines = [line for line in out.splitlines() if line.strip()]
+    assert len(content_lines) == 1, f"expected 1 content line, got {content_lines!r}"
+    assert len(content_lines[0]) == 100
+    assert content_lines[0] == "x" * 100
+    assert "x" * 101 not in out
+
+
+def test_wide_mermaid_diagram_keeps_natural_width():
+    # VIEWMD-0018: each diagram row stays intact at the default width cap of 100.
+    md = (
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "    participant AAAAAAAAAA as First service with a long name\n"
+        "    participant BBBBBBBBBB as Second service with a long name\n"
+        "    participant CCCCCCCCCC as Third service with a long name\n"
+        "    AAAAAAAAAA->>BBBBBBBBBB: do something\n"
+        "    BBBBBBBBBB->>CCCCCCCCCC: forward it\n"
+        "```\n"
+    )
+    out = strip_ansi(render_markdown(md, width=100, color=False))
+    content_lines = [line for line in out.splitlines() if line.strip()]
+    assert content_lines, "expected diagram output"
+    assert any(len(line) > 100 for line in content_lines), (
+        "expected at least one diagram row wider than 100, got lens="
+        f"{[len(line) for line in content_lines]}"
+    )
+    # Actor labels must appear unbroken on a single row (not split across wrapped lines).
+    intact = any(
+        "First service with a long name" in line and "Third service with a long name" in line
+        for line in content_lines
+    )
+    assert intact, f"expected all three actor labels on one intact row, got: {content_lines}"
+    # No wrap-artifact: a line that is only the spilled tail of a label.
+    assert not any(line.lstrip().startswith("with a long name") for line in content_lines)
+
+
+def test_code_truncation_does_not_apply_to_mermaid_and_mermaid_bypass_does_not_widen_code():
+    # Regression: the mermaid-rendered sentinel must discriminate the two paths.
+    long_line = "y" * 120
+    code_md = f"```\n{long_line}\n```\n"
+    mermaid_md = (
+        "```mermaid\n"
+        "sequenceDiagram\n"
+        "    participant AAAAAAAAAA as First service with a long name\n"
+        "    participant BBBBBBBBBB as Second service with a long name\n"
+        "    participant CCCCCCCCCC as Third service with a long name\n"
+        "    AAAAAAAAAA->>BBBBBBBBBB: do something\n"
+        "```\n"
+    )
+    code_out = strip_ansi(render_markdown(code_md, width=100, color=False))
+    mermaid_out = strip_ansi(render_markdown(mermaid_md, width=100, color=False))
+
+    code_lines = [line for line in code_out.splitlines() if line.strip()]
+    assert len(code_lines) == 1
+    assert len(code_lines[0]) == 100
+
+    mermaid_lines = [line for line in mermaid_out.splitlines() if line.strip()]
+    assert any(len(line) > 100 for line in mermaid_lines)
+    assert "y" * 101 not in mermaid_out

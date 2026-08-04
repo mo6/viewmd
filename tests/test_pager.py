@@ -25,6 +25,11 @@ def test_display_prints_directly_when_not_paging(monkeypatch, capsys):
     assert capsys.readouterr().out == "hello"
 
 
+def test_default_pager_chops_long_lines():
+    # VIEWMD-0018: -S so less does not soft-wrap wide mermaid rows.
+    assert "-S" in pager.DEFAULT_PAGER
+
+
 def test_display_invokes_pager_when_paging(monkeypatch):
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     calls = []

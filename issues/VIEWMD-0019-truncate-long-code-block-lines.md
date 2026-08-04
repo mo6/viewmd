@@ -50,3 +50,5 @@ Source: https://github.com/mo6/viewmd/issues/3
 
 ## Peer review
 
+- **Cursor Grok** (agent), 2026-08-04: accept. Implemented jointly with VIEWMD-0018 via the shared `mermaid-rendered` sentinel. Ordinary fences go through `ViewmdCodeBlock` → `Syntax(..., word_wrap=False, padding=0)`, which hard-crops at the console width; mermaid-tagged fences take the Segment path and are unaffected. Open question (req. 4): hard crop rather than an ellipsis marker — silent cut matches Rich's native no-wrap crop and is consistent with the pager's new `-S` chop; an ellipsis would invent content that was never in the source. Reproduction: 120-char line at width 100 → exactly one 100-column output line. Cross-issue discrimination test confirms ordinary code still truncates when mermaid bypasses. `./run-tests.sh` green (192 passed).
+

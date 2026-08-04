@@ -60,3 +60,5 @@ Source: https://github.com/mo6/viewmd/issues/2
 
 ## Peer review
 
+- **Cursor Grok** (agent), 2026-08-04: accept. Shared sentinel `mermaid-rendered` in `viewmd/mermaid/preprocess.py` discriminates the two paths; `ViewmdCodeBlock` emits raw `Segment`s for that sentinel (natural width, no pad/wrap) and `Syntax(..., word_wrap=False, padding=0)` for ordinary fences (hard crop to render width). Body print uses `crop=False` so wide mermaid rows survive Rich's post-render crop without disabling paragraph wrapping. Open questions resolved: (req. 4) hard crop, not ellipsis — matches `Syntax`'s native `word_wrap=False` behavior and `less -S` semantics, no invented marker; (req. 4) added `-S` to `DEFAULT_PAGER` so less chops long diagram rows instead of soft-wrapping them (overridable via `$PAGER`). Reproduction at width 100 keeps all three actor labels on one intact row; 120-char code line yields exactly one 100-column line. Discrimination regression covers both directions. `./run-tests.sh` green (192 passed).
+
