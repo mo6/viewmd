@@ -136,6 +136,25 @@ sequenceDiagram
     Support-->>Customer: follow up
 ```
 
+### Full width, even wider than the terminal
+
+Diagram rows keep their natural width instead of being wrapped/padded to the render width
+(VIEWMD-0018) — a code block's long lines are truncated instead (VIEWMD-0019), but a mermaid
+diagram never is. Try this one at the default 100-column cap (`./viewmd.sh docs/example.md`) and
+notice every box stays intact on one row, scrolling horizontally in the pager instead of folding:
+
+```mermaid
+sequenceDiagram
+    participant AAAAAAAAAA as First service with a fairly long descriptive name
+    participant BBBBBBBBBB as Second service with a fairly long descriptive name
+    participant CCCCCCCCCC as Third service with a fairly long descriptive name
+    participant DDDDDDDDDD as Fourth service with a fairly long descriptive name
+    AAAAAAAAAA->>BBBBBBBBBB: forward the request
+    BBBBBBBBBB->>CCCCCCCCCC: forward it again
+    CCCCCCCCCC->>DDDDDDDDDD: and once more
+    DDDDDDDDDD-->>AAAAAAAAAA: finally, a response
+```
+
 ### Graceful fallback
 
 Diagram types other than `sequenceDiagram` — and any block that fails to parse — render as plain

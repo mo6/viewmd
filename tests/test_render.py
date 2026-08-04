@@ -174,14 +174,16 @@ def test_render_divider_matches_the_front_matter_divider_style():
 
 
 def test_long_code_block_line_is_truncated_not_wrapped():
-    # VIEWMD-0019: a 120-char line at width 100 must stay one output line, hard-cropped.
+    # VIEWMD-0019: a 120-char line at width 100 must stay one output line, hard-cropped
+    # (padding=1 around code content is kept, same as before this feature -- so the visible
+    # "x" run is 100 minus the 1-column margin on each side, not the full 100).
     long_line = "x" * 120
     md = f"```\n{long_line}\n```\n"
     out = strip_ansi(render_markdown(md, width=100, color=False))
     content_lines = [line for line in out.splitlines() if line.strip()]
     assert len(content_lines) == 1, f"expected 1 content line, got {content_lines!r}"
     assert len(content_lines[0]) == 100
-    assert content_lines[0] == "x" * 100
+    assert "x" * 99 not in content_lines[0]  # never let the full 120-char line through
     assert "x" * 101 not in out
 
 

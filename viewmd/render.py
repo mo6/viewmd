@@ -21,10 +21,12 @@ class ViewmdCodeBlock(CodeBlock):
 
     Rich 15's default ``CodeBlock`` hardcodes ``Syntax(..., word_wrap=True,
     padding=1)``, which folds long lines and right-pads to the console width.
-    Ordinary fences here use ``word_wrap=False`` so a line longer than the
-    render width is hard-cropped to that width (VIEWMD-0019). Mermaid-rendered
-    fences (tagged with ``MERMAID_RENDERED_INFO``) emit raw segments at the
-    diagram's natural width with no wrap, pad, or crop (VIEWMD-0018).
+    Ordinary fences here keep the original ``padding=1`` (same blank-line/
+    left-margin look as before) but set ``word_wrap=False`` so a line longer
+    than the render width is hard-cropped to that width instead of folding
+    (VIEWMD-0019). Mermaid-rendered fences (tagged with
+    ``MERMAID_RENDERED_INFO``) emit raw segments at the diagram's natural
+    width with no wrap, pad, or crop (VIEWMD-0018).
     """
 
     def __rich_console__(
@@ -37,7 +39,7 @@ class ViewmdCodeBlock(CodeBlock):
                 yield Segment.line()
             return
         yield Syntax(
-            code, self.lexer_name, theme=self.theme, word_wrap=False, padding=0
+            code, self.lexer_name, theme=self.theme, word_wrap=False, padding=1
         )
 
 
