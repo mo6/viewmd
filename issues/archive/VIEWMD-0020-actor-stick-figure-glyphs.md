@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0020
 title: Render Mermaid sequence-diagram actors as stick-figure glyphs
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-04
 updated: 2026-08-04
 accepted_by: George Moses
 accepted_at: 2026-08-04
-commits: []
+commits: [035aaff]
 related: [VIEWMD-0017]
 supersedes: []
-changelog:
+changelog: "[1.4.0]"
 reason:
 ---
 

@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.4.0] — 2026-08-04
+
+- **Render Mermaid sequence-diagram actors as stick-figure glyphs** (VIEWMD-0020, render/mermaid): an `actor`-declared participant now draws a 3-line stick figure (head, arms/torso, legs) above its label instead of an ordinary box top, matching real Mermaid's visual distinction between `actor` and `participant`. One of five figure variants is chosen at random per actor; with multiple actors in one diagram, each gets a different figure before any repeat. A diagram with no actors renders byte-for-byte as before. `docs/example.md` gained an "Actors" section demonstrating it.
+
 ## [1.3.1] — 2026-08-04
 
 - **Accept `actor` as a synonym for `participant` in Mermaid sequence diagrams** (VIEWMD-0017, render/mermaid): a sequence diagram declaring a participant with `actor` (instead of `participant`) previously failed to parse, silently falling all the way back to raw Mermaid source for the whole diagram. `actor` now parses identically to `participant` (including quoted-name and `as`-label forms) and renders as a box; a distinct stick-figure glyph for `actor` is tracked separately as VIEWMD-0020.
