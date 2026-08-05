@@ -5,7 +5,7 @@
 │ │         │        │
 │ │ try     │        │
 │ ├────────►│        │
-├┈[network failure]┈┈┤
+├·[network failure]··┤
 │ │         │        │
 │ │ retry   │        │
 │ ├────────►│        │
