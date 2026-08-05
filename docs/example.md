@@ -48,7 +48,8 @@ Paragraphs support **bold**, *italic*, ***bold italic***, ~~strikethrough~~, and
 | Front matter     | done        | rendered as a table, see the top of this file |
 | Wikilinks        | done        | see below                                 |
 | Mermaid sequence | done        | see below                                 |
-| Mermaid flowchart | not yet    | falls back to plain source (see below)    |
+| Mermaid flowchart | done       | see below                                 |
+| Mermaid ER diagram | done      | see [docs/mermaid-examples.md](mermaid-examples.md) |
 
 ## Syntax-highlighted code
 
@@ -76,11 +77,12 @@ render the same as an ordinary Markdown link, brackets gone.
 
 ## Mermaid diagrams
 
-A fenced ` ```mermaid ` block containing a `sequenceDiagram` or `graph`/`flowchart` renders as
-box-drawing art in place of its source. See
-[docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of both — every arrow type
-and fragment, every flowchart direction/subgraph/styling case, and the graceful-fallback behavior
-for diagram types that aren't supported yet. Two representative examples here:
+A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart`, or `erDiagram`
+renders as box-drawing art in place of its source. See
+[docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of all three — every arrow
+type and fragment, every flowchart direction/subgraph/styling case, ER cardinality notation, and
+the graceful-fallback behavior for diagram types that aren't supported yet. Three representative
+examples here:
 
 ```mermaid
 sequenceDiagram
@@ -100,6 +102,19 @@ graph TD
     A[Start] --> B{Decision}
     B -->|yes| C[Do it]
     B -->|no| D[Skip it]
+```
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    CUSTOMER {
+        string name
+        string custNumber PK
+    }
+    ORDER {
+        int orderNumber
+        string deliveryAddress
+    }
 ```
 
 Diagram rows keep their natural width instead of being wrapped/padded to the render width

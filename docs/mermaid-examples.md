@@ -15,7 +15,8 @@ art), and a living manual testcase — if a change to the renderer breaks one of
 visibly wrong here even before `./run-tests.sh` catches it.
 
 `docs/example.md` covers Mermaid alongside viewmd's other Markdown features, with just a couple of
-representative examples; this file is Mermaid-only and goes deep on both diagram types instead.
+representative examples; this file is Mermaid-only and goes deep on all three diagram types
+instead.
 
 ## Sequence diagrams
 
@@ -262,11 +263,64 @@ graph TD
     A[This is a rather long label for testing width] --> B[Another long one here too]
 ```
 
+## Entity-relationship diagrams
+
+### Attribute tables and crow's-foot cardinality
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    CUSTOMER {
+        string name
+        string custNumber PK
+        string sector
+    }
+    ORDER {
+        int orderNumber
+        string deliveryAddress
+    }
+```
+
+### Identifying vs. non-identifying relationships
+
+A solid line (`--`) is an identifying relationship; a dashed line (`..`) is non-identifying:
+
+```mermaid
+erDiagram
+    A }o..o{ B : "non-identifying"
+    B ||--|| C : has
+    A ||--|| A : self
+```
+
+### Word and numeric cardinality shorthand
+
+Crow's-foot tokens (`||`, `o{`, ...), numeric shorthand (`1`, `0+`), and word phrases (`one`,
+`zero or more`) are all accepted, alongside the `to` / `optionally to` word connector:
+
+```mermaid
+erDiagram
+    A ||--o{ B : "crow's foot"
+    A one to zero or more C : "words"
+    A 1 to 0+ D : "numeric"
+```
+
+### Attribute keys, comments, and non-string types
+
+```mermaid
+erDiagram
+    PRODUCT {
+        string sku PK
+        string supplierId FK
+        decimal price "unit price"
+    }
+    ORDER ||--|{ PRODUCT : contains
+```
+
 ## Graceful fallback
 
-Diagram types other than `sequenceDiagram` and `graph`/`flowchart` — and any block that fails to
-parse — render as plain source text instead of raising an error, since only those two are
-supported so far:
+Diagram types other than `sequenceDiagram`, `graph`/`flowchart`, and `erDiagram` — and any block
+that fails to parse — render as plain source text instead of raising an error, since only those
+three are supported so far:
 
 ```mermaid
 classDiagram

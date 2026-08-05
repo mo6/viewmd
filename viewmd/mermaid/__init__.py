@@ -3,12 +3,16 @@
 A from-scratch Python port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT
 licensed; see /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to
 avoid bundling a per-platform compiled binary in a pure-Python CLI tool.
-Sequence diagrams and flowcharts are supported; other Mermaid diagram types
-raise `UnsupportedDiagramError`.
+Sequence diagrams, flowcharts, and entity-relationship diagrams are supported;
+other Mermaid diagram types raise `UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
 
+from viewmd.mermaid.er.parser import ParseError as _ErParseError
+from viewmd.mermaid.er.parser import parse as _parse_er
+from viewmd.mermaid.er.parser import sniff as _is_er_diagram
+from viewmd.mermaid.er.renderer import render as _render_er
 from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
@@ -53,4 +57,10 @@ def render(text: str, *, use_ascii: bool = False) -> str:
             # an internal failure on unusual input must still fall back to
             # showing the raw fence, never crash viewmd (VIEWMD-0015 req. 6).
             raise MermaidError(f"failed to render flowchart: {e}") from e
+    if _is_er_diagram(text):
+        try:
+            diagram = _parse_er(text)
+        except _ErParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_er(diagram, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

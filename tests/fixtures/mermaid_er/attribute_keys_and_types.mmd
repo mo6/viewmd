@@ -1,0 +1,9 @@
+erDiagram
+    PRODUCT {
+        string sku PK
+        string upc "UK code" UK
+        string supplierId FK
+        decimal(10, 2) price "unit price"
+        string `two words` "backtick name"
+    }
+    ORDER ||--|{ PRODUCT : contains
