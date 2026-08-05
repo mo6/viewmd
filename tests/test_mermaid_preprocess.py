@@ -12,12 +12,38 @@ def test_renders_a_sequence_diagram_fence_as_tagged_code():
 
 
 def test_unsupported_diagram_type_is_left_untouched():
-    text = "```mermaid\ngraph TD\n    A --> B\n```\n"
+    text = "```mermaid\nclassDiagram\n    Animal <|-- Duck\n```\n"
     assert render_mermaid_blocks(text) == text
 
 
 def test_invalid_sequence_diagram_is_left_untouched():
     text = "```mermaid\nsequenceDiagram\nthis is not valid syntax !!\n```\n"
+    assert render_mermaid_blocks(text) == text
+
+
+def test_renders_a_flowchart_fence_as_tagged_code():
+    text = "```mermaid\ngraph TD\n    A --> B\n```\n"
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "┌───┐" in got
+
+
+def test_invalid_flowchart_is_left_untouched():
+    text = "```mermaid\ngraph FOO\nA-->B\n```\n"
+    assert render_mermaid_blocks(text) == text
+
+
+def test_renders_an_er_diagram_fence_as_tagged_code():
+    text = "```mermaid\nerDiagram\n    CUSTOMER ||--o{ ORDER : places\n```\n"
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "┌──────────┐" in got
+
+
+def test_invalid_er_diagram_is_left_untouched():
+    text = "```mermaid\nerDiagram\nthis is not valid syntax !!\n```\n"
     assert render_mermaid_blocks(text) == text
 
 

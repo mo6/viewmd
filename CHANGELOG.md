@@ -4,6 +4,18 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.6.0] — 2026-08-05
+
+- **Render Mermaid entity-relationship diagrams as box-drawing ASCII art** (VIEWMD-0016, render/mermaid): a fenced ` ```mermaid ` block containing an `erDiagram` now renders the same way sequence diagrams and flowcharts already do -- entity attribute tables, crow's-foot cardinality notation (crow's-foot tokens, numeric shorthand, and word phrases), and identifying (solid) vs. non-identifying (dashed) relationships, including self-loops. Ported byte-for-byte from `pkg/er` of the real `mermaid-ascii` Go reference, self-contained rather than reusing the flowchart port's grid engine. A trailing attribute key silently dropped when it follows a quoted comment on the same line is a faithfully-reproduced upstream parsing bug, tracked for a possible viewmd-side fix as VIEWMD-0029; the dashed-relationship glyphs' terminal-font legibility and the layout's visual density on small diagrams are tracked as VIEWMD-0030 and VIEWMD-0031. See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of all three diagram types.
+
+## [1.5.0] — 2026-08-05
+
+- **Render Mermaid flowchart diagrams as box-drawing ASCII art** (VIEWMD-0015, render/mermaid): a fenced ` ```mermaid ` block containing a `graph`/`flowchart` now renders the same way sequence diagrams already do -- node boxes, labelled/unlabelled/bidirectional/chained/fan-out edges, subgraphs (including nested), `classDef`/`:::` styling (rendered as real ANSI colour), and edges automatically routed around obstacle nodes via A*. Ported byte-for-byte against the real `mermaid-ascii` Go reference, including two of its real limitations: only `A[Label]` square-bracket syntax renders as a distinct shape (other shape syntax falls back to a bare label), and `BT`/`RL` directions are accepted but not actually reversed (aliased to `TD`/`LR`) -- both tracked for a possible future viewmd-only extension (VIEWMD-0022, VIEWMD-0027), along with a few other upstream quirks found during review (VIEWMD-0023, VIEWMD-0025, VIEWMD-0028). See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of both diagram types.
+
+## [1.4.2] — 2026-08-05
+
+- **Mermaid sequence-diagram dotted arrows now render on terminals whose font lacks the box-drawing quadruple-dash glyph** (VIEWMD-0021, render/mermaid): dotted message lines (`-->>`, `-->`, `--x`, `--)`, `<<-->>`) and the `alt`/`else` divider used `┈` (U+2508), a glyph many monospace terminal fonts don't cover, so the dashed segment rendered as blank space instead of a visible line. It now uses `·` (U+00B7 MIDDLE DOT), which has near-universal monospace support and reads clearly as dotted.
+
 ## [1.4.1] — 2026-08-04
 
 - **Mermaid diagrams and code blocks keep their natural width instead of being wrapped or cropped** (VIEWMD-0018, VIEWMD-0019, render/mermaid): a mermaid diagram wider than the render width used to be word-wrapped and padded like ordinary text, interleaving box tops, labels, and lifelines onto separate rows and destroying the art; it now renders at its own natural width, scrolling horizontally in the pager (`less -S`, now the default) instead. A code-block line longer than the render width used to fold onto an extra line; it now stays intact on one line the same way, so nothing folds and nothing is silently cut off, regardless of the terminal or `--width` setting. A short block (all lines already fit) still fills/pads to the full render width, unchanged.
