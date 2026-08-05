@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0015
 title: Render Mermaid flowchart diagrams as box-drawing ASCII art
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-03
 updated: 2026-08-05
 accepted_by: George Moses
 accepted_at: 2026-08-05
-commits: []
-related: [VIEWMD-0014, VIEWMD-0022]
+commits: [169286d]
+related: [VIEWMD-0014, VIEWMD-0022, VIEWMD-0023, VIEWMD-0025, VIEWMD-0027, VIEWMD-0028]
 supersedes: []
-changelog:
+changelog: "[1.5.0]"
 reason:
 ---
 
