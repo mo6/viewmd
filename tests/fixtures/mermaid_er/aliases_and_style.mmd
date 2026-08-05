@@ -1,0 +1,15 @@
+erDiagram
+    direction LR
+    %% a full-line comment
+    CUST["Customer"] {
+        string name "the customer's name"
+        string id PK "unique id"
+    }
+    CUST ||--o{ ORD : places
+    accTitle: my diagram
+    accDescr: some description
+    classDef foo fill:#f00
+    class CUST foo
+    ORD:::highlight {
+        int num
+    }
