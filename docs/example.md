@@ -81,7 +81,7 @@ A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart
 renders as box-drawing art in place of its source. See
 [docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of all three — every arrow
 type and fragment, every flowchart direction/subgraph/styling case, ER cardinality notation, and
-the graceful-fallback behavior for diagram types that aren't supported yet. Two representative
+the graceful-fallback behavior for diagram types that aren't supported yet. Three representative
 examples here:
 
 ```mermaid
@@ -102,6 +102,19 @@ graph TD
     A[Start] --> B{Decision}
     B -->|yes| C[Do it]
     B -->|no| D[Skip it]
+```
+
+```mermaid
+erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    CUSTOMER {
+        string name
+        string custNumber PK
+    }
+    ORDER {
+        int orderNumber
+        string deliveryAddress
+    }
 ```
 
 Diagram rows keep their natural width instead of being wrapped/padded to the render width
