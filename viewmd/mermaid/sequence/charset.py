@@ -47,6 +47,12 @@ UNICODE = BoxChars(
     cross_head="×", point_right=")", point_left="(",
     # 'o' rather than '○': the latter is East-Asian-ambiguous width and would
     # break column alignment in CJK-capable terminals.
-    circle="o", solid_line="─", dotted_line="┈",
+    # '·' (U+00B7 MIDDLE DOT) rather than '┈' (U+2508 BOX DRAWINGS LIGHT
+    # QUADRUPLE DASH HORIZONTAL): the quadruple-dash glyph sits outside the
+    # basic box-drawing range many monospace terminal fonts actually cover
+    # and renders blank, making dotted arrows indistinguishable from empty
+    # space. The middle dot is a Latin-1 codepoint with near-universal
+    # monospace coverage and reads clearly as a dotted line.
+    circle="o", solid_line="─", dotted_line="·",
     self_top_right="┐", self_bottom="┘",
 )
