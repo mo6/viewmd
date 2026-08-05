@@ -48,3 +48,4 @@ Render a `sequenceDiagram` with a `-->>` message and an `alt`/`else` block throu
 ## Peer review
 
 - **Claude** (agent), 2026-08-05: `UNICODE.dotted_line` changed from `┈` (U+2508) to `·` (U+00B7 MIDDLE DOT); updated the 14 `.unicode.out` golden fixtures under `tests/fixtures/mermaid_sequence/` that embedded the old glyph. `./run-tests.sh` (pytest, ruff, pip-audit, issues check) all green; visually confirmed dotted arrows and the `alt`/`else` divider render correctly. `ASCII.dotted_line` and all other glyphs left untouched, per requirements 2-3.
+- **George Moses** (maintainer), 2026-08-05: approved — "it's much clearer now". Commit and close out.
