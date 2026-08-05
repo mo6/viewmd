@@ -5,7 +5,15 @@ from __future__ import annotations
 
 import re
 
+from wcwidth import wcswidth
+
 _NEWLINE_RE = re.compile(r"\n|\\n")
+
+
+def width(s: str) -> int:
+    """Display width of `s`, matching the Go port's `go-runewidth` usage."""
+    w = wcswidth(s)
+    return w if w >= 0 else len(s)
 
 
 def split_lines(text: str) -> list[str]:

@@ -78,4 +78,37 @@ actual new paragraph, a list item, or a heading.
 single-user CLI tool has no distinct actor roles to write stories from. Each issue's body states
 testable requirements directly; see [issues/TEMPLATE.md](issues/TEMPLATE.md).
 
+**Porting an upstream reference implementation byte-for-byte means porting its bugs too —
+deliberately.** VIEWMD-0015 (Mermaid flowcharts, ported from `github.com/AlexanderGrooff/mermaid-ascii`)
+established the pattern: the porting issue itself (its "MUST verify byte-for-byte against the real
+[reference] binary" requirement) is not the place to silently "fix" a limitation or bug found in
+the reference while porting it — that changes what's being verified against and defeats the
+differential-testing methodology. Instead, note the finding, keep the port faithful, and open a
+*separate* issue for each divergence the maintainer wants fixed (VIEWMD-0015 spawned six of these:
+VIEWMD-0022/0023/0025/0026/0027/0028), each explicit that it's intentionally departing from the
+byte-for-byte baseline rather than continuing it — including in its own testing posture (hand-verified
+fixtures, not differential ones, since there's no longer a reference output to diff against).
+
+**A bug found in the reference implementation itself is not a viewmd issue.** It belongs in a
+plain write-up (root cause, exact source lines, a minimal repro, a suggested fix) for the
+maintainer to file with the upstream project directly — keep it out of `issues/` and out of
+`git` entirely (it's not about this codebase), a scratch/local file is the right home. A viewmd
+issue is warranted only for the *separate* question of whether viewmd's own port should diverge
+from that (buggy) upstream behavior going forward.
+
+**When porting an algorithm that depends on iteration/tie-break order (a heap, a search,
+anything whose *exact* output among several equally-valid answers matters for a byte-for-byte
+match), re-implement the source language's *exact* algorithm, not just an equivalent one from the
+target language's standard library.** VIEWMD-0015 needed this for its A* router: Python's
+`heapq` is a different (though also standard) binary-heap implementation than Go's
+`container/heap`, and pops equal-priority items in a different order for the same push sequence —
+producing a different, equally-valid-looking but non-matching routed path. The fix was porting
+`container/heap`'s own push/pop/up/down by hand. A subtler trap inside that same port: Go's `/`
+truncates toward zero, Python's `//` floors toward negative infinity — identical for non-negative
+operands, silently different for negative ones (e.g. `(-1) / 2` is `0` in Go, `-1` in Python).
+A heap's parent-index arithmetic (`(j-1)/2`) hits this exactly at the root; get it wrong and the
+heap silently corrupts rather than erroring, only visible as occasional wrong output deep in a
+differential-test corpus. Differential-test the specific subroutine standalone (not just the
+end-to-end render) when porting anything like this.
+
 Status: pre-1.0, in initial development.

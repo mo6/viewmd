@@ -5,8 +5,6 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from wcwidth import wcswidth
-
 from viewmd.mermaid.sequence.charset import ASCII, UNICODE, BoxChars
 from viewmd.mermaid.sequence.parser import (
     Event,
@@ -18,6 +16,7 @@ from viewmd.mermaid.sequence.parser import (
     Participant,
     SequenceDiagram,
 )
+from viewmd.mermaid.textutil import width as _width
 
 DEFAULT_SELF_MESSAGE_WIDTH = 4
 DEFAULT_MESSAGE_SPACING = 1
@@ -42,11 +41,6 @@ ACTOR_FIGURES: list[tuple[str, str, str]] = [
     (" o ", "(|)", "/ \\"),
     ("\\o/", " | ", "/ \\"),
 ]
-
-
-def _width(s: str) -> int:
-    w = wcswidth(s)
-    return w if w >= 0 else len(s)
 
 
 @dataclass
