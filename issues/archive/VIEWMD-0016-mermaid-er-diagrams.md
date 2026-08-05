@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0016
 title: Render Mermaid entity-relationship diagrams as box-drawing ASCII art
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-03
 updated: 2026-08-05
 accepted_by: George Moses
 accepted_at: 2026-08-05
-commits: []
-related: [VIEWMD-0014, VIEWMD-0015]
+commits: [ec21639]
+related: [VIEWMD-0014, VIEWMD-0015, VIEWMD-0029, VIEWMD-0030, VIEWMD-0031]
 supersedes: []
-changelog:
+changelog: "[1.6.0]"
 reason:
 ---
 
