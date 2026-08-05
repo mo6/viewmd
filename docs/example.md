@@ -74,118 +74,26 @@ result = some_function(argument_one, argument_two, argument_three, argument_four
 Obsidian-style wikilinks like [[Getting Started]] or [[Getting Started|a custom display name]]
 render the same as an ordinary Markdown link, brackets gone.
 
-## Mermaid sequence diagrams
+## Mermaid diagrams
 
-A fenced ` ```mermaid ` block containing a `sequenceDiagram` renders as box-drawing art in place
-of its source.
-
-### Basic messages and arrow types
-
-```mermaid
-sequenceDiagram
-    participant Alice
-    participant Bob
-    Alice->>Bob: solid arrow with head
-    Bob-->>Alice: dotted arrow with head
-    Alice->Bob: solid, no head
-    Bob-->Alice: dotted, no head
-    Alice-xBob: solid, cross head (failed message)
-    Bob--)Alice: dotted, async point head
-    Alice<<->>Bob: bidirectional
-```
-
-### Self-messages and central connections
-
-```mermaid
-sequenceDiagram
-    participant Worker
-    Worker->>Worker: think it over
-    Worker()->>()Worker: central connection on both ends
-```
-
-### Notes
-
-```mermaid
-sequenceDiagram
-    participant Alice
-    participant Bob
-    Alice->>Bob: start the job
-    Note over Alice,Bob: both parties agree on scope
-    Note right of Bob: Bob starts work
-    Bob-->>Alice: done
-```
-
-### Fragments: loop, alt, and autonumber
+A fenced ` ```mermaid ` block containing a `sequenceDiagram` or `graph`/`flowchart` renders as
+box-drawing art in place of its source. See
+[docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of both — every arrow type
+and fragment, every flowchart direction/subgraph/styling case, and the graceful-fallback behavior
+for diagram types that aren't supported yet. Two representative examples here:
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant Client
     participant Server
-    loop retry until acknowledged
-        Client->>Server: request
-        alt server is healthy
-            Server-->>Client: 200 OK
-        else server is overloaded
-            Server-->>Client: 503, retry later
-        end
+    Client->>Server: request
+    alt server is healthy
+        Server-->>Client: 200 OK
+    else server is overloaded
+        Server-->>Client: 503, retry later
     end
 ```
-
-### Actors
-
-An `actor` declaration draws a random 3-line stick figure instead of a plain box; with more than
-one actor in a diagram, each gets a different figure before any repeat.
-
-```mermaid
-sequenceDiagram
-    actor Customer
-    participant Gateway
-    actor Support
-    Customer->>Gateway: submit request
-    Gateway->>Support: escalate
-    Support-->>Customer: follow up
-```
-
-### Full width, even wider than the terminal
-
-Diagram rows keep their natural width instead of being wrapped/padded to the render width
-(VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019). Try this one at the default
-100-column cap (`./viewmd.sh docs/example.md`) and notice every box stays intact on one row,
-scrolling horizontally in the pager instead of folding:
-
-```mermaid
-sequenceDiagram
-    participant AAAAAAAAAA as First service with a fairly long descriptive name
-    participant BBBBBBBBBB as Second service with a fairly long descriptive name
-    participant CCCCCCCCCC as Third service with a fairly long descriptive name
-    participant DDDDDDDDDD as Fourth service with a fairly long descriptive name
-    AAAAAAAAAA->>BBBBBBBBBB: forward the request
-    BBBBBBBBBB->>CCCCCCCCCC: forward it again
-    CCCCCCCCCC->>DDDDDDDDDD: and once more
-    DDDDDDDDDD-->>AAAAAAAAAA: finally, a response
-```
-
-### Graceful fallback
-
-Diagram types other than `sequenceDiagram` and `graph`/`flowchart` — and any block that fails to
-parse — render as plain source text instead of raising an error, since only those two are
-supported so far:
-
-```mermaid
-classDiagram
-    Animal <|-- Duck
-```
-
-## Mermaid flowcharts
-
-A fenced ` ```mermaid ` block containing a `graph`/`flowchart` renders as box-drawing art too, the
-same way sequence diagrams do. Only `A[Label]` square-bracket syntax renders as a distinct box —
-other mermaid shape syntax (`()`, `{}`, `(())`) falls back to a bare label, matching a real
-limitation of the upstream renderer this is ported from — and `BT`/`RL` directions are accepted
-but drawn the same as `TD`/`LR` rather than actually reversed, for the same reason.
-
-### Branching and labelled edges
 
 ```mermaid
 graph TD
@@ -194,16 +102,6 @@ graph TD
     B -->|no| D[Skip it]
 ```
 
-### Subgraphs and left-to-right layout
-
-```mermaid
-graph LR
-    subgraph Frontend
-        UI[UI] --> API[API Client]
-    end
-    subgraph Backend
-        Server[Server] --> DB[(Database)]
-    end
-    API --> Server
-    DB --> Server
-```
+Diagram rows keep their natural width instead of being wrapped/padded to the render width
+(VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019); docs/mermaid-examples.md has
+an example wide enough to demonstrate the horizontal scroll this produces in the pager.
