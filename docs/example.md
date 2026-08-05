@@ -168,12 +168,42 @@ sequenceDiagram
 
 ### Graceful fallback
 
-Diagram types other than `sequenceDiagram` — and any block that fails to parse — render as plain
-source text instead of raising an error, since only sequence diagrams are supported so far:
+Diagram types other than `sequenceDiagram` and `graph`/`flowchart` — and any block that fails to
+parse — render as plain source text instead of raising an error, since only those two are
+supported so far:
+
+```mermaid
+classDiagram
+    Animal <|-- Duck
+```
+
+## Mermaid flowcharts
+
+A fenced ` ```mermaid ` block containing a `graph`/`flowchart` renders as box-drawing art too, the
+same way sequence diagrams do. Only `A[Label]` square-bracket syntax renders as a distinct box —
+other mermaid shape syntax (`()`, `{}`, `(())`) falls back to a bare label, matching a real
+limitation of the upstream renderer this is ported from — and `BT`/`RL` directions are accepted
+but drawn the same as `TD`/`LR` rather than actually reversed, for the same reason.
+
+### Branching and labelled edges
 
 ```mermaid
 graph TD
     A[Start] --> B{Decision}
     B -->|yes| C[Do it]
     B -->|no| D[Skip it]
+```
+
+### Subgraphs and left-to-right layout
+
+```mermaid
+graph LR
+    subgraph Frontend
+        UI[UI] --> API[API Client]
+    end
+    subgraph Backend
+        Server[Server] --> DB[(Database)]
+    end
+    API --> Server
+    DB --> Server
 ```
