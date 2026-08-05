@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0021
 title: Mermaid sequence diagram dotted arrows use a box-drawing glyph most terminal fonts do not render
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-04
 updated: 2026-08-05
 accepted_by: George Moses
 accepted_at: 2026-08-05
-commits: []
+commits: [725eeb6]
 related: [VIEWMD-0014]
 supersedes: []
-changelog:
+changelog: "[1.4.2]"
 reason:
 ---
 
