@@ -49,14 +49,16 @@ Mermaid support covers sequence diagrams, flowcharts, and entity-relationship di
 ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`, or `erDiagram`
 renders as box-drawing ASCII art in place of its source — sequence diagrams with notes,
 loop/alt/par fragments, and `actor` participants (drawn as a random 3-line stick figure instead of
-a box); flowcharts with subgraphs, labelled and bidirectional edges, `classDef` styling, and
-A*-based routing around other nodes; ER diagrams with attribute tables, crow's-foot cardinality
-notation, and identifying/non-identifying relationships. See
-[docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of all three,
-including a few real limitations inherited from the upstream renderer this is ported from (only
-`[Label]` square-bracket node shapes render distinctly; `BT`/`RL` flowchart directions are
-accepted but not actually reversed). Other Mermaid diagram types, and any block that fails to
-parse, are left as plain source text rather than causing an error.
+a box); flowcharts with subgraphs, labelled and bidirectional edges, `classDef` styling, A*-based
+routing around other nodes, and distinct node shapes (round, stadium/pill, circle, subroutine,
+cylinder/database, and diamond decision nodes rendered as a true tapered rhombus); ER diagrams
+with attribute tables, crow's-foot cardinality notation, and identifying/non-identifying
+relationships. See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of
+all three, including [docs/diamonds.md](docs/diamonds.md) for the diamond shape specifically, and
+one real limitation inherited from the upstream renderer flowcharts are ported from: `BT`/`RL`
+directions are accepted but not actually reversed (aliased to `TD`/`LR`). Other Mermaid diagram
+types, and any block that fails to parse, are left as plain source text rather than causing an
+error.
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
