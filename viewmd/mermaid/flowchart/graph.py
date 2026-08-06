@@ -39,6 +39,7 @@ from viewmd.mermaid.grid.coords import (
     self_reference_direction,
 )
 from viewmd.mermaid.grid.label import GraphLabel
+from viewmd.mermaid.textutil import width as string_width
 
 _EMPTY_STYLE_CLASS = StyleClass(name="", styles={})
 
@@ -222,6 +223,17 @@ class Graph:
 
         for n in self.nodes:
             self._set_column_width(n)
+        # Diamonds need an odd middle-column width so the drawn box width is
+        # even and the UP/DOWN attachment cell centre lands on the tip's
+        # middle tile. A later wider rectangle on the same column can bump the
+        # shared width back to even -- re-assert after every node has sized.
+        for n in self.nodes:
+            if n.shape != NodeShape.DIAMOND or n.grid_coord is None:
+                continue
+            mid_x = n.grid_coord.x + 1
+            w = self.column_width.get(mid_x, 0)
+            if w % 2 == 0:
+                self.column_width[mid_x] = w + 1
 
         for e in self.edges:
             self._determine_path(e)
@@ -230,15 +242,32 @@ class Graph:
 
         for n in self.nodes:
             dc = self._grid_to_drawing_coord(n.grid_coord)
-            n.drawing_coord = dc
-            n.drawing = canvas.draw_box(
-                self._node_box_width(n),
-                self._node_box_height(n),
-                n.label,
-                n.style_class.styles.get("color", ""),
-                self.use_ascii,
-                shape=n.shape.value,
-            )
+            width = self._node_box_width(n)
+            if n.shape == NodeShape.DIAMOND:
+                # Draw at tip-based intrinsic height, then centre vertically in
+                # the (possibly taller) shared grid band so LR neighbours of
+                # different tip sizes keep distinct heights.
+                height = canvas.diamond_intrinsic_height(n.label)
+                alloc_h = self._node_box_height(n)
+                n.drawing = canvas.draw_box(
+                    width,
+                    height,
+                    n.label,
+                    n.style_class.styles.get("color", ""),
+                    self.use_ascii,
+                    shape=n.shape.value,
+                )
+                n.drawing_coord = DrawingCoord(dc.x, dc.y + max(0, (alloc_h - height) // 2))
+            else:
+                n.drawing_coord = dc
+                n.drawing = canvas.draw_box(
+                    width,
+                    self._node_box_height(n),
+                    n.label,
+                    n.style_class.styles.get("color", ""),
+                    self.use_ascii,
+                    shape=n.shape.value,
+                )
         self._set_drawing_size_to_grid_constraints()
 
         self._calculate_subgraph_bounding_boxes()
@@ -290,8 +319,26 @@ class Graph:
         # outer 3x3 border rows at height 1 -- same as rectangles -- so
         # drawing_coord (center of the top-left cell) still lands on y=0.
         if n.shape == NodeShape.DIAMOND:
+            # Three tip sizes (3 / 5 / 7 chars) from label width; height grows
+            # with tip_hw so the one-cell-per-row taper can open wide enough
+            # for the label (see canvas.diamond_tip_half_width).
+            tip_hw = canvas.diamond_tip_half_width(n.label.width)
+            label_lines = max(1, len(n.label.lines))
+            mid_row = label_lines + 2 * (tip_hw + 1)
+            # Odd mid_row keeps height//2 on the same row as the middle grid
+            # cell centre, so LEFT/RIGHT attachments line up with horizontal
+            # edge runs (even mid_row was off-by-one and broke the "no" line).
+            if mid_row % 2 == 0:
+                mid_row += 1
             mid_col = 2 * self.box_border_padding + n.label.width + 4
-            mid_row = n.label.content_height() + 2 * self.box_border_padding + 4
+            # Ensure the box is wide enough that tip_hw + cy fits inside cx,
+            # otherwise the tip size gets clamped when drawing.
+            cy = (1 + mid_row) // 2
+            min_mid = 2 * max(0, tip_hw + cy - 1)
+            mid_col = max(mid_col, min_mid)
+            # Odd mid_col → even box width → tip centre == UP/DOWN attachment.
+            if mid_col % 2 == 0:
+                mid_col += 1
             cols = (1, mid_col, 1)
             rows = (1, mid_row, 1)
         else:
@@ -452,8 +499,10 @@ class Graph:
         return sum(self.column_width.get(c.x, 0) for c in line)
 
     def _determine_label_line(self, e: Edge) -> None:
-        len_label = len(e.text)
-        if len_label == 0:
+        # Drawn as ` {text} ` (space either side) so the label stands clear of
+        # the line glyphs; reserve width for those pads here too.
+        len_label = len(e.text) + 2
+        if len(e.text) == 0:
             return
 
         prev_step = e.path[0]
@@ -483,9 +532,12 @@ class Graph:
             largest_line = [e.path[0], e.path[1]]
 
         middle_x = _label_middle_x(largest_line)
+        # Padded label is ` {text} `; keep >=2 line glyphs visible on each side
+        # so a short "no"/"yes" still sits on a clearly longer horizontal run.
+        min_run = len_label + 4
         label_padding = 4 if e.is_bidirectional else 3
         self.column_width[middle_x] = max(
-            self.column_width.get(middle_x, 0), len_label + label_padding
+            self.column_width.get(middle_x, 0), max(len_label + label_padding, min_run)
         )
         e.label_line = largest_line
 
@@ -498,8 +550,41 @@ class Graph:
             y + self.row_height.get(target.y, 0) // 2 + self.offset_y,
         )
 
+    def _path_grid_to_drawing(self, c: GridCoord) -> DrawingCoord:
+        """Grid→drawing for edge paths; diamond attachment cells map to the
+        intrinsic tip/side, not the (possibly taller) shared grid cell centre.
+        """
+        node = self.grid.get(c)
+        if (
+            node is not None
+            and node.shape == NodeShape.DIAMOND
+            and node.grid_coord is not None
+            and node.drawing is not None
+            and node.drawing_coord is not None
+        ):
+            rel = Direction(c.x - node.grid_coord.x, c.y - node.grid_coord.y)
+            w = len(node.drawing) - 1
+            h = len(node.drawing[0]) - 1
+            cx = 1 + (w - 1) // 2
+            dc = node.drawing_coord
+            if rel == UP:
+                return DrawingCoord(dc.x + cx, dc.y)
+            if rel == DOWN:
+                return DrawingCoord(dc.x + cx, dc.y + h)
+            if rel == LEFT or rel == RIGHT:
+                # Keep the grid cell's Y so horizontal path runs stay
+                # axis-aligned (intrinsic h//2 can sit one row off the middle
+                # grid cell when mid_row is even, which turned the "no" branch
+                # into a diagonal that draw_line effectively dropped).
+                grid_dc = self._grid_to_drawing_coord(c)
+                x = dc.x if rel == LEFT else dc.x + w
+                return DrawingCoord(x, grid_dc.y)
+            if rel == MIDDLE:
+                return DrawingCoord(dc.x + cx, dc.y + h // 2)
+        return self._grid_to_drawing_coord(c)
+
     def _line_to_drawing(self, line: list[GridCoord]) -> list[DrawingCoord]:
-        return [self._grid_to_drawing_coord(c) for c in line]
+        return [self._path_grid_to_drawing(c) for c in line]
 
     def _node_box_width(self, n: Node) -> int:
         return self.column_width.get(n.grid_coord.x, 0) + self.column_width.get(
@@ -610,20 +695,18 @@ class Graph:
             if not node.drawn:
                 self._draw_node(node)
 
-        line_drawings, corner_drawings, arrow_head_drawings, box_start_drawings, label_drawings = (
-            [],
+        line_drawings, corner_drawings, arrow_head_drawings, box_start_drawings = (
             [],
             [],
             [],
             [],
         )
         for e in self.edges:
-            line, box_start, arrow_head, corners, label = self._draw_edge(e)
+            line, box_start, arrow_head, corners = self._draw_edge(e)
             line_drawings.append(line)
             corner_drawings.append(corners)
             arrow_head_drawings.append(arrow_head)
             box_start_drawings.append(box_start)
-            label_drawings.append(label)
 
         origin = DrawingCoord(0, 0)
         self.drawing = canvas.merge_drawings(
@@ -638,9 +721,11 @@ class Graph:
         self.drawing = canvas.merge_drawings(
             self.drawing, origin, *box_start_drawings, use_ascii=self.use_ascii
         )
-        self.drawing = canvas.merge_drawings(
-            self.drawing, origin, *label_drawings, use_ascii=self.use_ascii
-        )
+        # Edge labels are painted directly (not via merge_drawings) so the
+        # padding spaces in ` {text} ` actually clear the line glyphs underneath
+        # -- merge_drawings treats ' ' as transparent.
+        for e in self.edges:
+            self._paint_arrow_label(e)
 
         self._draw_subgraph_labels()
         return self.drawing
@@ -689,7 +774,7 @@ class Graph:
             sg = sg.parent
         return depth
 
-    def _draw_edge(self, e: Edge) -> tuple[Drawing, Drawing, Drawing, Drawing, Drawing]:
+    def _draw_edge(self, e: Edge) -> tuple[Drawing, Drawing, Drawing, Drawing]:
         from_ = GridCoord(
             e.from_.grid_coord.x + e.start_dir.x, e.from_.grid_coord.y + e.start_dir.y
         )
@@ -698,12 +783,11 @@ class Graph:
 
     def _draw_arrow(
         self, from_: GridCoord, to: GridCoord, e: Edge
-    ) -> tuple[Drawing, Drawing, Drawing, Drawing, Drawing]:
+    ) -> tuple[Drawing, Drawing, Drawing, Drawing]:
         blank = canvas.copy_canvas(self.drawing)
         if not e.path:
-            return blank, blank, blank, blank, blank
+            return blank, blank, blank, blank
 
-        d_label = self._draw_arrow_label(e)
         d_path, lines_drawn, line_dirs = self._draw_path(e.path)
         d_box_start = self._draw_box_start(e.path, lines_drawn[0])
         d_arrow_head = self._draw_arrow_head(lines_drawn[-1], line_dirs[-1])
@@ -715,7 +799,27 @@ class Graph:
                 d_arrow_head, DrawingCoord(0, 0), d_start_arrow_head, use_ascii=self.use_ascii
             )
         d_corners = self._draw_corners(e.path)
-        return d_path, d_box_start, d_arrow_head, d_corners, d_label
+        return d_path, d_box_start, d_arrow_head, d_corners
+
+    def _paint_arrow_label(self, e: Edge) -> None:
+        """Write ` {text} ` onto the live canvas, spaces included so they clear
+        the underlying line. Needs a minimum horizontal run (reserved in
+        `_determine_label_line`) long enough for the padded label plus a little
+        line either side."""
+        if len(e.text) == 0 or not e.label_line:
+            return
+        line = self._line_to_drawing(e.label_line)
+        line = _inset_line(line, 2, 2) if e.is_bidirectional else _inset_line(line, 1, 2)
+        if len(line) < 2:
+            return
+        label = f" {e.text} "
+        min_x, max_x = sorted((line[0].x, line[1].x))
+        min_y, max_y = sorted((line[0].y, line[1].y))
+        middle_x = min_x + (max_x - min_x) // 2
+        middle_y = min_y + (max_y - min_y) // 2
+        label_len = string_width(label)
+        start = DrawingCoord(middle_x - label_len // 2, middle_y)
+        self.drawing = canvas.draw_text(self.drawing, start, label)
 
     def _draw_path(
         self, path: list[GridCoord]
@@ -725,8 +829,8 @@ class Graph:
         lines_drawn: list[list[DrawingCoord]] = []
         line_dirs: list[Direction] = []
         for next_coord in path[1:]:
-            previous_drawing_coord = self._grid_to_drawing_coord(previous_coord)
-            next_drawing_coord = self._grid_to_drawing_coord(next_coord)
+            previous_drawing_coord = self._path_grid_to_drawing(previous_coord)
+            next_drawing_coord = self._path_grid_to_drawing(next_coord)
             if previous_drawing_coord == next_drawing_coord:
                 continue
             dir_ = determine_direction(previous_coord, next_coord)
@@ -814,14 +918,6 @@ class Graph:
 
             d[drawing_coord.x][drawing_coord.y] = corner
         return d
-
-    def _draw_arrow_label(self, e: Edge) -> Drawing:
-        d = canvas.copy_canvas(self.drawing)
-        if len(e.text) == 0:
-            return d
-        line = self._line_to_drawing(e.label_line)
-        line = _inset_line(line, 2, 2) if e.is_bidirectional else _inset_line(line, 1, 2)
-        return canvas.draw_text_on_line(d, line, e.text)
 
 
 def _label_middle_x(line: list[GridCoord]) -> int:

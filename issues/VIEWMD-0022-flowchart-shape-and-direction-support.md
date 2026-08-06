@@ -119,18 +119,20 @@ border (`═`) to suggest the drum's base/rim:
 ╰════════╯
 ```
 
-**Diamond `{}`** -- true tapered rhombus, per requirement 2: diagonal sides
-(`╱`/`╲`) meeting at a point top and bottom, box widens then narrows across
-rows rather than staying a fixed rectangle. Edges attach at the apex points,
-not at rectangle corners:
+**Diamond `{}`** -- true tapered rhombus, per requirement 2: ASCII `/` `\`
+diagonals (cleaner in monospace than ╱╲), wide flat tip capped with `▔`/`▁`,
+one-cell-per-row taper, label lines packed with no gap. Edges attach at the
+apex points. Shape tuned against `docs/decision.txt`:
 
 ```
-      ╱▔▔╲
-    ╱      ╲
-  ╱  Decide  ╲
-  ╲          ╱
-    ╲      ╱
-      ╲__╱
+     /▔▔▔▔▔\
+    /       \
+   /         \
+  / Decisions \
+  \ Triangles /
+   \         /
+    \       /
+     \▁▁▁▁▁/
 ```
 
 Open questions for maintainer sign-off: (a) do the six choices above read as
@@ -149,4 +151,4 @@ option above is proposed as the cheaper default.
 
 ## Peer review
 
-- **Cursor Grok** (agent), 2026-08-06: Implemented against the glyph proposal on the issue. Parser recognizes all six shapes (longest-delimiter-first) with name/label split; `GraphNodeSpec`/`Node` carry `shape`; bare later refs no longer wipe an earlier shaped declaration. Canvas draws round/stadium/circle/subroutine/cylinder via distinct border glyphs on the existing box geometry; diamond is a true per-row tapered rhombus with apex edge attachment (T-junctions skipped at diamond exits). Hand-verified fixtures: `shape_{round,stadium,circle,subroutine,cylinder,diamond}` plus updated `shapes_fallback` (single diamond + yes/no branches) and `complex_backend` (real cylinders). Parser unit tests cover each shape and the `B{Decision}`/`B` identity fix. Rectangle-only VIEWMD-0015 goldens unchanged (`./run-tests.sh` 314 passed). Updated `docs/mermaid-examples.md` to drop the stale "only `[...]`" limitation note (BT/RL still points at VIEWMD-0027). Notes for maintainer: (1) ASCII mode keeps `+`/`-`/`|` for every non-diamond shape per the proposal's fallback note -- only unicode distinguishes them; (2) a diamond sharing grid columns with a rectangle widens that rectangle via `column_width` max (inherent to the 3x3 layout), visible in `shapes_fallback`'s slightly wider Start box; (3) hexagon/`{{}}` and other unsupported shapes still don't crash (req. 4) but aren't specially recognized.
+- **Cursor Grok** (agent), 2026-08-06: Implemented against the glyph proposal on the issue. Parser recognizes all six shapes (longest-delimiter-first) with name/label split; `GraphNodeSpec`/`Node` carry `shape`; bare later refs no longer wipe an earlier shaped declaration. Canvas draws round/stadium/circle/subroutine/cylinder via distinct border glyphs on the existing box geometry; diamond is a true per-row tapered rhombus with apex edge attachment (T-junctions skipped at diamond exits), retuned to the `docs/decision.txt` mockup (ASCII `/` `\` diagonals, wide `▔`/`▁` tip, packed multi-line labels). Hand-verified fixtures: `shape_{round,stadium,circle,subroutine,cylinder,diamond}` plus updated `shapes_fallback` (single diamond + yes/no branches) and `complex_backend` (real cylinders). Parser unit tests cover each shape and the `B{Decision}`/`B` identity fix. Rectangle-only VIEWMD-0015 goldens unchanged (`./run-tests.sh` 314 passed). Updated `docs/mermaid-examples.md` to drop the stale "only `[...]`" limitation note (BT/RL still points at VIEWMD-0027). Notes for maintainer: (1) ASCII mode keeps `+`/`-`/`|` for every non-diamond shape per the proposal's fallback note -- only unicode distinguishes them (diamond keeps `/` `\` in both modes); (2) a diamond sharing grid columns with a rectangle widens that rectangle via `column_width` max (inherent to the 3x3 layout), visible in `shapes_fallback`'s slightly wider Start box; (3) hexagon/`{{}}` and other unsupported shapes still don't crash (req. 4) but aren't specially recognized.

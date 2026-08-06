@@ -130,13 +130,81 @@ sequenceDiagram
 
 Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027).
 
+### Node shapes
+
+Each Mermaid shape delimiter below renders a distinct border. Left-to-right so the glyphs sit side by side for comparison:
+
+```mermaid
+graph LR
+    R[Rectangle] --> O(Round)
+    O --> S([Stadium])
+    S --> C((Circle))
+```
+
+```mermaid
+graph LR
+    U[[Subroutine]] --> Y[(Cylinder)]
+    Y --> D{Diamond}
+```
+
 ### Branching and labelled edges
+
+The classic decision diamond: a shaped declaration (`B{Decision}`) and later bare `B` references resolve to the same node, so the yes/no arms rejoin on one diamond rather than splitting into disconnected boxes:
 
 ```mermaid
 graph TD
     A[Start] --> B{Decision}
     B -->|yes| C[Do it]
     B -->|no| D[Skip it]
+```
+
+### Multi-line decision label
+
+Diamond labels accept `<br>` line breaks; lines pack onto consecutive rows inside the taper:
+
+```mermaid
+graph TD
+    A[Start] --> B{Ready to<br>ship?}
+    B -->|yes| C[Release]
+    B -->|no| D[Keep working]
+```
+
+### Nested decisions
+
+A second diamond on one branch -- common for approval / fallback flows:
+
+```mermaid
+graph TD
+    A[Request] --> B{Authenticated?}
+    B -->|no| C[Reject]
+    B -->|yes| D{Authorized?}
+    D -->|yes| E[Allow]
+    D -->|no| F[Forbidden]
+```
+
+### Decision with stadium terminals
+
+Stadium (`([ ])`) nodes as start/end terminals around a diamond, the usual flowchart convention:
+
+```mermaid
+graph TD
+    A([Begin]) --> B{Path?}
+    B -->|left| C[Handle left]
+    B -->|right| D[Handle right]
+    C --> E([End])
+    D --> E
+```
+
+### Decision into a cylinder
+
+Diamond choosing between two data stores:
+
+```mermaid
+graph LR
+    A[Write] --> B{Cache hit?}
+    B -->|yes| C[(Cache)]
+    B -->|no| D[(Database)]
+    D --> C
 ```
 
 ### Directions: TD/LR draw as expected, BT/RL alias to them
@@ -151,8 +219,7 @@ graph RL
     A --> B --> C
 ```
 
-The `RL` diagram above renders identically to `LR` -- same left-to-right flow -- since `RL` is
-parsed but not actually reversed (see the note at the top of this section).
+The `RL` diagram above renders identically to `LR` -- same left-to-right flow -- since `RL` is parsed but not actually reversed (see the note at the top of this section).
 
 ### Chained arrows and fan-out
 
