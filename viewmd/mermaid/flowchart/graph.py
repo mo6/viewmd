@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from viewmd.mermaid.flowchart.parser import (
     GraphNodeSpec,
     GraphProperties,
+    NodeShape,
     StyleClass,
     TextEdge,
     TextSubgraph,
@@ -49,6 +50,7 @@ class Node:
     index: int
     style_class_name: str = ""
     style_class: StyleClass = field(default_factory=lambda: _EMPTY_STYLE_CLASS)
+    shape: NodeShape = NodeShape.RECTANGLE
     grid_coord: GridCoord | None = None
     drawing_coord: DrawingCoord | None = None
     drawing: Drawing | None = None
@@ -235,6 +237,7 @@ class Graph:
                 n.label,
                 n.style_class.styles.get("color", ""),
                 self.use_ascii,
+                shape=n.shape.value,
             )
         self._set_drawing_size_to_grid_constraints()
 
@@ -281,12 +284,25 @@ class Graph:
         return True
 
     def _set_column_width(self, n: Node) -> None:
-        col1, col2, col3 = 1, 2 * self.box_border_padding + n.label.width, 1
-        for idx, col in enumerate((col1, col2, col3)):
+        # Diamonds need extra horizontal margin so the mid-row label sits inside
+        # the taper, and extra vertical space in the *middle* row so the rhombus
+        # reads as pointed rather than a flat hexagon (VIEWMD-0022). Keep the
+        # outer 3x3 border rows at height 1 -- same as rectangles -- so
+        # drawing_coord (center of the top-left cell) still lands on y=0.
+        if n.shape == NodeShape.DIAMOND:
+            mid_col = 2 * self.box_border_padding + n.label.width + 4
+            mid_row = n.label.content_height() + 2 * self.box_border_padding + 4
+            cols = (1, mid_col, 1)
+            rows = (1, mid_row, 1)
+        else:
+            cols = (1, 2 * self.box_border_padding + n.label.width, 1)
+            rows = (1, n.label.content_height() + 2 * self.box_border_padding, 1)
+
+        for idx, col in enumerate(cols):
             x_coord = n.grid_coord.x + idx
             self.column_width[x_coord] = max(self.column_width.get(x_coord, 0), col)
 
-        for idx, row in enumerate((1, n.label.content_height() + 2 * self.box_border_padding, 1)):
+        for idx, row in enumerate(rows):
             y_coord = n.grid_coord.y + idx
             self.row_height[y_coord] = max(self.row_height.get(y_coord, 0), row)
 
@@ -728,6 +744,11 @@ class Graph:
         d = canvas.copy_canvas(self.drawing)
         if self.use_ascii:
             return d
+        # Diamond apexes are already pointed (╱/╲ meet); T-junction glyphs on
+        # the flat rectangle border would punch a ┴/┬ into the tip.
+        from_node = self.grid.get(path[0])
+        if from_node is not None and from_node.shape == NodeShape.DIAMOND:
+            return d
         from_ = first_line[0]
         dir_ = determine_direction(path[0], path[1])
         if dir_ == UP:
@@ -835,7 +856,11 @@ def mk_graph(data: dict[str, list[TextEdge]], node_specs: dict[str, GraphNodeSpe
         parent_node = g.get_node(node_name)
         if parent_node is None:
             parent_node = Node(
-                name=node_name, label=spec.label, index=index, style_class_name=spec.style_class
+                name=node_name,
+                label=spec.label,
+                index=index,
+                style_class_name=spec.style_class,
+                shape=spec.shape,
             )
             g.append_node(parent_node)
             index += 1
@@ -848,6 +873,7 @@ def mk_graph(data: dict[str, list[TextEdge]], node_specs: dict[str, GraphNodeSpe
                     label=child_spec.label,
                     index=index,
                     style_class_name=child_spec.style_class,
+                    shape=child_spec.shape,
                 )
                 g.append_node(child_node)
                 index += 1

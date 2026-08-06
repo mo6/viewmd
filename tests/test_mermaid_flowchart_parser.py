@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from viewmd.mermaid.flowchart.parser import ParseError, parse, parse_node, sniff
+from viewmd.mermaid.flowchart.parser import NodeShape, ParseError, parse, parse_node, sniff
 
 
 @pytest.mark.parametrize(
@@ -58,17 +58,41 @@ def test_square_bracket_label():
     assert node.name == "A"
     assert node.label.lines == ["Hello world"]
     assert node.has_label is True
+    assert node.shape == NodeShape.RECTANGLE
 
 
-@pytest.mark.parametrize("shape_source", ["B(Round)", "B{Diamond}", "B((Circle))"])
-def test_non_bracket_shapes_fall_back_to_bare_label(shape_source):
-    """Only `[...]` renders as a distinct shape upstream; every other mermaid
-    shape syntax is silently flattened to a bare node whose name is the
-    literal, unparsed text (VIEWMD-0015 req. 1 -- confirmed against the real
-    Go binary, not assumed)."""
+@pytest.mark.parametrize(
+    ("shape_source", "name", "label", "shape"),
+    [
+        ("B(Round)", "B", "Round", NodeShape.ROUND),
+        ("B{Diamond}", "B", "Diamond", NodeShape.DIAMOND),
+        ("B((Circle))", "B", "Circle", NodeShape.CIRCLE),
+        ("B([Stadium])", "B", "Stadium", NodeShape.STADIUM),
+        ("B[[Sub]]", "B", "Sub", NodeShape.SUBROUTINE),
+        ("DB[(Database)]", "DB", "Database", NodeShape.CYLINDER),
+    ],
+)
+def test_shaped_node_parsing(shape_source, name, label, shape):
+    """VIEWMD-0022: each Mermaid shape delimiter extracts name vs label and
+    records a distinct NodeShape -- no longer flattened to a bare name."""
     node = parse_node(shape_source)
-    assert node.name == shape_source
-    assert node.has_label is False
+    assert node.name == name
+    assert node.label.lines == [label]
+    assert node.has_label is True
+    assert node.shape == shape
+
+
+def test_shaped_declaration_and_bare_reference_share_node_name():
+    """The branching topology fix: `B{Decision}` and a later bare `B` are the
+    same node, so yes/no edges rejoin on the diamond (VIEWMD-0022)."""
+    gp = parse(
+        "graph TD\nA[Start] --> B{Decision}\nB -->|yes| C[Do it]\nB -->|no| D[Skip]"
+    )
+    assert "B{Decision}" not in gp.data
+    assert "B" in gp.data
+    assert gp.node_specs["B"].shape == NodeShape.DIAMOND
+    assert gp.node_specs["B"].label.lines == ["Decision"]
+    assert {e.child.name for e in gp.data["B"]} == {"C", "D"}
 
 
 def test_style_class_suffix():
@@ -76,6 +100,7 @@ def test_style_class_suffix():
     assert node.name == "A"
     assert node.style_class == "red"
     assert node.label.lines == ["Start"]
+    assert node.shape == NodeShape.RECTANGLE
 
 
 def test_classdef_must_be_unindented():

@@ -128,11 +128,7 @@ sequenceDiagram
 
 ## Flowcharts
 
-Only `A[Label]` square-bracket syntax renders as a distinct node shape — other Mermaid shape
-syntax (`()`, `{}`, `(())`) falls back to a bare label, and `BT`/`RL` directions are accepted but
-drawn the same as `TD`/`LR` rather than actually reversed. Both are real limitations of
-`mermaid-ascii`, the upstream implementation this is ported from — not a viewmd choice — and
-tracked for a possible future viewmd-only extension in VIEWMD-0022.
+Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027).
 
 ### Branching and labelled edges
 
@@ -155,7 +151,7 @@ graph RL
     A --> B --> C
 ```
 
-The `RL` diagram above renders identically to `LR` — same left-to-right flow — since `RL` is
+The `RL` diagram above renders identically to `LR` -- same left-to-right flow -- since `RL` is
 parsed but not actually reversed (see the note at the top of this section).
 
 ### Chained arrows and fan-out

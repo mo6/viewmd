@@ -8,6 +8,8 @@ port stays a direct line-for-line translation.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from wcwidth import wcwidth
 
 from viewmd.mermaid.grid.coords import (
@@ -240,31 +242,85 @@ def wrap_text_in_color(text: str, color_hex: str) -> str:
 
 
 def draw_box(
-    width: int, height: int, label: GraphLabel, color_hex: str, use_ascii: bool
+    width: int,
+    height: int,
+    label: GraphLabel,
+    color_hex: str,
+    use_ascii: bool,
+    shape: str = "rectangle",
 ) -> Drawing:
     """Box is always 3x3 on the grid; `width`/`height` are the caller's
     pixel-space column/row-width sums for that node's two content columns/rows
-    (ported from cmd/draw.go's `drawBox`)."""
+    (ported from cmd/draw.go's `drawBox`). Shape glyphs beyond the rectangle
+    baseline are VIEWMD-0022; diamond is a true tapered rhombus.
+
+    `shape` is a `NodeShape` value string (`"rectangle"`, `"round"`, …) kept as
+    plain `str` here so `grid` does not import the flowchart package.
+    """
+    if shape == "diamond":
+        return _draw_diamond(width, height, label, color_hex, use_ascii)
+
     from_ = DrawingCoord(0, 0)
     to = DrawingCoord(width, height)
     d = mk_drawing(max(from_.x, to.x), max(from_.y, to.y))
 
-    h_char, v_char = ("-", "|") if use_ascii else ("─", "│")
-    corner = "+" if use_ascii else None
+    glyphs = _box_glyphs(shape, use_ascii)
     for x in range(from_.x + 1, to.x):
-        d[x][from_.y] = h_char
-        d[x][to.y] = h_char
+        d[x][from_.y] = glyphs.h_top
+        d[x][to.y] = glyphs.h_bot
     for y in range(from_.y + 1, to.y):
-        d[from_.x][y] = v_char
-        d[to.x][y] = v_char
-    if use_ascii:
-        d[from_.x][from_.y] = d[to.x][from_.y] = d[from_.x][to.y] = d[to.x][to.y] = corner
-    else:
-        d[from_.x][from_.y] = "┌"
-        d[to.x][from_.y] = "┐"
-        d[from_.x][to.y] = "└"
-        d[to.x][to.y] = "┘"
+        d[from_.x][y] = glyphs.v_left
+        d[to.x][y] = glyphs.v_right
+    d[from_.x][from_.y] = glyphs.tl
+    d[to.x][from_.y] = glyphs.tr
+    d[from_.x][to.y] = glyphs.bl
+    d[to.x][to.y] = glyphs.br
 
+    _place_label(d, from_, width, height, label, color_hex)
+    return d
+
+
+@dataclass(frozen=True)
+class _BoxGlyphs:
+    tl: str
+    tr: str
+    bl: str
+    br: str
+    h_top: str
+    h_bot: str
+    v_left: str
+    v_right: str
+
+
+def _box_glyphs(shape: str, use_ascii: bool) -> _BoxGlyphs:
+    """Per-shape border glyphs from the VIEWMD-0022 proposal. ASCII mode keeps
+    the baseline `+`/`-`/`|` set for every non-diamond shape -- distinguishable
+    unicode is a unicode-mode concern; diamond has its own ASCII taper."""
+    if use_ascii:
+        return _BoxGlyphs("+", "+", "+", "+", "-", "-", "|", "|")
+
+    if shape == "round":
+        return _BoxGlyphs("╭", "╮", "╰", "╯", "─", "─", "│", "│")
+    if shape == "stadium":
+        return _BoxGlyphs("(", ")", "(", ")", "─", "─", "(", ")")
+    if shape == "circle":
+        return _BoxGlyphs("╔", "╗", "╚", "╝", "═", "═", "║", "║")
+    if shape == "subroutine":
+        return _BoxGlyphs("┌", "┐", "└", "┘", "─", "─", "‖", "‖")
+    if shape == "cylinder":
+        return _BoxGlyphs("╭", "╮", "╰", "╯", "─", "═", "│", "│")
+    # RECTANGLE and any unknown fall through to the VIEWMD-0015 baseline.
+    return _BoxGlyphs("┌", "┐", "└", "┘", "─", "─", "│", "│")
+
+
+def _place_label(
+    d: Drawing,
+    from_: DrawingCoord,
+    width: int,
+    height: int,
+    label: GraphLabel,
+    color_hex: str,
+) -> None:
     inner_top = from_.y + 1
     inner_height = height - 1
     content_top = inner_top + (inner_height - label.content_height()) // 2
@@ -279,6 +335,62 @@ def draw_box(
                 d[text_x + offset][text_y] = ""
             text_x += rune_w
 
+
+def _draw_diamond(
+    width: int, height: int, label: GraphLabel, color_hex: str, use_ascii: bool
+) -> Drawing:
+    """True tapered rhombus: diagonal sides meeting at top/bottom apexes
+    (VIEWMD-0022 req. 2). Edges attach at those apexes via the existing UP/DOWN
+    3x3 grid cells. One left/right border glyph per row (no Bresenham thickening)
+    so the outline matches the issue's glyph proposal."""
+    d = mk_drawing(max(width, 0), max(height, 0))
+    if width <= 0 or height <= 0:
+        return d
+
+    up_left, up_right = ("/", "\\") if use_ascii else ("╱", "╲")
+    lo_left, lo_right = ("\\", "/") if use_ascii else ("╲", "╱")
+    top_edge, bot_edge = ("-", "_") if use_ascii else ("▔", "▁")
+
+    cx = width / 2.0
+    cy = height / 2.0
+    # Tip stays a short flat (`╱▔▔╲`) rather than a single cell, matching the
+    # proposal and giving edge arrows a clear apex to meet.
+    tip_hw = min(1.5, cx)
+    max_hw = cx
+
+    def half_width_at(y: int) -> float:
+        if height == 0:
+            return max_hw
+        if y <= cy:
+            t = y / cy if cy else 1.0
+        else:
+            t = (height - y) / (height - cy) if height != cy else 1.0
+        return tip_hw + t * (max_hw - tip_hw)
+
+    for y in range(height + 1):
+        hw = half_width_at(y)
+        left = max(0, min(width, int(round(cx - hw))))
+        right = max(0, min(width, int(round(cx + hw))))
+        if y < cy:
+            left_ch, right_ch = up_left, up_right
+        elif y > cy:
+            left_ch, right_ch = lo_left, lo_right
+        else:
+            left_ch, right_ch = up_left, up_right
+        if left == right:
+            d[left][y] = left_ch
+            continue
+        d[left][y] = left_ch
+        d[right][y] = right_ch
+        # Flat tip caps on the first/last rows (proposal's ▔ / __).
+        if y == 0:
+            for x in range(left + 1, right):
+                d[x][y] = top_edge
+        elif y == height:
+            for x in range(left + 1, right):
+                d[x][y] = bot_edge
+
+    _place_label(d, DrawingCoord(0, 0), width, height, label, color_hex)
     return d
 
 
