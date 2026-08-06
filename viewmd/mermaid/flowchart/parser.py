@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 
 from viewmd.mermaid.grid.label import GraphLabel, new_graph_label
 
@@ -23,12 +24,41 @@ class ParseError(Exception):
     pass
 
 
+class NodeShape(str, Enum):
+    """Mermaid flowchart node shapes recognized by `parse_node` (VIEWMD-0022).
+
+    Bare nodes (no shape delimiters) use RECTANGLE -- the same default Mermaid
+    renders -- so layout/drawing always have a concrete shape to key on.
+    """
+
+    RECTANGLE = "rectangle"
+    ROUND = "round"
+    STADIUM = "stadium"
+    CIRCLE = "circle"
+    SUBROUTINE = "subroutine"
+    CYLINDER = "cylinder"
+    DIAMOND = "diamond"
+
+
+# Longest openers first so `((` / `([` / `[[` / `[(` win over `(` / `[`.
+_SHAPE_DELIMITERS: tuple[tuple[NodeShape, str, str], ...] = (
+    (NodeShape.CIRCLE, "((", "))"),
+    (NodeShape.STADIUM, "([", "])"),
+    (NodeShape.SUBROUTINE, "[[", "]]"),
+    (NodeShape.CYLINDER, "[(", ")]"),
+    (NodeShape.ROUND, "(", ")"),
+    (NodeShape.DIAMOND, "{", "}"),
+    (NodeShape.RECTANGLE, "[", "]"),
+)
+
+
 @dataclass
 class TextNode:
     name: str
     label: GraphLabel
     has_label: bool = False
     style_class: str = ""
+    shape: NodeShape = NodeShape.RECTANGLE
 
 
 @dataclass
@@ -39,6 +69,7 @@ class GraphNodeSpec:
     label: GraphLabel = field(default_factory=lambda: GraphLabel(lines=[], width=0))
     label_is_explicit: bool = False
     style_class: str = ""
+    shape: NodeShape = NodeShape.RECTANGLE
 
 
 @dataclass
@@ -159,17 +190,40 @@ def parse_node(line: str) -> TextNode:
         style_class = trimmed[idx + 3 :].strip()
         trimmed = trimmed[:idx].strip()
 
-    name = trimmed
-    label_text = trimmed
-    open_idx = trimmed.find("[")
-    if open_idx > 0 and trimmed.endswith("]"):
+    for shape, open_delim, close_delim in _SHAPE_DELIMITERS:
+        if not trimmed.endswith(close_delim):
+            continue
+        open_idx = trimmed.find(open_delim)
+        if open_idx <= 0:
+            continue
         name = trimmed[:open_idx].strip()
-        label_text = trimmed[open_idx + 1 : -1].strip().strip('"')
+        if not name:
+            continue
+        # `{{Hexagon}}` (and other unrecognized doubled-brace shapes) would
+        # otherwise mismatch as DIAMOND `{...}` with a mangled label
+        # (`{Hexagon}`, stray inner brace). Fall through to the bare-label
+        # fallback instead, same discipline as any other unsupported shape
+        # (req. 4) rather than a wrong shape with a corrupted label.
+        if shape is NodeShape.DIAMOND and (
+            trimmed[open_idx : open_idx + 2] == "{{" or trimmed.endswith("}}")
+        ):
+            continue
+        label_text = trimmed[open_idx + len(open_delim) : len(trimmed) - len(close_delim)]
+        label_text = label_text.strip().strip('"')
         return TextNode(
-            name=name, label=new_graph_label(label_text), has_label=True, style_class=style_class
+            name=name,
+            label=new_graph_label(label_text),
+            has_label=True,
+            style_class=style_class,
+            shape=shape,
         )
 
-    return TextNode(name=name, label=new_graph_label(label_text), style_class=style_class)
+    return TextNode(
+        name=trimmed,
+        label=new_graph_label(trimmed),
+        style_class=style_class,
+        shape=NodeShape.RECTANGLE,
+    )
 
 
 def _parse_style_class(class_name: str, styles: str) -> StyleClass:
@@ -185,6 +239,10 @@ def _remember_node(node: TextNode, node_specs: dict[str, GraphNodeSpec]) -> None
     if node.has_label or len(spec.label.lines) == 0:
         spec.label = node.label
         spec.label_is_explicit = node.has_label
+    # Bare later references (`B`) must not wipe a shape from an earlier
+    # shaped declaration (`B{Decision}`) -- that's the topology fix.
+    if node.has_label:
+        spec.shape = node.shape
     if node.style_class:
         spec.style_class = node.style_class
     node_specs[node.name] = spec
