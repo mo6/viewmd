@@ -199,6 +199,15 @@ def parse_node(line: str) -> TextNode:
         name = trimmed[:open_idx].strip()
         if not name:
             continue
+        # `{{Hexagon}}` (and other unrecognized doubled-brace shapes) would
+        # otherwise mismatch as DIAMOND `{...}` with a mangled label
+        # (`{Hexagon}`, stray inner brace). Fall through to the bare-label
+        # fallback instead, same discipline as any other unsupported shape
+        # (req. 4) rather than a wrong shape with a corrupted label.
+        if shape is NodeShape.DIAMOND and (
+            trimmed[open_idx : open_idx + 2] == "{{" or trimmed.endswith("}}")
+        ):
+            continue
         label_text = trimmed[open_idx + len(open_delim) : len(trimmed) - len(close_delim)]
         label_text = label_text.strip().strip('"')
         return TextNode(

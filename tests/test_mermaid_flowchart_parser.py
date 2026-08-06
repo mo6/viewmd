@@ -95,6 +95,17 @@ def test_shaped_declaration_and_bare_reference_share_node_name():
     assert {e.child.name for e in gp.data["B"]} == {"C", "D"}
 
 
+def test_doubled_brace_shape_falls_back_to_bare_label():
+    """`{{Hexagon}}` isn't a recognized shape -- it must not mismatch as a
+    DIAMOND `{...}` with a mangled label (`{Hexagon}`, stray inner brace).
+    Same fallback discipline as any other unsupported shape (VIEWMD-0022
+    req. 4 / VIEWMD-0015 req. 6): bare node, literal name."""
+    node = parse_node("A{{Hexagon}}")
+    assert node.name == "A{{Hexagon}}"
+    assert node.has_label is False
+    assert node.shape == NodeShape.RECTANGLE
+
+
 def test_style_class_suffix():
     node = parse_node("A[Start]:::red")
     assert node.name == "A"

@@ -34,3 +34,49 @@ def _cases():
 def test_matches_reference_implementation(mmd_path, expected_path, use_ascii):
     properties = parse(mmd_path.read_text())
     assert render(properties, use_ascii=use_ascii) == expected_path.read_text()
+
+
+def test_diamond_chain_arrows_land_flush_on_both_sides():
+    """Two diamonds of different tip sizes in a row must both get the same
+    zero-gap arrow attachment (VIEWMD-0022 follow-up): the taper has to reach
+    its own box edge by the middle row, or the arrow entering from the left
+    sits one column short of the "/" glyph."""
+    properties = parse(
+        "graph LR\n    S{OK} --> M{Decide}\n    M --> L{Continue?}\n"
+    )
+    out = render(properties, use_ascii=False)
+    lines = out.splitlines()
+    mid_line = next(line for line in lines if "OK" in line)
+    assert "────►/" in mid_line
+    assert "────► /" not in mid_line
+
+
+def test_diamond_reaches_column_forced_wide_by_sibling_rectangle():
+    """A diamond sharing a TD grid column with a much wider rectangle sibling
+    (here `Handle left`) gets its column stretched past what its own label
+    needs. Without growing the diamond's height to match, the taper stalls
+    short of the wider border and leaves a gap (VIEWMD-0022 follow-up)."""
+    properties = parse(
+        "graph TD\n"
+        "    A([Begin]) --> B{Path?}\n"
+        "    B -->|left| C[Handle left]\n"
+        "    B -->|right| D[Handle right]\n"
+        "    C --> E([End])\n"
+        "    D --> E\n"
+    )
+    out = render(properties, use_ascii=False)
+    lines = out.splitlines()
+    mid_line = next(line for line in lines if "Path?" in line)
+    assert mid_line.startswith("/")
+
+
+def test_vertical_edge_label_does_not_widen_plain_rectangle_nodes():
+    """A labelled vertical edge between two bare `[...]` nodes must not widen
+    the nodes -- that's VIEWMD-0015's byte-for-byte baseline, unaffected by
+    VIEWMD-0022's horizontal edge-label padding (regression: the padding
+    formula was briefly applied to vertical labels too, widening
+    `bidirectional`'s Client/Server boxes from 8 to 10 columns)."""
+    properties = parse("graph TD\n  A[Client] <-->|sync| B[Server]\n")
+    out = render(properties, use_ascii=False)
+    assert "┌────────┐" in out
+    assert "┌──────────┐" not in out

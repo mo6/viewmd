@@ -233,7 +233,17 @@ class Graph:
             mid_x = n.grid_coord.x + 1
             w = self.column_width.get(mid_x, 0)
             if w % 2 == 0:
-                self.column_width[mid_x] = w + 1
+                w += 1
+                self.column_width[mid_x] = w
+            # A sibling sharing this diamond's column (e.g. a wider rectangle
+            # in the same TD rank) can force the box wider than the taper
+            # naturally reaches by the middle row -- grow the row to match so
+            # it still closes on the border instead of leaving a gap.
+            mid_y = n.grid_coord.y + 1
+            needed_height = canvas.diamond_height_for_width(n.label, 1 + w)
+            needed_mid_row = needed_height - 1
+            if needed_mid_row > self.row_height.get(mid_y, 0):
+                self.row_height[mid_y] = needed_mid_row
 
         for e in self.edges:
             self._determine_path(e)
@@ -244,10 +254,12 @@ class Graph:
             dc = self._grid_to_drawing_coord(n.grid_coord)
             width = self._node_box_width(n)
             if n.shape == NodeShape.DIAMOND:
-                # Draw at tip-based intrinsic height, then centre vertically in
-                # the (possibly taller) shared grid band so LR neighbours of
-                # different tip sizes keep distinct heights.
-                height = canvas.diamond_intrinsic_height(n.label)
+                # Draw at tip-based intrinsic height (grown if a sibling
+                # forced this column/row wider than the label alone needs),
+                # then centre vertically in the (possibly taller still)
+                # shared grid band so LR neighbours of different tip sizes
+                # keep distinct heights.
+                height = canvas.diamond_height_for_width(n.label, width)
                 alloc_h = self._node_box_height(n)
                 n.drawing = canvas.draw_box(
                     width,
@@ -336,6 +348,16 @@ class Graph:
             cy = (1 + mid_row) // 2
             min_mid = 2 * max(0, tip_hw + cy - 1)
             mid_col = max(mid_col, min_mid)
+            # The taper only grows 1 column/row, so it can reach at most
+            # `tip_hw + cy` half-width by the middle row. A wider box than
+            # that leaves the taper short of the border at the middle row --
+            # a blank column before the "/"/"\" glyph there (visible as
+            # inconsistent spacing before an edge attaching on the left/right).
+            # Cap mid_col to what the taper can actually fill, but never below
+            # what the label itself needs.
+            label_min = 2 * self.box_border_padding + n.label.width
+            reach_cap = 2 * (tip_hw + cy) - 1
+            mid_col = min(mid_col, max(reach_cap, label_min))
             # Odd mid_col → even box width → tip centre == UP/DOWN attachment.
             if mid_col % 2 == 0:
                 mid_col += 1
@@ -499,11 +521,9 @@ class Graph:
         return sum(self.column_width.get(c.x, 0) for c in line)
 
     def _determine_label_line(self, e: Edge) -> None:
-        # Drawn as ` {text} ` (space either side) so the label stands clear of
-        # the line glyphs; reserve width for those pads here too.
-        len_label = len(e.text) + 2
         if len(e.text) == 0:
             return
+        len_label = len(e.text)
 
         prev_step = e.path[0]
         largest_line: list[GridCoord] | None = None
@@ -532,13 +552,19 @@ class Graph:
             largest_line = [e.path[0], e.path[1]]
 
         middle_x = _label_middle_x(largest_line)
-        # Padded label is ` {text} `; keep >=2 line glyphs visible on each side
-        # so a short "no"/"yes" still sits on a clearly longer horizontal run.
-        min_run = len_label + 4
         label_padding = 4 if e.is_bidirectional else 3
-        self.column_width[middle_x] = max(
-            self.column_width.get(middle_x, 0), max(len_label + label_padding, min_run)
-        )
+        if largest_line[0].y == largest_line[1].y:
+            # Horizontal line: painted as ` {text} ` (space either side) so the
+            # label stands clear of the line glyphs underneath; reserve width
+            # for those pads, plus >=2 line glyphs visible on each side so a
+            # short "no"/"yes" still sits on a clearly longer horizontal run.
+            padded_len = len_label + 2
+            width = max(padded_len + label_padding, padded_len + 4)
+        else:
+            # Vertical line: the label fully occupies its row (no dashes to
+            # clear around it) -- unchanged from the VIEWMD-0015 baseline.
+            width = len_label + label_padding
+        self.column_width[middle_x] = max(self.column_width.get(middle_x, 0), width)
         e.label_line = largest_line
 
     def _grid_to_drawing_coord(self, c: GridCoord, dir_: Direction | None = None) -> DrawingCoord:
@@ -805,8 +831,17 @@ class Graph:
         """Write ` {text} ` onto the live canvas, spaces included so they clear
         the underlying line. Needs a minimum horizontal run (reserved in
         `_determine_label_line`) long enough for the padded label plus a little
-        line either side."""
+        line either side.
+
+        Vertical lines have no dashes to clear -- the label fully occupies its
+        row, so paint it as plain text (VIEWMD-0015 baseline), not padded.
+        """
         if len(e.text) == 0 or not e.label_line:
+            return
+        if e.label_line[0].y != e.label_line[1].y:
+            line = self._line_to_drawing(e.label_line)
+            line = _inset_line(line, 2, 2) if e.is_bidirectional else _inset_line(line, 1, 2)
+            self.drawing = canvas.draw_text_on_line(self.drawing, line, e.text)
             return
         line = self._line_to_drawing(e.label_line)
         line = _inset_line(line, 2, 2) if e.is_bidirectional else _inset_line(line, 1, 2)

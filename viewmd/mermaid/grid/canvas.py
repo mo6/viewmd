@@ -375,6 +375,24 @@ def diamond_intrinsic_height(label: GraphLabel) -> int:
     return 1 + mid_row
 
 
+def diamond_height_for_width(label: GraphLabel, width: int) -> int:
+    """Height tall enough that the one-cell-per-row taper actually reaches
+    `width`'s edges by the middle row, at least as tall as the label-only
+    `diamond_intrinsic_height`.
+
+    A sibling sharing this diamond's grid column (e.g. a wider rectangle in
+    the same TD rank) can force `width` past what the label alone would need
+    -- without extra height the taper stalls short of the border at the
+    middle row, leaving a blank column before the "/"/"\\" glyph there
+    (VIEWMD-0022 follow-up).
+    """
+    tip_hw = diamond_tip_half_width(label.width)
+    cx = 1 + (width - 1) // 2 if width > 0 else 0
+    needed_cy = max(0, cx - tip_hw)
+    needed_height = 2 * needed_cy
+    return max(diamond_intrinsic_height(label), needed_height)
+
+
 def _draw_diamond(
     width: int, height: int, label: GraphLabel, color_hex: str, use_ascii: bool
 ) -> Drawing:
