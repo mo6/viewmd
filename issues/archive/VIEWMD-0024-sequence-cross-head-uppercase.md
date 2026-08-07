@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0024
-title: Use uppercase X for the ASCII sequence-diagram cross (failed-message) arrowhead
-status: in-progress
+title: Use a Latin capital X for the sequence-diagram cross (failed-message) arrowhead
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-05
 updated: 2026-08-07
-accepted_by: maintainer
+accepted_by: George Moses
 accepted_at: 2026-08-07
-commits: []
+commits: [17d8850]
 related: [VIEWMD-0014]
 supersedes: []
-changelog:
+changelog: "[1.7.2]"
 reason:
 ---
 
