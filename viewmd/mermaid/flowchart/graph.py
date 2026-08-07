@@ -364,8 +364,11 @@ class Graph:
             cols = (1, mid_col, 1)
             rows = (1, mid_row, 1)
         else:
+            # Horizontal padding keeps a space of breathing room either side
+            # of the label; vertical has none (VIEWMD-0036) -- unlike
+            # `cols`, `rows`' content term carries no `box_border_padding`.
             cols = (1, 2 * self.box_border_padding + n.label.width, 1)
-            rows = (1, n.label.content_height() + 2 * self.box_border_padding, 1)
+            rows = (1, n.label.content_height(), 1)
 
         for idx, col in enumerate(cols):
             x_coord = n.grid_coord.x + idx
