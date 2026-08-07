@@ -253,10 +253,10 @@ graph TD
 
 The `DB --> Server` edge below flows "backward" (right to left) relative to the diagram's overall
 `LR` direction, so the router sends it out the bottom of both boxes to avoid threading back
-through the nodes in between — and its horizontal segment lands on the same row as the `Backend`
-subgraph's own bottom border, visually fusing the arrow into the frame. This is an upstream
-`mermaid-ascii` layout limitation (subgraph padding doesn't reserve space for backward-routed
-edges), reproduced here byte-for-byte, not a viewmd defect:
+through the nodes in between. Upstream `mermaid-ascii` doesn't reserve extra clearance for this
+case, so the edge's horizontal segment lands on the same row as the `Backend` subgraph's own
+bottom border and visually fuses into the frame; viewmd deliberately diverges from that upstream
+behaviour (VIEWMD-0023) and reserves an extra blank row so the two stay visually distinct:
 
 ```mermaid
 graph LR
