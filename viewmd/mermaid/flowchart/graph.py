@@ -632,6 +632,51 @@ class Graph:
             self._calculate_subgraph_bounding_box(sg)
         self._ensure_subgraph_spacing()
 
+    def _backward_edge_attach_dir(self) -> Direction:
+        """The attachment side `determine_start_and_end_dir` routes a
+        backward-flowing edge's preferred path through on both ends -- the
+        node's bottom in LR, its right side in TD (see coords.py)."""
+        return DOWN if self.graph_direction == "LR" else RIGHT
+
+    def _is_backward_edge(self, e: Edge) -> bool:
+        """Whether `e` flows "backward" relative to the graph's overall
+        direction, per `determine_start_and_end_dir`'s own `is_backwards`
+        test in coords.py. `start_dir == end_dir == _backward_edge_attach_dir()`
+        alone isn't sufficient: `_parallel_directions` assigns that same
+        DOWN/DOWN (LR) or RIGHT/RIGHT (TD) pair to a duplicate *forward* edge
+        routed alongside its sibling, which must not count here."""
+        if e.from_ is e.to:
+            return False
+        d = determine_direction(e.from_.grid_coord, e.to.grid_coord)
+        if self.graph_direction == "LR":
+            return d in (LEFT, UPPER_LEFT, LOWER_LEFT)
+        return d in (UP, UPPER_LEFT, UPPER_RIGHT)
+
+    def _subgraph_needs_backward_edge_clearance(self, sg: Subgraph, max_extent: int) -> bool:
+        """Whether a backward-flowing edge attaches to whichever node sets
+        this subgraph's lowest (LR) / rightmost (TD) extent -- that edge's
+        routed segment lands on the same row/column the border is about to
+        occupy unless extra clearance is reserved (VIEWMD-0023)."""
+        attach_dir = self._backward_edge_attach_dir()
+        for n in sg.nodes:
+            if n.drawing_coord is None or n.drawing is None:
+                continue
+            if self.graph_direction == "LR":
+                node_extent = n.drawing_coord.y + len(n.drawing[0]) - 1
+            else:
+                node_extent = n.drawing_coord.x + len(n.drawing) - 1
+            if node_extent != max_extent:
+                continue
+            for e in self.edges:
+                if (
+                    (e.from_ is n or e.to is n)
+                    and e.start_dir == attach_dir
+                    and e.end_dir == attach_dir
+                    and self._is_backward_edge(e)
+                ):
+                    return True
+        return False
+
     def _calculate_subgraph_bounding_box(self, sg: Subgraph) -> None:
         if not sg.nodes:
             return
@@ -667,6 +712,18 @@ class Graph:
         sg.min_y = min_y - subgraph_padding - subgraph_label_space
         sg.max_x = max_x + subgraph_padding
         sg.max_y = max_y + subgraph_padding
+
+        # A backward-flowing edge attached to this subgraph's lowest (LR) /
+        # rightmost (TD) node routes through the same row/column the plain
+        # subgraph_padding just reserved for the border -- give it one more
+        # blank row/column of clearance so the two don't visually fuse
+        # (VIEWMD-0023).
+        if self.graph_direction == "LR":
+            if self._subgraph_needs_backward_edge_clearance(sg, max_y):
+                sg.max_y += subgraph_padding
+        else:
+            if self._subgraph_needs_backward_edge_clearance(sg, max_x):
+                sg.max_x += subgraph_padding
 
     def _ensure_subgraph_spacing(self) -> None:
         min_spacing = 1

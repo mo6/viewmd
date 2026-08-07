@@ -1,0 +1,9 @@
+graph LR
+    subgraph Frontend
+        UI[UI] --> API[API Client]
+    end
+    subgraph Backend
+        Server[Server] --> DB[(Database)]
+    end
+    API --> Server
+    DB --> Server
