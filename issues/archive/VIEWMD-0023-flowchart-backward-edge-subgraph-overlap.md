@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0023
 title: Reserve routing clearance for backward-flowing edges inside a flowchart subgraph
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-05
-updated: 2026-08-06
+updated: 2026-08-07
 accepted_by: George Moses
 accepted_at: 2026-08-06
-commits: []
+commits: [de0f430]
 related: [VIEWMD-0015]
 supersedes: []
-changelog:
+changelog: "[1.7.1]"
 reason:
 ---
 

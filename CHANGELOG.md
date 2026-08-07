@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.7.1] — 2026-08-07
+
+- **Reserve routing clearance for backward-flowing edges inside a flowchart subgraph** (VIEWMD-0023, render/mermaid): an edge that flows "backward" relative to a flowchart's overall direction is routed via each node's bottom side (LR) or right side (TD); when that routing lands on the same row/column as an enclosing subgraph's own border, the arrow used to visually fuse into the frame. viewmd now reserves an extra blank row/column of clearance in that case, a deliberate divergence from the upstream `mermaid-ascii` reference (which has this limitation) rather than a byte-for-byte port. See [docs/mermaid-examples.md](docs/mermaid-examples.md)'s "Subgraphs with left-to-right layout" example.
+
 ## [1.7.0] — 2026-08-06
 
 - **Render real node shapes in Mermaid flowcharts** (VIEWMD-0022, render/mermaid): round (`()`), stadium/pill (`([ ])`), circle (`(())`), subroutine (`[[ ]]`), and cylinder/database (`[( )]`) nodes now render with distinguishable borders instead of falling back to a bare `[...]`-style label, and diamond (`{}`) decision nodes render as a true tapered rhombus with edges attaching at the apex -- going beyond the upstream `mermaid-ascii` reference, which doesn't implement any of this. Also fixes the topology bug this caused: `B{Decision}` and a later bare `B` reference used to be treated as two different nodes, splitting a decision's yes/no branches into disconnected boxes instead of one diamond with two arms. See [docs/mermaid-examples.md](docs/mermaid-examples.md)'s "Node shapes" section and [docs/diamonds.md](docs/diamonds.md) for a tour of the diamond's three tip sizes.
