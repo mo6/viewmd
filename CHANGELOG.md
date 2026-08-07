@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.8.0] — 2026-08-07
+
+- **Flowchart node boxes no longer pad their label with a blank row above and below** (VIEWMD-0036, render/mermaid): rectangle, round, stadium, circle, subroutine, and cylinder nodes rendered 2 rows taller than necessary, a faithfully-ported upstream `mermaid-ascii` behavior that this project's own sequence-diagram and ER-diagram boxes never had; flowcharts now match that denser style, a deliberate divergence from the reference implementation. Diamond nodes and horizontal padding are unaffected. See `docs/mermaid-examples.md`'s "Node shapes" section.
+
 ## [1.7.2] — 2026-08-07
 
 - **Use a Latin capital X for the sequence-diagram cross (failed-message) arrowhead** (VIEWMD-0024, render/mermaid): `-x`/`--x` messages used a lowercase `x` in the `ASCII` charset and `×` (U+00D7 MULTIPLICATION SIGN) in the `UNICODE` charset, both of which read too small/faint next to the other arrowhead glyphs (`>`, `<`, `)`, `(`) at typical terminal font sizes; both charsets now use a bolder Latin `X`.

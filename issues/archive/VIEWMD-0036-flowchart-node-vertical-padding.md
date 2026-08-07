@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0036
 title: Remove the blank row above/below a flowchart node's label to match sequence/ER density
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-07
 updated: 2026-08-07
 accepted_by: George Moses
 accepted_at: 2026-08-07
-commits: []
+commits: [6605627]
 related: [VIEWMD-0015, VIEWMD-0022]
 supersedes: []
-changelog:
+changelog: "[1.8.0]"
 reason:
 ---
 
