@@ -34,7 +34,7 @@ ASCII = BoxChars(
     horizontal="-", vertical="|",
     tee_down="+", tee_right="+", tee_left="+", cross="+",
     arrow_right=">", arrow_left="<",
-    cross_head="x", point_right=")", point_left="(",
+    cross_head="X", point_right=")", point_left="(",
     circle="o", solid_line="-", dotted_line=".",
     self_top_right="+", self_bottom="+",
 )
@@ -44,7 +44,7 @@ UNICODE = BoxChars(
     horizontal="─", vertical="│",
     tee_down="┬", tee_right="├", tee_left="┤", cross="┼",
     arrow_right="►", arrow_left="◄",
-    cross_head="×", point_right=")", point_left="(",
+    cross_head="X", point_right=")", point_left="(",
     # 'o' rather than '○': the latter is East-Asian-ambiguous width and would
     # break column alignment in CJK-capable terminals.
     # '·' (U+00B7 MIDDLE DOT) rather than '┈' (U+2508 BOX DRAWINGS LIGHT
