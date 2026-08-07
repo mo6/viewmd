@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0037
 title: Shrink flowchart diamonds to be proportionate to the now-denser rectangle-family boxes
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-07
 updated: 2026-08-07
 accepted_by: George Moses
 accepted_at: 2026-08-07
-commits: []
+commits: [29d925e]
 related: [VIEWMD-0022, VIEWMD-0036]
 supersedes: []
-changelog:
+changelog: "[1.9.0]"
 reason:
 ---
 
