@@ -128,7 +128,7 @@ sequenceDiagram
 
 ## Flowcharts
 
-Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every non-diamond shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are.
+Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every non-diamond shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are. Diamonds got a matching size reduction (VIEWMD-0037) for short and medium labels; a long label's own minimum width still forces some taper rows to reach it without a gap, an inherent floor of the pointed-rhombus taper rather than a missed case.
 
 ### Node shapes
 
