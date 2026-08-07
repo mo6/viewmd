@@ -352,9 +352,9 @@ def diamond_tip_half_width(label_width: int) -> int:
       tip_hw 2 → `/▔▔▔\\`     (5)  -- medium labels
       tip_hw 3 → `/▔▔▔▔▔\\`   (7)  -- long labels
     """
-    if label_width <= 2:
+    if label_width <= 3:
         return 1
-    if label_width <= 6:
+    if label_width <= 9:
         return 2
     return 3
 
@@ -369,7 +369,7 @@ def diamond_intrinsic_height(label: GraphLabel) -> int:
     """
     tip_hw = diamond_tip_half_width(label.width)
     label_lines = max(1, len(label.lines))
-    mid_row = label_lines + 2 * (tip_hw + 1)
+    mid_row = label_lines + 2 * tip_hw
     if mid_row % 2 == 0:
         mid_row += 1
     return 1 + mid_row

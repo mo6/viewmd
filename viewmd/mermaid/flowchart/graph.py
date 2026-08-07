@@ -334,15 +334,27 @@ class Graph:
             # Three tip sizes (3 / 5 / 7 chars) from label width; height grows
             # with tip_hw so the one-cell-per-row taper can open wide enough
             # for the label (see canvas.diamond_tip_half_width).
+            #
+            # mid_row/mid_col's margin terms are deliberately tight (VIEWMD-0037):
+            # a diamond's own label-driven width (`label_min` below) already
+            # forces the taper to grow across several rows to reach it without
+            # a gap, so any *extra* fixed padding here compounds on top of that
+            # into a much bigger diamond than the label needs -- this is why a
+            # short label (e.g. "OK") used to render 7 rows tall next to a
+            # same-content 3-row rectangle. For long labels, `label_min` itself
+            # is the binding constraint regardless of these margins (the
+            # taper's fixed one-cell-per-row growth rate ties height to width),
+            # so this mainly shrinks short/medium labels; see VIEWMD-0037 for
+            # why a bigger reduction there would need a faster taper rate.
             tip_hw = canvas.diamond_tip_half_width(n.label.width)
             label_lines = max(1, len(n.label.lines))
-            mid_row = label_lines + 2 * (tip_hw + 1)
+            mid_row = label_lines + 2 * tip_hw
             # Odd mid_row keeps height//2 on the same row as the middle grid
             # cell centre, so LEFT/RIGHT attachments line up with horizontal
             # edge runs (even mid_row was off-by-one and broke the "no" line).
             if mid_row % 2 == 0:
                 mid_row += 1
-            mid_col = 2 * self.box_border_padding + n.label.width + 4
+            mid_col = 2 * self.box_border_padding + n.label.width + 2
             # Ensure the box is wide enough that tip_hw + cy fits inside cx,
             # otherwise the tip size gets clamped when drawing.
             cy = (1 + mid_row) // 2
