@@ -128,7 +128,7 @@ sequenceDiagram
 
 ## Flowcharts
 
-Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every non-diamond shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are. Diamonds got a matching size reduction (VIEWMD-0037) for short and medium labels; a long label's own minimum width still forces some taper rows to reach it without a gap, an inherent floor of the pointed-rhombus taper rather than a missed case.
+Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). A diamond renders as a flat-topped/bottomed rounded lozenge, exactly as tall as a same-content rectangle (`label_lines + 2` rows, never coupled to width), with a `◇` marker on all four attachment points -- centred in the top/bottom border and immediately beside the label on every content row (VIEWMD-0038); every other shape keeps the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are; a diamond's multi-line label packs the same way, one row per line with no gap between them.
 
 ### Node shapes
 
@@ -160,7 +160,7 @@ graph TD
 
 ### Multi-line decision label
 
-Diamond labels accept `<br>` line breaks; lines pack onto consecutive rows inside the taper:
+Diamond labels accept `<br>` line breaks; lines pack onto consecutive rows, `◇` beside each one:
 
 ```mermaid
 graph TD

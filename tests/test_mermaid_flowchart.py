@@ -43,25 +43,24 @@ def test_matches_reference_implementation(mmd_path, expected_path, use_ascii):
 
 
 def test_diamond_chain_arrows_land_flush_on_both_sides():
-    """Two diamonds of different tip sizes in a row must both get the same
-    zero-gap arrow attachment (VIEWMD-0022 follow-up): the taper has to reach
-    its own box edge by the middle row, or the arrow entering from the left
-    sits one column short of the "/" glyph."""
+    """Two diamonds in a row (VIEWMD-0038) must both attach flush -- the
+    connector lands directly on the neighbouring diamond's `◇` marker with
+    no gap in between."""
     properties = parse(
         "graph LR\n    S{OK} --> M{Decide}\n    M --> L{Continue?}\n"
     )
     out = render(properties, use_ascii=False)
     lines = out.splitlines()
     mid_line = next(line for line in lines if "OK" in line)
-    assert "────►/" in mid_line
-    assert "────► /" not in mid_line
+    assert "──►◇" in mid_line
+    assert "──► ◇" not in mid_line
 
 
-def test_diamond_reaches_column_forced_wide_by_sibling_rectangle():
+def test_diamond_height_independent_of_sibling_column_width():
     """A diamond sharing a TD grid column with a much wider rectangle sibling
-    (here `Handle left`) gets its column stretched past what its own label
-    needs. Without growing the diamond's height to match, the taper stalls
-    short of the wider border and leaves a gap (VIEWMD-0022 follow-up)."""
+    (here `Handle left`) must still render at exactly `label_lines + 2` rows
+    -- VIEWMD-0038 req. 2's decoupling: unlike the old tapered rhombus, a
+    diamond's height never depends on its own or a sibling's width."""
     properties = parse(
         "graph TD\n"
         "    A([Begin]) --> B{Path?}\n"
@@ -72,8 +71,9 @@ def test_diamond_reaches_column_forced_wide_by_sibling_rectangle():
     )
     out = render(properties, use_ascii=False)
     lines = out.splitlines()
-    mid_line = next(line for line in lines if "Path?" in line)
-    assert mid_line.startswith("/")
+    diamond_lines = [i for i, line in enumerate(lines) if "◇" in line]
+    assert diamond_lines == [diamond_lines[0], diamond_lines[0] + 1, diamond_lines[0] + 2]
+    assert "Path?" in lines[diamond_lines[0] + 1]
 
 
 def test_vertical_edge_label_does_not_widen_plain_rectangle_nodes():

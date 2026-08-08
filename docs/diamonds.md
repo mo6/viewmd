@@ -7,17 +7,11 @@ status: draft
 
 # Decision diamond sizes
 
-Diamonds (`A{Label}`) pick one of three tip widths from the label length -- always an odd number of characters on the top and bottom so a connecting branch lands on the middle tile. Longer tips also grow taller, so the one-cell-per-row taper can open wide enough for the label.
-
-| Tip | Characters | When |
-| --- | --- | --- |
-| Small | `/▔\` (3) | label width ≤ 2 |
-| Medium | `/▔▔▔\` (5) | label width 3–6 |
-| Large | `/▔▔▔▔▔\` (7) | label width ≥ 7 |
+Diamonds (`A{Label}`) render as a flat-topped/bottomed rounded lozenge -- the same shape family as `round`/`stadium`/`circle`, sized exactly like a same-content rectangle: one row per label line, plus 1 top and 1 bottom border row. A `◇` marks all four attachment points: centred in the top/bottom border (UP/DOWN), and immediately beside the label on every content row (LEFT/RIGHT). Unlike the old tapered-rhombus design, a diamond's height never depends on its own or a sibling's width -- only its own label's line count (VIEWMD-0038).
 
 View this file with `./viewmd.sh docs/diamonds.md`.
 
-## Small (3) -- short labels
+## Short label
 
 ```mermaid
 graph TD
@@ -31,7 +25,7 @@ graph TD
     A{X}
 ```
 
-## Medium (5) -- typical decision labels
+## Typical decision label
 
 ```mermaid
 graph TD
@@ -45,7 +39,9 @@ graph TD
     A{Maybe}
 ```
 
-## Large (7) -- long or multi-line labels
+## Multi-line label
+
+A `<br>` label packs one row per line, with `◇` beside every content row:
 
 ```mermaid
 graph TD
@@ -59,9 +55,9 @@ graph TD
     A{Hello world}
 ```
 
-## All three in one graph
+## Several diamonds in one graph
 
-Short, medium, and long diamonds side by side (left to right). Tip size also drives height, so even when they share an LR row the small diamond stays shorter than the large one:
+Every diamond renders at the same height regardless of its own or a neighbour's label width:
 
 ```mermaid
 graph LR
@@ -69,9 +65,9 @@ graph LR
     M --> L{Continue?}
 ```
 
-## Nested decisions at mixed sizes
+## Nested decisions at mixed label lengths
 
-A short gate into a longer follow-up question:
+A short gate into a longer follow-up question -- both diamonds render at the same height:
 
 ```mermaid
 graph TD
