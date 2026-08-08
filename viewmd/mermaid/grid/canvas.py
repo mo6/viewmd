@@ -252,32 +252,53 @@ def draw_box(
     """Box is always 3x3 on the grid; `width`/`height` are the caller's
     pixel-space column/row-width sums for that node's two content columns/rows
     (ported from cmd/draw.go's `drawBox`). Shape glyphs beyond the rectangle
-    baseline are VIEWMD-0022; diamond is a true tapered rhombus.
+    baseline are VIEWMD-0022. A diamond (VIEWMD-0038) is drawn by this same
+    uniform-border-box mechanism as every other shape -- it is no longer a
+    true tapered rhombus -- with a single `◇`-style marker glyph placed in
+    the middle of an otherwise flat top/bottom border.
 
     `shape` is a `NodeShape` value string (`"rectangle"`, `"round"`, …) kept as
     plain `str` here so `grid` does not import the flowchart package.
     """
-    if shape == "diamond":
-        return _draw_diamond(width, height, label, color_hex, use_ascii)
-
     from_ = DrawingCoord(0, 0)
     to = DrawingCoord(width, height)
     d = mk_drawing(max(from_.x, to.x), max(from_.y, to.y))
 
     glyphs = _box_glyphs(shape, use_ascii)
+    bw = border_width(shape)
     for x in range(from_.x + 1, to.x):
         d[x][from_.y] = glyphs.h_top
         d[x][to.y] = glyphs.h_bot
     for y in range(from_.y + 1, to.y):
-        d[from_.x][y] = glyphs.v_left
-        d[to.x][y] = glyphs.v_right
+        for lx in range(from_.x, min(from_.x + bw, to.x + 1)):
+            d[lx][y] = glyphs.v_left
+        for rx in range(max(to.x - bw + 1, from_.x), to.x + 1):
+            d[rx][y] = glyphs.v_right
     d[from_.x][from_.y] = glyphs.tl
     d[to.x][from_.y] = glyphs.tr
     d[from_.x][to.y] = glyphs.bl
     d[to.x][to.y] = glyphs.br
 
-    _place_label(d, from_, width, height, label, color_hex)
+    if shape == "diamond":
+        # Centre marker must land on the exact UP/DOWN attachment-cell
+        # centre (`graph._grid_to_drawing_coord`'s middle-column formula),
+        # which this mirrors -- see VIEWMD-0038 design notes.
+        center_x = 1 + (width - 1) // 2
+        if from_.x < center_x < to.x:
+            d[center_x][from_.y] = glyphs.v_left
+            d[center_x][to.y] = glyphs.v_right
+
+    line_gap = 0 if shape == "diamond" else LABEL_LINE_GAP
+    _place_label(d, from_, width, height, label, color_hex, line_gap=line_gap)
     return d
+
+
+def border_width(shape: str) -> int:
+    """Left/right border strip width, in pixel-columns. Only `subroutine`
+    doubles its side bars (VIEWMD-0038 req. 4, keeping the existing 1-space
+    label padding column intact rather than reusing it) -- every other shape
+    keeps the single-pixel border strip every shape has always used."""
+    return 2 if shape == "subroutine" else 1
 
 
 @dataclass(frozen=True)
@@ -293,9 +314,20 @@ class _BoxGlyphs:
 
 
 def _box_glyphs(shape: str, use_ascii: bool) -> _BoxGlyphs:
-    """Per-shape border glyphs from the VIEWMD-0022 proposal. ASCII mode keeps
-    the baseline `+`/`-`/`|` set for every non-diamond shape -- distinguishable
-    unicode is a unicode-mode concern; diamond has its own ASCII taper."""
+    """Per-shape border glyphs from the VIEWMD-0022 proposal (subroutine/
+    cylinder/diamond glyphs updated by VIEWMD-0038). ASCII mode keeps the
+    baseline `+`/`-`/`|` set for every shape except diamond, whose four
+    attachment-marker sides need an ASCII-safe substitute for `◇`
+    (VIEWMD-0038 req. 9) -- distinguishable unicode is otherwise a
+    unicode-mode-only concern."""
+    if shape == "diamond":
+        marker = "*" if use_ascii else "◇"
+        corner = "+" if use_ascii else None
+        h = "-" if use_ascii else "─"
+        if use_ascii:
+            return _BoxGlyphs(corner, corner, corner, corner, h, h, marker, marker)
+        return _BoxGlyphs("╭", "╮", "╰", "╯", h, h, marker, marker)
+
     if use_ascii:
         return _BoxGlyphs("+", "+", "+", "+", "-", "-", "|", "|")
 
@@ -306,9 +338,9 @@ def _box_glyphs(shape: str, use_ascii: bool) -> _BoxGlyphs:
     if shape == "circle":
         return _BoxGlyphs("╔", "╗", "╚", "╝", "═", "═", "║", "║")
     if shape == "subroutine":
-        return _BoxGlyphs("┌", "┐", "└", "┘", "─", "─", "‖", "‖")
+        return _BoxGlyphs("┌", "┐", "└", "┘", "─", "─", "│", "│")
     if shape == "cylinder":
-        return _BoxGlyphs("╭", "╮", "╰", "╯", "─", "═", "│", "│")
+        return _BoxGlyphs("╭", "╮", "╰", "╯", "═", "─", "│", "│")
     # RECTANGLE and any unknown fall through to the VIEWMD-0015 baseline.
     return _BoxGlyphs("┌", "┐", "└", "┘", "─", "─", "│", "│")
 
@@ -322,15 +354,15 @@ def _place_label(
     color_hex: str,
     *,
     center_bias: int = 1,
+    line_gap: int = LABEL_LINE_GAP,
 ) -> None:
     inner_top = from_.y + 1
     inner_height = height - 1
-    content_top = inner_top + (inner_height - label.content_height()) // 2
+    content_height = len(label.lines) + (len(label.lines) - 1) * line_gap if label.lines else 0
+    content_top = inner_top + (inner_height - content_height) // 2
     for line_idx, line in enumerate(label.lines):
-        text_y = content_top + line_idx * (LABEL_LINE_GAP + 1)
+        text_y = content_top + line_idx * (line_gap + 1)
         text_width = _string_width(line)
-        # Rectangles use center_bias=1 (VIEWMD-0015 / Go drawBox); diamonds
-        # centre on the true midline (bias 0) so the label sits inside the taper.
         text_x = from_.x + width // 2 - ceil_div(text_width, 2) + center_bias
         for ch in line:
             rune_w = _rune_width(ch)
@@ -340,137 +372,6 @@ def _place_label(
                     if text_x + offset <= width:
                         d[text_x + offset][text_y] = ""
             text_x += rune_w
-
-
-def diamond_tip_half_width(label_width: int) -> int:
-    """Pick one of three diamond tip sizes from the label length.
-
-    Tip totals (slashes included) are always 3, 5, or 7 characters -- an odd
-    tile count so the UP/DOWN branch lands on the middle tile:
-
-      tip_hw 1 → `/▔\\`       (3)  -- short labels
-      tip_hw 2 → `/▔▔▔\\`     (5)  -- medium labels
-      tip_hw 3 → `/▔▔▔▔▔\\`   (7)  -- long labels
-    """
-    if label_width <= 3:
-        return 1
-    if label_width <= 9:
-        return 2
-    return 3
-
-
-def diamond_intrinsic_height(label: GraphLabel) -> int:
-    """Drawing height (max y index) for a diamond sized to its tip/label.
-
-    Kept independent of shared grid `row_height` so a small diamond next to a
-    large one in an LR row still draws short (VIEWMD-0022). Mid-row height is
-    forced odd so the vertical centre matches the middle grid cell (same rule
-    as graph._set_column_width).
-    """
-    tip_hw = diamond_tip_half_width(label.width)
-    label_lines = max(1, len(label.lines))
-    mid_row = label_lines + 2 * tip_hw
-    if mid_row % 2 == 0:
-        mid_row += 1
-    return 1 + mid_row
-
-
-def diamond_height_for_width(label: GraphLabel, width: int) -> int:
-    """Height tall enough that the one-cell-per-row taper actually reaches
-    `width`'s edges by the middle row, at least as tall as the label-only
-    `diamond_intrinsic_height`.
-
-    A sibling sharing this diamond's grid column (e.g. a wider rectangle in
-    the same TD rank) can force `width` past what the label alone would need
-    -- without extra height the taper stalls short of the border at the
-    middle row, leaving a blank column before the "/"/"\\" glyph there
-    (VIEWMD-0022 follow-up).
-    """
-    tip_hw = diamond_tip_half_width(label.width)
-    cx = 1 + (width - 1) // 2 if width > 0 else 0
-    needed_cy = max(0, cx - tip_hw)
-    needed_height = 2 * needed_cy
-    return max(diamond_intrinsic_height(label), needed_height)
-
-
-def _draw_diamond(
-    width: int, height: int, label: GraphLabel, color_hex: str, use_ascii: bool
-) -> Drawing:
-    """True tapered rhombus: diagonal sides meeting at top/bottom apexes
-    (VIEWMD-0022 req. 2). Edges attach at those apexes via the existing UP/DOWN
-    3x3 grid cells.
-
-    Three tip sizes (3 / 5 / 7 characters) are chosen from the label width via
-    `diamond_tip_half_width`; height is sized to match in `graph._set_column_width`
-    so the one-cell-per-row taper reaches a middle wide enough for the label.
-    """
-    d = mk_drawing(max(width, 0), max(height, 0))
-    if width <= 0 or height <= 0:
-        return d
-
-    # Always ASCII slashes -- unicode box-drawing diagonals tend to look
-    # heavier/misaligned in terminal fonts; the decision.txt mockup uses these.
-    up_left, up_right = "/", "\\"
-    lo_left, lo_right = "\\", "/"
-    top_edge, bot_edge = ("-", "_") if use_ascii else ("▔", "▁")
-
-    # Tip centre must coincide with the UP/DOWN attachment cell centre.
-    # That cell sits at local x = 1 + (width - 1) // 2 (middle column of the
-    # node's 3x3); width//2 is one cell left whenever width is odd.
-    cx = 1 + (width - 1) // 2
-    cy = height // 2
-    tip_hw = min(diamond_tip_half_width(label.width), cx, width - cx)
-    tip_hw = max(1, tip_hw)
-    max_hw = min(cx, width - cx, tip_hw + cy)
-
-    for y in range(height + 1):
-        if y <= cy:
-            hw = tip_hw + y
-        else:
-            hw = tip_hw + (height - y)
-        hw = min(hw, max_hw)
-        left = max(0, cx - hw)
-        right = min(width, cx + hw)
-        if y <= cy:
-            left_ch, right_ch = up_left, up_right
-        else:
-            left_ch, right_ch = lo_left, lo_right
-        if left == right:
-            d[left][y] = left_ch
-            continue
-        d[left][y] = left_ch
-        d[right][y] = right_ch
-        if y == 0:
-            for x in range(left + 1, right):
-                d[x][y] = top_edge
-        elif y == height:
-            for x in range(left + 1, right):
-                d[x][y] = bot_edge
-
-    # Label lines sit on consecutive rows centred on the mid row so a two-line
-    # decision reads like docs/decision.txt:
-    #   / Decisions \────
-    #   \ Triangles /
-    content_h = max(1, len(label.lines))
-    content_top = cy
-    if content_top + content_h - 1 >= height:
-        content_top = max(1, height - content_h)
-    for line_idx, line in enumerate(label.lines):
-        text_y = content_top + line_idx
-        if text_y > height:
-            break
-        text_width = _string_width(line)
-        text_x = cx - text_width // 2
-        for ch in line:
-            rune_w = _rune_width(ch)
-            if 0 <= text_x <= width and 0 <= text_y <= height:
-                if d[text_x][text_y] == " ":
-                    d[text_x][text_y] = wrap_text_in_color(ch, color_hex)
-                for offset in range(1, rune_w):
-                    if text_x + offset <= width and d[text_x + offset][text_y] == " ":
-                        d[text_x + offset][text_y] = ""
-            text_x += rune_w
-    return d
 
 
 def draw_subgraph(width: int, height: int, use_ascii: bool) -> Drawing:

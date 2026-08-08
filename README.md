@@ -51,7 +51,7 @@ renders as box-drawing ASCII art in place of its source — sequence diagrams wi
 loop/alt/par fragments, and `actor` participants (drawn as a random 3-line stick figure instead of
 a box); flowcharts with subgraphs, labelled and bidirectional edges, `classDef` styling, A*-based
 routing around other nodes, and distinct node shapes (round, stadium/pill, circle, subroutine,
-cylinder/database, and diamond decision nodes rendered as a true tapered rhombus); ER diagrams
+cylinder/database, and diamond decision nodes rendered as a rounded lozenge); ER diagrams
 with attribute tables, crow's-foot cardinality notation, and identifying/non-identifying
 relationships. See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of
 all three, including [docs/diamonds.md](docs/diamonds.md) for the diamond shape specifically, and

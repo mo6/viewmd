@@ -223,27 +223,6 @@ class Graph:
 
         for n in self.nodes:
             self._set_column_width(n)
-        # Diamonds need an odd middle-column width so the drawn box width is
-        # even and the UP/DOWN attachment cell centre lands on the tip's
-        # middle tile. A later wider rectangle on the same column can bump the
-        # shared width back to even -- re-assert after every node has sized.
-        for n in self.nodes:
-            if n.shape != NodeShape.DIAMOND or n.grid_coord is None:
-                continue
-            mid_x = n.grid_coord.x + 1
-            w = self.column_width.get(mid_x, 0)
-            if w % 2 == 0:
-                w += 1
-                self.column_width[mid_x] = w
-            # A sibling sharing this diamond's column (e.g. a wider rectangle
-            # in the same TD rank) can force the box wider than the taper
-            # naturally reaches by the middle row -- grow the row to match so
-            # it still closes on the border instead of leaving a gap.
-            mid_y = n.grid_coord.y + 1
-            needed_height = canvas.diamond_height_for_width(n.label, 1 + w)
-            needed_mid_row = needed_height - 1
-            if needed_mid_row > self.row_height.get(mid_y, 0):
-                self.row_height[mid_y] = needed_mid_row
 
         for e in self.edges:
             self._determine_path(e)
@@ -252,34 +231,21 @@ class Graph:
 
         for n in self.nodes:
             dc = self._grid_to_drawing_coord(n.grid_coord)
+            # Box local x=0 must land on the left border strip's true left
+            # edge, not its centre -- same thing for a 1-pixel strip (every
+            # shape but `subroutine`), but distinct once a strip is wider
+            # (VIEWMD-0038 req. 4's doubled subroutine bars).
+            left_bw = self.column_width.get(n.grid_coord.x, 0)
+            n.drawing_coord = DrawingCoord(dc.x - left_bw // 2, dc.y)
             width = self._node_box_width(n)
-            if n.shape == NodeShape.DIAMOND:
-                # Draw at tip-based intrinsic height (grown if a sibling
-                # forced this column/row wider than the label alone needs),
-                # then centre vertically in the (possibly taller still)
-                # shared grid band so LR neighbours of different tip sizes
-                # keep distinct heights.
-                height = canvas.diamond_height_for_width(n.label, width)
-                alloc_h = self._node_box_height(n)
-                n.drawing = canvas.draw_box(
-                    width,
-                    height,
-                    n.label,
-                    n.style_class.styles.get("color", ""),
-                    self.use_ascii,
-                    shape=n.shape.value,
-                )
-                n.drawing_coord = DrawingCoord(dc.x, dc.y + max(0, (alloc_h - height) // 2))
-            else:
-                n.drawing_coord = dc
-                n.drawing = canvas.draw_box(
-                    width,
-                    self._node_box_height(n),
-                    n.label,
-                    n.style_class.styles.get("color", ""),
-                    self.use_ascii,
-                    shape=n.shape.value,
-                )
+            n.drawing = canvas.draw_box(
+                width,
+                self._node_box_height(n),
+                n.label,
+                n.style_class.styles.get("color", ""),
+                self.use_ascii,
+                shape=n.shape.value,
+            )
         self._set_drawing_size_to_grid_constraints()
 
         self._calculate_subgraph_bounding_boxes()
@@ -289,15 +255,38 @@ class Graph:
         return any(sg_node is n for sg in self.subgraphs for sg_node in sg.nodes)
 
     def _get_node_subgraph(self, n: Node) -> Subgraph | None:
-        for sg in self.subgraphs:
-            if any(sg_node is n for sg_node in sg.nodes):
-                return sg
-        return None
+        # A node declared inside a nested subgraph is a member of every
+        # enclosing subgraph too (`set_subgraphs` propagates it outward), so
+        # more than one candidate can match -- return the innermost
+        # (deepest-nested) one, not just the first in parse order, or a node
+        # whose real membership is a nested child gets attributed to its
+        # outer ancestor instead (VIEWMD-0038 fix: this under-detected which
+        # subgraph border/label needs clearance above such a node once
+        # `padding_y`'s smaller default (req. 10) removed the accidental
+        # slack that had been masking it).
+        candidates = [sg for sg in self.subgraphs if any(sg_node is n for sg_node in sg.nodes)]
+        if not candidates:
+            return None
+
+        def depth(sg: Subgraph) -> int:
+            d = 0
+            while sg.parent is not None:
+                d += 1
+                sg = sg.parent
+            return d
+
+        return max(candidates, key=depth)
 
     def _has_incoming_edge_from_outside_subgraph(self, n: Node) -> bool:
+        # `n` itself doesn't need to be inside a subgraph: a node with no
+        # subgraph of its own (`node_subgraph is None`) still needs the same
+        # clearance for the *source*'s subgraph border when an edge crosses
+        # out to it (VIEWMD-0038 fix -- previously returned False
+        # unconditionally here, so a node just outside a subgraph never got
+        # clearance from an edge leaving that subgraph, letting the
+        # subgraph's own border merge into the node's box once `padding_x`'s
+        # smaller default, req. 6, removed the accidental slack).
         node_subgraph = self._get_node_subgraph(n)
-        if node_subgraph is None:
-            return False
 
         has_external_edge = False
         for e in self.edges:
@@ -308,6 +297,8 @@ class Graph:
                     break
         if not has_external_edge:
             return False
+        if node_subgraph is None:
+            return True
 
         for other in node_subgraph.nodes:
             if other is n or other.grid_coord is None:
@@ -325,61 +316,23 @@ class Graph:
         return True
 
     def _set_column_width(self, n: Node) -> None:
-        # Diamonds need extra horizontal margin so the mid-row label sits inside
-        # the taper, and extra vertical space in the *middle* row so the rhombus
-        # reads as pointed rather than a flat hexagon (VIEWMD-0022). Keep the
-        # outer 3x3 border rows at height 1 -- same as rectangles -- so
-        # drawing_coord (center of the top-left cell) still lands on y=0.
+        # Horizontal padding keeps a space of breathing room either side of
+        # the label; vertical has none (VIEWMD-0036) -- unlike `cols`,
+        # `rows`' content term carries no `box_border_padding`. A diamond
+        # (VIEWMD-0038) is sized exactly like every other shape here -- its
+        # own bespoke taper-driven term is gone, so its height depends only
+        # on its own label's line count, never on width. It still differs
+        # from the other shapes' row term in one respect: its content rows
+        # pack one row per label line with *no* inter-line gap (req. 3),
+        # rather than `content_height()`'s gap -- `canvas.draw_box` mirrors
+        # this with `line_gap=0` for diamonds specifically.
+        # `subroutine` doubles its side-bar border strip (VIEWMD-0038 req. 4);
+        # every other shape keeps the single-pixel strip it's always had.
+        bw = canvas.border_width(n.shape.value)
+        cols = (bw, 2 * self.box_border_padding + n.label.width, bw)
         if n.shape == NodeShape.DIAMOND:
-            # Three tip sizes (3 / 5 / 7 chars) from label width; height grows
-            # with tip_hw so the one-cell-per-row taper can open wide enough
-            # for the label (see canvas.diamond_tip_half_width).
-            #
-            # mid_row/mid_col's margin terms are deliberately tight (VIEWMD-0037):
-            # a diamond's own label-driven width (`label_min` below) already
-            # forces the taper to grow across several rows to reach it without
-            # a gap, so any *extra* fixed padding here compounds on top of that
-            # into a much bigger diamond than the label needs -- this is why a
-            # short label (e.g. "OK") used to render 7 rows tall next to a
-            # same-content 3-row rectangle. For long labels, `label_min` itself
-            # is the binding constraint regardless of these margins (the
-            # taper's fixed one-cell-per-row growth rate ties height to width),
-            # so this mainly shrinks short/medium labels; see VIEWMD-0037 for
-            # why a bigger reduction there would need a faster taper rate.
-            tip_hw = canvas.diamond_tip_half_width(n.label.width)
-            label_lines = max(1, len(n.label.lines))
-            mid_row = label_lines + 2 * tip_hw
-            # Odd mid_row keeps height//2 on the same row as the middle grid
-            # cell centre, so LEFT/RIGHT attachments line up with horizontal
-            # edge runs (even mid_row was off-by-one and broke the "no" line).
-            if mid_row % 2 == 0:
-                mid_row += 1
-            mid_col = 2 * self.box_border_padding + n.label.width + 2
-            # Ensure the box is wide enough that tip_hw + cy fits inside cx,
-            # otherwise the tip size gets clamped when drawing.
-            cy = (1 + mid_row) // 2
-            min_mid = 2 * max(0, tip_hw + cy - 1)
-            mid_col = max(mid_col, min_mid)
-            # The taper only grows 1 column/row, so it can reach at most
-            # `tip_hw + cy` half-width by the middle row. A wider box than
-            # that leaves the taper short of the border at the middle row --
-            # a blank column before the "/"/"\" glyph there (visible as
-            # inconsistent spacing before an edge attaching on the left/right).
-            # Cap mid_col to what the taper can actually fill, but never below
-            # what the label itself needs.
-            label_min = 2 * self.box_border_padding + n.label.width
-            reach_cap = 2 * (tip_hw + cy) - 1
-            mid_col = min(mid_col, max(reach_cap, label_min))
-            # Odd mid_col → even box width → tip centre == UP/DOWN attachment.
-            if mid_col % 2 == 0:
-                mid_col += 1
-            cols = (1, mid_col, 1)
-            rows = (1, mid_row, 1)
+            rows = (1, max(1, len(n.label.lines)), 1)
         else:
-            # Horizontal padding keeps a space of breathing room either side
-            # of the label; vertical has none (VIEWMD-0036) -- unlike
-            # `cols`, `rows`' content term carries no `box_border_padding`.
-            cols = (1, 2 * self.box_border_padding + n.label.width, 1)
             rows = (1, n.label.content_height(), 1)
 
         for idx, col in enumerate(cols):
@@ -390,20 +343,51 @@ class Graph:
             y_coord = n.grid_coord.y + idx
             self.row_height[y_coord] = max(self.row_height.get(y_coord, 0), row)
 
+        # The subgraph border/label overhead bump belongs on whichever axis
+        # a cross-subgraph incoming edge actually travels: rows for TD,
+        # columns for LR. Previously always added to row_height regardless
+        # of direction -- harmless for TD (the axis it happened to match)
+        # but a no-op for LR, where the real collision is horizontal.
+        #
+        # The bump's *base* is clamped to the pre-VIEWMD-0038 padding default
+        # (5) rather than the new, smaller `padding_x`/`padding_y` (3/2):
+        # this overhead reserves fixed drawing-space margin for a nested
+        # subgraph's own border+label (`_calculate_subgraph_bounding_box`'s
+        # `subgraph_padding`/`subgraph_label_space`, computed independently
+        # of any grid padding), calibrated at VIEWMD-0023 against the old
+        # default. Applying VIEWMD-0038's shorter direct-connector gap here
+        # too starved that fixed margin, corrupting a nested subgraph's
+        # border into its own contained node's box (`subgraph_nested`) or a
+        # sibling subgraph's border into its neighbour's box
+        # (`complex_backend`). A user-overridden *larger* padding still adds
+        # its own +4 on top, unclamped.
+        needs_overhead = self._has_incoming_edge_from_outside_subgraph(n)
         if n.grid_coord.x > 0:
-            self.column_width[n.grid_coord.x - 1] = self.padding_x
+            base_padding_x = self.padding_x
+            if self.graph_direction == "LR" and needs_overhead:
+                base_padding_x = max(base_padding_x, 5) + 4
+            self.column_width[n.grid_coord.x - 1] = max(
+                self.column_width.get(n.grid_coord.x - 1, 0), base_padding_x
+            )
         if n.grid_coord.y > 0:
-            base_padding = self.padding_y
-            if self._has_incoming_edge_from_outside_subgraph(n):
-                base_padding += 4  # subgraph border/label overhead
+            base_padding_y = self.padding_y
+            if self.graph_direction != "LR" and needs_overhead:
+                base_padding_y = max(base_padding_y, 5) + 4
             self.row_height[n.grid_coord.y - 1] = max(
-                self.row_height.get(n.grid_coord.y - 1, 0), base_padding
+                self.row_height.get(n.grid_coord.y - 1, 0), base_padding_y
             )
 
     def _increase_grid_size_for_path(self, path: list[GridCoord]) -> None:
+        # Floor for a path-only grid cell (no node of its own, purely a
+        # routed edge waypoint -- e.g. where a backward edge loops around a
+        # subgraph). This is routing headroom, not the visible direct
+        # node-to-node arrow gap `padding_x`/`padding_y` controls (VIEWMD-0038
+        # req. 6/10 shortened those) -- kept at the pre-VIEWMD-0038 floor so
+        # A* still has enough slack to route around obstacles rather than
+        # cutting through a node's own box (seen with `subgraph_backward_edge_lr`).
         for c in path:
-            self.column_width.setdefault(c.x, self.padding_x // 2)
-            self.row_height.setdefault(c.y, self.padding_y // 2)
+            self.column_width.setdefault(c.x, max(2, self.padding_x // 2))
+            self.row_height.setdefault(c.y, max(2, self.padding_y // 2))
 
     def _reserve_spot_in_grid(self, n: Node, requested_coord: GridCoord) -> GridCoord:
         if self.grid.get(requested_coord) is not None:
@@ -579,6 +563,18 @@ class Graph:
             # Vertical line: the label fully occupies its row (no dashes to
             # clear around it) -- unchanged from the VIEWMD-0015 baseline.
             width = len_label + label_padding
+            # Reserve row height too (VIEWMD-0038 req. 11): a labeled
+            # vertical edge needs exactly 1 blank row above and below its
+            # label, which the shared `padding_y`-derived gap alone can't
+            # guarantee once `padding_y` is tuned for the *unlabeled* case
+            # (req. 10) -- see design notes for why no single constant
+            # satisfies both simultaneously.
+            middle_y = _label_middle_y(largest_line)
+            label_lines = e.text.count("\n") + 1
+            # 1 blank row above the label, 1 below it, 1 for the arrowhead
+            # that still shares this same grid-row gap (verified empirically
+            # against PADDING_Y=4 -- see VIEWMD-0038 design notes).
+            self.row_height[middle_y] = max(self.row_height.get(middle_y, 0), label_lines + 3)
         self.column_width[middle_x] = max(self.column_width.get(middle_x, 0), width)
         e.label_line = largest_line
 
@@ -592,44 +588,26 @@ class Graph:
         )
 
     def _path_grid_to_drawing(self, c: GridCoord) -> DrawingCoord:
-        """Grid→drawing for edge paths; diamond attachment cells map to the
-        intrinsic tip/side, not the (possibly taller) shared grid cell centre.
-        """
-        node = self.grid.get(c)
-        if (
-            node is not None
-            and node.shape == NodeShape.DIAMOND
-            and node.grid_coord is not None
-            and node.drawing is not None
-            and node.drawing_coord is not None
-        ):
-            rel = Direction(c.x - node.grid_coord.x, c.y - node.grid_coord.y)
-            w = len(node.drawing) - 1
-            h = len(node.drawing[0]) - 1
-            cx = 1 + (w - 1) // 2
-            dc = node.drawing_coord
-            if rel == UP:
-                return DrawingCoord(dc.x + cx, dc.y)
-            if rel == DOWN:
-                return DrawingCoord(dc.x + cx, dc.y + h)
-            if rel == LEFT or rel == RIGHT:
-                # Keep the grid cell's Y so horizontal path runs stay
-                # axis-aligned (intrinsic h//2 can sit one row off the middle
-                # grid cell when mid_row is even, which turned the "no" branch
-                # into a diagonal that draw_line effectively dropped).
-                grid_dc = self._grid_to_drawing_coord(c)
-                x = dc.x if rel == LEFT else dc.x + w
-                return DrawingCoord(x, grid_dc.y)
-            if rel == MIDDLE:
-                return DrawingCoord(dc.x + cx, dc.y + h // 2)
+        """Grid→drawing for edge paths. A diamond (VIEWMD-0038) is sized and
+        attached exactly like every other shape now, so this is just
+        `_grid_to_drawing_coord` -- no shape-specific override needed."""
         return self._grid_to_drawing_coord(c)
 
     def _line_to_drawing(self, line: list[GridCoord]) -> list[DrawingCoord]:
         return [self._path_grid_to_drawing(c) for c in line]
 
     def _node_box_width(self, n: Node) -> int:
-        return self.column_width.get(n.grid_coord.x, 0) + self.column_width.get(
-            n.grid_coord.x + 1, 0
+        # The implicit "+1" is the right border strip's single pixel for
+        # every shape but `subroutine`, whose 2-pixel strip needs one more
+        # (VIEWMD-0038 req. 4) -- `- 1` below turns "sum of 3 grid columns"
+        # into "draw_box's width param", since draw_box's own right-border
+        # loop already draws the strip's last pixel at position `width`.
+        x = n.grid_coord.x
+        return (
+            self.column_width.get(x, 0)
+            + self.column_width.get(x + 1, 0)
+            + self.column_width.get(x + 2, 0)
+            - 1
         )
 
     def _node_box_height(self, n: Node) -> int:
@@ -928,6 +906,24 @@ class Graph:
         start = DrawingCoord(middle_x - label_len // 2, middle_y)
         self.drawing = canvas.draw_text(self.drawing, start, label)
 
+    def _attach_border_extra(self, c: GridCoord, dir_: Direction) -> int:
+        """Extra pixels a line/arrowhead must stop short of `c`'s own
+        left/right border strip, beyond `draw_line`'s built-in 1-pixel
+        offset (which only clears a single-pixel border). Needed once a
+        border strip is wider than 1 pixel -- `subroutine`'s doubled bars
+        (VIEWMD-0038 req. 4) -- or an arriving arrowhead lands *inside* the
+        box, overwriting the outer bar, instead of stopping in the gap
+        before it (as every single-pixel-border shape already does)."""
+        if dir_ not in (LEFT, RIGHT):
+            return 0
+        node = self.grid.get(c)
+        if node is None or node.grid_coord is None:
+            return 0
+        dx = c.x - node.grid_coord.x
+        if dx not in (0, 2):
+            return 0
+        return canvas.border_width(node.shape.value) - 1
+
     def _draw_path(
         self, path: list[GridCoord]
     ) -> tuple[Drawing, list[list[DrawingCoord]], list[Direction]]:
@@ -941,8 +937,9 @@ class Graph:
             if previous_drawing_coord == next_drawing_coord:
                 continue
             dir_ = determine_direction(previous_coord, next_coord)
+            extra = self._attach_border_extra(next_coord, dir_)
             s = canvas.draw_line(
-                d, previous_drawing_coord, next_drawing_coord, 1, -1, self.use_ascii
+                d, previous_drawing_coord, next_drawing_coord, 1, -1 - extra, self.use_ascii
             )
             if not s:
                 s = [previous_drawing_coord]
@@ -955,8 +952,9 @@ class Graph:
         d = canvas.copy_canvas(self.drawing)
         if self.use_ascii:
             return d
-        # Diamond apexes are already pointed (╱/╲ meet); T-junction glyphs on
-        # the flat rectangle border would punch a ┴/┬ into the tip.
+        # A diamond's `◇` attachment marker (VIEWMD-0038) stays put rather
+        # than being overwritten by a T-junction glyph -- it already marks
+        # the attachment point, unlike a rectangle's flat border.
         from_node = self.grid.get(path[0])
         if from_node is not None and from_node.shape == NodeShape.DIAMOND:
             return d
@@ -1030,6 +1028,11 @@ class Graph:
 def _label_middle_x(line: list[GridCoord]) -> int:
     min_x, max_x = sorted((line[0].x, line[1].x))
     return min_x + (max_x - min_x) // 2
+
+
+def _label_middle_y(line: list[GridCoord]) -> int:
+    min_y, max_y = sorted((line[0].y, line[1].y))
+    return min_y + (max_y - min_y) // 2
 
 
 def _inset_line(line: list[DrawingCoord], inset_start: int, inset_end: int) -> list[DrawingCoord]:
