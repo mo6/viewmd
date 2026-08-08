@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.10.0] — 2026-08-08
+
+- **Render flowchart diamonds as a flat lozenge, and condense connector spacing** (VIEWMD-0038, render/mermaid): diamonds drop their tapered-rhombus geometry (VIEWMD-0022/0037) for the same flat-bordered-box mechanism every other shape uses -- exactly as tall as a same-content rectangle (`label_lines + 2` rows, no longer coupled to width), with a uniform `◇` marker on all four attachment points. `subroutine`'s side bars double (`‖` → `││`), `cylinder`'s heavy/light border weighting flips (heavy now on top), and the default horizontal/vertical connector gap shrinks (`PADDING_X` 5→3, `PADDING_Y` 5→2, with a labeled vertical edge separately guaranteed 1 blank line above/below its label) -- a deliberate divergence from the upstream `mermaid-ascii` reference's own defaults, consistent with this project's precedent (VIEWMD-0036, VIEWMD-0037). See `docs/mermaid-examples.md`'s "Node shapes"/"Branching and labelled edges" sections and `docs/diamonds.md`.
+
 ## [1.9.0] — 2026-08-07
 
 - **Shrink flowchart diamonds to be proportionate to rectangle-family boxes** (VIEWMD-0037, render/mermaid): VIEWMD-0036 made every other node shape denser, leaving diamond decision nodes looking wildly oversized by comparison (a 2-character label like `{OK}` rendered 7 rows tall next to a 3-row rectangle). Tightened the diamond sizing formula so short and medium labels shrink meaningfully (`OK`: 7→5 rows, `Decision`: 11→9); long labels are unaffected since their own label-width floor already forces enough taper rows to reach it without a gap in the one-cell-per-row taper, a documented and accepted limitation. See `docs/mermaid-examples.md`'s "Node shapes" section.

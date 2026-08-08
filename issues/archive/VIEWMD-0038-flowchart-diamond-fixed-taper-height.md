@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0038
 title: Render flowchart diamonds as a flat single-row lozenge, and condense connector spacing
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-08
 updated: 2026-08-08
 accepted_by: George Moses
 accepted_at: 2026-08-08
-commits: []
+commits: [4ae7580]
 related: [VIEWMD-0022, VIEWMD-0036, VIEWMD-0037]
 supersedes: []
-changelog:
+changelog: "[1.10.0]"
 reason:
 ---
 
