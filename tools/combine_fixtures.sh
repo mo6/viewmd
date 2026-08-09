@@ -7,10 +7,12 @@
 # check across the whole fixture set in one file.
 #
 #   ./tools/combine_fixtures.sh [glob]
-#   ./viewmd.sh docs/mermaid_flowchart.md
+#   ./viewmd.sh docs/mermaid-flowchart.md
 #
-# Writes docs/mermaid_er.md, docs/mermaid_flowchart.md, and
-# docs/mermaid_sequence.md, one per fixture type found under tests/fixtures.
+# Writes docs/mermaid-er.md, docs/mermaid-flowchart.md, and
+# docs/mermaid-sequence.md, one per fixture type found under tests/fixtures --
+# hyphenated even though the fixture type name itself (matching its
+# tests/fixtures/<type>/ directory) keeps the underscore.
 #
 # [glob] is a filename glob (not a path) matched against each type's
 # tests/fixtures/<type>/*.mmd directory; defaults to '*.mmd' (every
@@ -44,7 +46,7 @@ for type_dir in "${types[@]}"; do
         continue
     fi
 
-    out_file="$docs_dir/$type_name.md"
+    out_file="$docs_dir/${type_name//_/-}.md"
     {
         echo "# Combined fixtures: $type_name ($glob)"
         echo
