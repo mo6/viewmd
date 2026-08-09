@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0049
 title: Render Mermaid packet diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-09
 updated: 2026-08-09
 accepted_by: George Moses
 accepted_at: 2026-08-09
-commits: []
+commits: [d2fb19e]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.13.0]"
 reason:
 ---
 
