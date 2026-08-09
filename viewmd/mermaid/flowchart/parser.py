@@ -42,6 +42,8 @@ class NodeShape(str, Enum):
     SUBROUTINE = "subroutine"
     CYLINDER = "cylinder"
     DIAMOND = "diamond"
+    PARALLELOGRAM = "parallelogram"
+    PARALLELOGRAM_ALT = "parallelogram_alt"
 
 
 # Longest openers first so `((` / `([` / `[[` / `[(` win over `(` / `[`.
@@ -50,6 +52,8 @@ _SHAPE_DELIMITERS: tuple[tuple[NodeShape, str, str], ...] = (
     (NodeShape.STADIUM, "([", "])"),
     (NodeShape.SUBROUTINE, "[[", "]]"),
     (NodeShape.CYLINDER, "[(", ")]"),
+    (NodeShape.PARALLELOGRAM, "[/", "/]"),
+    (NodeShape.PARALLELOGRAM_ALT, "[\\", "\\]"),
     (NodeShape.ROUND, "(", ")"),
     (NodeShape.DIAMOND, "{", "}"),
     (NodeShape.RECTANGLE, "[", "]"),

@@ -128,7 +128,7 @@ sequenceDiagram
 
 ## Flowcharts
 
-Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). A diamond renders as a flat-topped/bottomed rounded lozenge, exactly as tall as a same-content rectangle (`label_lines + 2` rows, never coupled to width), with a `◇` marker on all four attachment points -- centred in the top/bottom border and immediately beside the label on every content row (VIEWMD-0038); every other shape keeps the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are; a diamond's multi-line label packs the same way, one row per line with no gap between them.
+Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, diamond `{}`, and parallelogram `[/ /]`/`[\ \]` -- render with distinct borders (VIEWMD-0022, VIEWMD-0039). A diamond renders as a flat-topped/bottomed rounded lozenge, exactly as tall as a same-content rectangle (`label_lines + 2` rows, never coupled to width), with a `◇` marker on all four attachment points -- centred in the top/bottom border and immediately beside the label on every content row (VIEWMD-0038); every other shape keeps the usual box geometry with shape-specific glyphs. The exception is the parallelogram pair: each row is offset one column further than the row above it -- `[/Text/]` shifting left going down, `[\Text\]` shifting right going down -- so the box reads as genuinely slanted rather than glyph-substituted; an edge still attaches flush on every side, at a shared x-anchor so a vertical chain of parallelograms connects with a straight line rather than zigzagging row to row (VIEWMD-0039). `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are; a diamond's multi-line label packs the same way, one row per line with no gap between them.
 
 ### Node shapes
 
@@ -145,6 +145,11 @@ graph LR
 graph LR
     U[[Subroutine]] --> Y[(Cylinder)]
     Y --> D{Diamond}
+```
+
+```mermaid
+graph LR
+    A[/Parallelogram/] --> B[\Alt Para\]
 ```
 
 ### Branching and labelled edges

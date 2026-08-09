@@ -334,6 +334,15 @@ class Graph:
             rows = (1, max(1, len(n.label.lines)), 1)
         else:
             rows = (1, n.label.content_height(), 1)
+        if n.shape in (NodeShape.PARALLELOGRAM, NodeShape.PARALLELOGRAM_ALT):
+            # A parallelogram's rows are horizontally offset from each other
+            # (VIEWMD-0039 req. 2) -- its drawn footprint is `rows[1] + 1`
+            # columns wider than a same-content rectangle's, purely a
+            # function of its own height (req. 6), never a sibling's width.
+            # Reserved on the right border grid column since the shift only
+            # ever grows the box rightward (shift is 0 at whichever end
+            # achieves the minimum, never negative).
+            cols = (cols[0], cols[1], cols[2] + rows[1] + 1)
 
         for idx, col in enumerate(cols):
             x_coord = n.grid_coord.x + idx
@@ -590,7 +599,55 @@ class Graph:
     def _path_grid_to_drawing(self, c: GridCoord) -> DrawingCoord:
         """Grid→drawing for edge paths. A diamond (VIEWMD-0038) is sized and
         attached exactly like every other shape now, so this is just
-        `_grid_to_drawing_coord` -- no shape-specific override needed."""
+        `_grid_to_drawing_coord` -- no shape-specific override needed.
+
+        A parallelogram (VIEWMD-0039) still needs one: its LEFT/RIGHT/UP/DOWN
+        border position is offset per row (`canvas._draw_parallelogram`'s own
+        `shift`), which the generic grid-cell-centre formula knows nothing
+        about -- attaching there without this would leave a stray gap or
+        land inside the box, off by the row's own shift amount.
+        """
+        node = self.grid.get(c)
+        if (
+            node is not None
+            and node.shape in (NodeShape.PARALLELOGRAM, NodeShape.PARALLELOGRAM_ALT)
+            and node.grid_coord is not None
+            and node.drawing is not None
+            and node.drawing_coord is not None
+        ):
+            rel = Direction(c.x - node.grid_coord.x, c.y - node.grid_coord.y)
+            w = len(node.drawing) - 1
+            h = len(node.drawing[0]) - 1
+            nominal_width = w - h
+            mirrored = node.shape == NodeShape.PARALLELOGRAM_ALT
+
+            def shift(y: int) -> int:
+                return y if mirrored else h - y
+
+            # A single shared x-anchor (the vertical-middle row's own shift)
+            # for all four sides, not each side's own row -- UP's top-row
+            # centre and DOWN's bottom-row centre are naturally `h` columns
+            # apart on the *same* node (that's the slant), so anchoring each
+            # to its own row would zigzag a straight vertical chain of two
+            # same-shaped parallelograms. A real Mermaid renderer's ports sit
+            # on the shape's nominal bounding box for the same reason.
+            dc = node.drawing_coord
+            mid_y = h // 2
+            anchor_x = dc.x + shift(mid_y)
+            if rel == UP:
+                return DrawingCoord(anchor_x + nominal_width // 2, dc.y)
+            if rel == DOWN:
+                return DrawingCoord(anchor_x + nominal_width // 2, dc.y + h)
+            if rel in (LEFT, RIGHT, MIDDLE):
+                grid_dc = self._grid_to_drawing_coord(c)
+                if rel == LEFT:
+                    x = anchor_x
+                elif rel == RIGHT:
+                    x = anchor_x + nominal_width
+                else:
+                    x = anchor_x + nominal_width // 2
+                y = dc.y + mid_y if rel == MIDDLE else grid_dc.y
+                return DrawingCoord(x, y)
         return self._grid_to_drawing_coord(c)
 
     def _line_to_drawing(self, line: list[GridCoord]) -> list[DrawingCoord]:
@@ -954,9 +1011,17 @@ class Graph:
             return d
         # A diamond's `◇` attachment marker (VIEWMD-0038) stays put rather
         # than being overwritten by a T-junction glyph -- it already marks
-        # the attachment point, unlike a rectangle's flat border.
+        # the attachment point, unlike a rectangle's flat border. Same for a
+        # parallelogram's `/`/`\` border (VIEWMD-0039 req. 3: that glyph is
+        # used on every row, never replaced) -- the requester's own example
+        # shows the arrow starting *after* an intact border glyph, not
+        # replacing it.
         from_node = self.grid.get(path[0])
-        if from_node is not None and from_node.shape == NodeShape.DIAMOND:
+        if from_node is not None and from_node.shape in (
+            NodeShape.DIAMOND,
+            NodeShape.PARALLELOGRAM,
+            NodeShape.PARALLELOGRAM_ALT,
+        ):
             return d
         from_ = first_line[0]
         dir_ = determine_direction(path[0], path[1])

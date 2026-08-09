@@ -260,6 +260,11 @@ def draw_box(
     `shape` is a `NodeShape` value string (`"rectangle"`, `"round"`, …) kept as
     plain `str` here so `grid` does not import the flowchart package.
     """
+    if shape in ("parallelogram", "parallelogram_alt"):
+        return _draw_parallelogram(
+            width, height, label, color_hex, use_ascii, mirrored=shape == "parallelogram_alt"
+        )
+
     from_ = DrawingCoord(0, 0)
     to = DrawingCoord(width, height)
     d = mk_drawing(max(from_.x, to.x), max(from_.y, to.y))
@@ -290,6 +295,62 @@ def draw_box(
 
     line_gap = 0 if shape == "diamond" else LABEL_LINE_GAP
     _place_label(d, from_, width, height, label, color_hex, line_gap=line_gap)
+    return d
+
+
+def _draw_parallelogram(
+    width: int,
+    height: int,
+    label: GraphLabel,
+    color_hex: str,
+    use_ascii: bool,
+    mirrored: bool,
+) -> Drawing:
+    """`[/Text/]` (VIEWMD-0039): unlike every other shape, each row is offset
+    one column from the row above it -- `mirrored=False` (`/`) shifts left
+    going down, `mirrored=True` (`\\`) shifts right going down, per the
+    requester's own worked example. `width`/`height` follow `draw_box`'s
+    usual convention (same caller, same node-box-size formula), but with the
+    per-row shift budget (`height` extra columns, VIEWMD-0039 req. 6)
+    already folded into `width` by `graph._set_column_width`'s extra column
+    reservation for these two shapes -- `nominal_width` below recovers the
+    real (unshifted) per-row span by subtracting that budget back out.
+    """
+    d = mk_drawing(max(width, 0), max(height, 0))
+    if width <= 0 or height <= 0:
+        return d
+
+    nominal_width = width - height
+    glyph = "\\" if mirrored else "/"
+    h_char = "-" if use_ascii else "─"
+
+    def shift(y: int) -> int:
+        return y if mirrored else height - y
+
+    for y in range(height + 1):
+        left = shift(y)
+        right = left + nominal_width
+        d[left][y] = glyph
+        d[right][y] = glyph
+        if y == 0 or y == height:
+            for x in range(left + 1, right):
+                d[x][y] = h_char
+
+    content_top = 1
+    for line_idx, line in enumerate(label.lines):
+        text_y = content_top + line_idx * (LABEL_LINE_GAP + 1)
+        if text_y >= height:
+            break
+        text_width = _string_width(line)
+        text_x = shift(text_y) + nominal_width // 2 - ceil_div(text_width, 2) + 1
+        for ch in line:
+            rune_w = _rune_width(ch)
+            if 0 <= text_x <= width and 0 <= text_y <= height:
+                d[text_x][text_y] = wrap_text_in_color(ch, color_hex)
+                for offset in range(1, rune_w):
+                    if text_x + offset <= width:
+                        d[text_x + offset][text_y] = ""
+            text_x += rune_w
     return d
 
 
