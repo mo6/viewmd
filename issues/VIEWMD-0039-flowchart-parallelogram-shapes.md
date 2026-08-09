@@ -5,7 +5,7 @@ status: in-progress
 area: [render, mermaid]
 effort: medium
 created: 2026-08-08
-updated: 2026-08-08
+updated: 2026-08-09
 accepted_by: George Moses
 accepted_at: 2026-08-08
 commits: []
@@ -159,4 +159,24 @@ sibling-reach logic.
 
 ## Peer review
 
-Left blank until implemented and tested; filled in as part of the Definition of Done landing gate.
+- **Claude (agent)**, 2026-08-09: PASS. Verified against requirements: `PARALLELOGRAM`/
+  `PARALLELOGRAM_ALT` added to `NodeShape` and ordered ahead of `RECTANGLE` in
+  `_SHAPE_DELIMITERS` (req. 1); `_draw_parallelogram` shifts each row one column per the
+  requester's slant direction, `/` and `\` used as border glyphs in both charsets (req. 2/3);
+  sizing follows the standard rectangle-family formula independent of the slant (req. 4); border
+  dashes and label centering computed per-row against that row's own shifted span (req. 5); extra
+  width reserved self-contained off the node's own `label_lines`, not sibling-coupled
+  (req. 6, `graph.py` diff); `_path_grid_to_drawing` overrides LEFT/RIGHT/UP/DOWN/MIDDLE
+  attachment to the row-shifted border via a shared x-anchor, confirmed flush with no gap in the
+  `_lr_chain`/`_td_chain`/`_multiline` fixtures (req. 7); no other `NodeShape` touched (req. 8).
+  Rendered the requester's own worked example directly (`.venv/bin/python -c "from viewmd.mermaid
+  import render; ..."`) -- slant direction and row count match exactly; the one difference
+  (`PARALLELOGRAM_ALT`'s padding) is the asymmetric hand-typed padding the issue's design notes
+  already flagged as not the byte-for-byte target. `pytest` is green (334 passed, including 10
+  new parallelogram fixture cases, unicode+ascii). `ruff`/`tools/issues.py --check` fail via
+  `run-tests.sh`, but only on pre-existing `poc/kanban/kanban_poc.py` /
+  `poc/timeline/timeline_poc.py` lint errors already present on `develop` (confirmed
+  `git show develop:poc/kanban/kanban_poc.py` has the same file) -- unrelated to this issue's
+  diff, which touches only `viewmd/mermaid/flowchart/{parser,graph}.py`,
+  `viewmd/mermaid/grid/canvas.py`, `docs/mermaid-examples.md`, and new fixtures. No findings.
+- **George Moses (maintainer)**, 2026-08-09: tested and accepted.
