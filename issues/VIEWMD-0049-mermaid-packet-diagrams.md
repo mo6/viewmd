@@ -85,7 +85,7 @@ divided entity box that the same divider-drawing helper may be directly reusable
 CJK/wide-character truncation should reuse whatever helper VIEWMD-00xx-era ER wide-character work
 already established there rather than reimplementing display-width math.
 
-### Reference example (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference example (termaid's actual output)
 
 ```
 --- source ---

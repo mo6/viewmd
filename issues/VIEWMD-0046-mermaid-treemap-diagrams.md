@@ -83,7 +83,7 @@ sibling to the other diagram packages. The outer dashed-border section box is ne
 `viewmd/mermaid/flowchart/`'s node shapes) -- worth checking whether a dashed variant of the
 existing box-drawing helper is a small addition rather than a new code path.
 
-### Reference example (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference example (termaid's actual output)
 
 ```
 --- source ---

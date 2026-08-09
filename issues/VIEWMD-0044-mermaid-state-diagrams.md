@@ -91,7 +91,7 @@ subgraph-nesting code can be called into directly (translating a parsed state di
 flowchart package's internal graph representation) rather than reimplementing routing from
 scratch -- this is the one gap diagram type where that kind of reuse looks plausible up front.
 
-### Reference examples (termaid's actual output, `~/Documents/Projects/termaid`, `tests/fixtures/statediagram/`)
+### Reference examples (termaid's actual output, `tests/fixtures/statediagram/`)
 
 Plain transitions:
 

@@ -93,7 +93,7 @@ diagram types (see Motivation) -- worth considering whether to land the `bar`-on
 its own reviewable increment before adding `line`/combo/`horizontal`, given the size, rather than
 one large patch; that sequencing is left to implementation, not mandated by a Requirement.
 
-### Reference examples (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference examples (termaid's actual output)
 
 Bar chart with an explicit y-axis range:
 

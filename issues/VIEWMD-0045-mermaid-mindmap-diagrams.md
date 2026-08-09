@@ -94,7 +94,7 @@ among its `renderer/` modules after `xychart.py`) computes per-subtree height re
 assigns each node a row range and draws corner/branch connectors bridging a parent's row to its
 children's row range; that recursive-height-then-connect approach is a reasonable starting point.
 
-### Reference examples (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference examples (termaid's actual output)
 
 ```
 --- source ---

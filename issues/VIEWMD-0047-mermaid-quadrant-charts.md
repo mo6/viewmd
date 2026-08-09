@@ -83,7 +83,7 @@ to the other gap diagram types -- it's arithmetic (linear-map a `[0,1]` coordina
 cell) rather than a new box/tree/routing layout, closer in spirit to VIEWMD-0048's (xychart) axis
 math than to anything `viewmd/mermaid/grid/canvas.py` does today.
 
-### Reference example (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference example (termaid's actual output)
 
 ```
 --- source ---

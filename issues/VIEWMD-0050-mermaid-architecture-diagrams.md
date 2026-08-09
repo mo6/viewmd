@@ -31,7 +31,7 @@ rather than being auto-routed the way a flowchart's `A --> B` is.
 
 `viewmd/mermaid/__init__.py:render` raises `UnsupportedDiagramError` for any `architecture-beta`
 fence today -- it falls through every `_is_*_diagram` sniff. Notably, termaid's own implementation
-(`~/Documents/Projects/termaid/src/termaid/__init__.py`) does not give architecture diagrams a
+(`src/termaid/__init__.py`) does not give architecture diagrams a
 dedicated renderer at all: it parses `architecture-beta` into a small grid-position graph
 (`src/termaid/parser/architecture.py`, `_compute_grid_positions`) and then hands that graph to the
 *same* generic box/edge renderer (`output/text.py:render_text`) used for plain flowcharts. viewmd's
@@ -103,7 +103,7 @@ grid-position algorithm (requirement 5) is the one genuinely new piece, and term
 placing each new id relative to an already-placed neighbor per its direction hint, then resolve
 column/row indices from the resulting relative-position graph.
 
-### Reference example (termaid's actual output, `~/Documents/Projects/termaid`)
+### Reference example (termaid's actual output)
 
 ```
 --- source ---
