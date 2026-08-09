@@ -84,14 +84,14 @@ def _parse_label_line(line: str) -> tuple[str, dict[str, str]]:
 
 def parse(text: str) -> list[Column]:
     body = _strip_front_matter(text)
-    lines = [l for l in body.splitlines() if l.strip() and not l.strip().startswith("%%")]
+    lines = [ln for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("%%")]
     if not lines or lines[0].strip() != "kanban":
         raise ParseError("expected a line reading 'kanban'")
     lines = lines[1:]
     if not lines:
         raise ParseError("empty kanban diagram")
 
-    col_indent = min(len(l) - len(l.lstrip(" ")) for l in lines)
+    col_indent = min(len(ln) - len(ln.lstrip(" ")) for ln in lines)
 
     columns: list[Column] = []
     for line in lines:
@@ -211,8 +211,8 @@ def _center_visible(s: str, width: int) -> str:
 
 def render_card(card: Card, c: Colorizer) -> list[str]:
     lines = [f"┌{'─' * (TEXT_W + 2)}┐"]
-    for l in _wrap(card.label, TEXT_W):
-        lines.append(f"│ {l.ljust(TEXT_W)} │")
+    for ln in _wrap(card.label, TEXT_W):
+        lines.append(f"│ {ln.ljust(TEXT_W)} │")
 
     if card.ticket or card.assigned or card.priority:
         prio_key = (card.priority or "").lower()
@@ -285,7 +285,9 @@ def _resolve_color(choice: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("path", nargs="?", default=os.path.join(os.path.dirname(__file__), "example.mmd"))
+    parser.add_argument(
+        "path", nargs="?", default=os.path.join(os.path.dirname(__file__), "example.mmd")
+    )
     parser.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     args = parser.parse_args()
 

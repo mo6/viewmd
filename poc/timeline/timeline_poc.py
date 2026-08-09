@@ -58,7 +58,7 @@ def sniff(text: str) -> bool:
 
 def parse(text: str) -> Timeline:
     body = _strip_front_matter(text)
-    lines = [l for l in body.splitlines() if l.strip() and not l.strip().startswith("%%")]
+    lines = [ln for ln in body.splitlines() if ln.strip() and not ln.strip().startswith("%%")]
     if not lines or lines[0].strip() != "timeline":
         raise ParseError("expected a line reading 'timeline'")
     lines = lines[1:]
@@ -181,7 +181,7 @@ def _build_columns(periods: list[Period]) -> list[Column]:
         events = [_wrap_event(e, WRAP_WIDTH) for e in p.events]
         width = len(p.label)
         for lines in events:
-            width = max(width, max((len(l) for l in lines), default=0))
+            width = max(width, max((len(ln) for ln in lines), default=0))
         columns.append(Column(section=p.section, label=p.label, events=events, width=width + 2))
     return columns
 
@@ -195,7 +195,9 @@ def _group_sections(columns: list[Column]) -> list[tuple[str | None, list[Column
     return groups
 
 
-def _box_row(cols: list[Column], groups: list[tuple[str | None, list[Column]]], border: str) -> tuple[str, str, str]:
+def _box_row(
+    cols: list[Column], groups: list[tuple[str | None, list[Column]]], border: str
+) -> tuple[str, str, str]:
     top = mid = bot = ""
     for gi, (_, gcols) in enumerate(groups):
         for c in gcols:
@@ -246,7 +248,11 @@ def render(timeline: Timeline, c: Colorizer) -> str:
         for col in gcols:
             top += "┌" + "─" * col.width + "┐"
             label = c.fg(col.label, HEADER_TEXT_HEX) if hex_ else col.label
-            cell = c.bg(_center_visible(label, col.width), hex_) if hex_ else col.label.center(col.width)
+            cell = (
+                c.bg(_center_visible(label, col.width), hex_)
+                if hex_
+                else col.label.center(col.width)
+            )
             mid += "│" + cell + "│"
             bot += "└" + "━" * col.width + "┘"
         if gi != len(groups) - 1:
@@ -298,7 +304,11 @@ def render(timeline: Timeline, c: Colorizer) -> str:
                     top += "┌" + "─" * col.width + "┐"
                     for r in range(maxh):
                         text = lines[r] if r < len(lines) else ""
-                        cell = c.bg(_center_visible(text, col.width), hex_) if hex_ else text.center(col.width)
+                        cell = (
+                            c.bg(_center_visible(text, col.width), hex_)
+                            if hex_
+                            else text.center(col.width)
+                        )
                         mids[r] += "│" + cell + "│"
                     bot += "└" + "━" * col.width + "┘"
                 else:
@@ -343,7 +353,9 @@ def _resolve_color(choice: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("path", nargs="?", default=os.path.join(os.path.dirname(__file__), "industry.mmd"))
+    parser.add_argument(
+        "path", nargs="?", default=os.path.join(os.path.dirname(__file__), "industry.mmd")
+    )
     parser.add_argument("--color", choices=["auto", "always", "never"], default="auto")
     args = parser.parse_args()
 
