@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.12.0] — 2026-08-09
+
+- **Render Mermaid pie charts** (VIEWMD-0043, render/mermaid): a fourth Mermaid diagram type, `pie`, rendered two ways depending on color availability -- a circular pie (truecolor per-slice fill, Unicode quadrant-block silhouette anti-aliasing, thin-wedge labels pushed outside the circle when their wedge is too narrow to hold them) when color is enabled, and a horizontal bar chart when it isn't (`NO_COLOR`, `--color never`, non-tty output, or `--ascii`) -- a monochrome circular pie was prototyped and found illegible, so the bar chart is a deliberate second design, not a fallback pending a better one. The circle's default size scales with the document's actual render width (`--width`, not the raw terminal), landing at roughly 60% of what comfortably fits. First diagram type where color/`--ascii` change the rendering shape itself, which needed threading a `color`/`width`-aware path through the whole Mermaid render pipeline (`viewmd/render.py` → `preprocessors.py` → `mermaid/preprocess.py` → `mermaid/__init__.py`) for the first time -- every other diagram type is unaffected. See `docs/example.md` and `docs/mermaid-pie.md`.
+
 ## [1.11.0] — 2026-08-09
 
 - **Render Mermaid flowchart parallelogram/input-output node shapes** (VIEWMD-0039, render/mermaid): adds `[/Text/]` and `[\Text\]` to the flowchart node-shape set (VIEWMD-0022) -- each row offset one column from the row above it so the box reads as genuinely slanted, `/`/`\` used as the border glyph on every row, sized like every other rectangle-family shape (`label_lines + 2` rows, self-contained width growth off the node's own label, never a sibling's). An edge still attaches flush on every side via a shared x-anchor, so a vertical chain of parallelograms connects with a straight line rather than zigzagging. See `docs/mermaid-examples.md`'s "Node shapes" section.
