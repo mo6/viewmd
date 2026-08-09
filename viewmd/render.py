@@ -83,7 +83,12 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
     (VIEWMD-0005). The body is run through viewmd's preprocessor pipeline (see preprocessors.py)
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
-    (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014).
+    (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014). `color`
+    and `width` are passed into that preprocessing pass too (VIEWMD-0043) -- Mermaid diagrams are
+    rendered to plain text before Rich's own `Console` (built from `color`/`width` further down)
+    ever sees the body, so a diagram type that wants to look different with/without color, or size
+    itself relative to the document's actual render width rather than the raw terminal, needs both
+    values itself, not Rich's after-the-fact styling/wrapping.
 
     ``crop=False`` on the body print lets fenced-code rows wider than ``width`` -- mermaid
     diagram art (VIEWMD-0018) and ordinary code lines alike (VIEWMD-0019) -- survive intact
@@ -95,7 +100,7 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
     if not full_front_matter:
         front_matter = drop_empty(front_matter)
-    body = preprocess(body)
+    body = preprocess(body, color=color, width=width)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)

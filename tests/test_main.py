@@ -60,6 +60,25 @@ def test_single_file_stdout_matches_direct_render(tmp_path, capsys):
     assert out == render_markdown(text, width=80, color=False)
 
 
+def test_no_color_env_var_matches_color_never_for_a_pie_chart(tmp_path, capsys, monkeypatch):
+    # VIEWMD-0043 requirement 3/acceptance: NO_COLOR must reach Mermaid
+    # rendering itself (bar-chart fallback, no circular pie), the same as an
+    # explicit --color never, end to end through main().
+    path = tmp_path / "pie.md"
+    path.write_text('```mermaid\npie\n    "A" : 1\n    "B" : 1\n```\n')
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    main(["--no-pager", "--color", "auto", "--width", "80", str(path)])
+    out_no_color_env = capsys.readouterr().out
+
+    monkeypatch.delenv("NO_COLOR")
+    main(["--no-pager", "--color", "never", "--width", "80", str(path)])
+    out_color_never = capsys.readouterr().out
+
+    assert out_no_color_env == out_color_never
+    assert "\x1b[38;2;" not in out_no_color_env
+
+
 def test_multiple_files_render_in_order_with_heading_and_divider(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "a.md").write_text("# First\n\nfirst body\n")

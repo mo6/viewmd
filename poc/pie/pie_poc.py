@@ -280,7 +280,7 @@ def render_circle(chart: PieChart, c: Colorizer, radius: int = 16, aspect: float
                 # actually inside always finds a valid wedge for the color.
                 color_v = v
                 if color_v is None:
-                    for (dr, dc), is_in in zip(QUAD_OFFSETS, corners):
+                    for (dr, dc), is_in in zip(QUAD_OFFSETS, corners, strict=True):
                         if is_in:
                             color_v = wedge_of(row + dr, col + dc)
                             if color_v is not None:
@@ -290,7 +290,7 @@ def render_circle(chart: PieChart, c: Colorizer, radius: int = 16, aspect: float
                     quad_glyph[row][col] = QUADRANT_GLYPH[corners]
 
     label_map: dict[tuple[int, int], str] = {}
-    for s, (start, end) in zip(chart.slices, bounds):
+    for s, (start, end) in zip(chart.slices, bounds, strict=True):
         pct = s.value / total * 100
         text = f"{pct:.0f}%"
         mid = math.radians((start + end) / 2)
@@ -335,7 +335,9 @@ def render_circle(chart: PieChart, c: Colorizer, radius: int = 16, aspect: float
     # ahead of the first row containing a fill glyph instead, keeping any
     # label text intact; one deliberate blank separator (below) is enough.
     FILL_GLYPHS = set("▘▝▖▗▀▄▌▐▚▞▛▜▙▟█")
-    first_fill = next((i for i, r in enumerate(rows) if any(ch in FILL_GLYPHS for ch in r)), len(rows))
+    first_fill = next(
+        (i for i, r in enumerate(rows) if any(ch in FILL_GLYPHS for ch in r)), len(rows)
+    )
     rows = [r for r in rows[:first_fill] if r.strip()] + rows[first_fill:]
 
     out = []
@@ -383,12 +385,16 @@ def _default_radius(chart: PieChart, terminal_width: int) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "path", nargs="?", default=os.path.join(os.path.dirname(__file__), "example.mmd")
     )
     parser.add_argument("--color", choices=["auto", "always", "never"], default="auto")
-    parser.add_argument("--ascii", action="store_true", help="force ASCII-safe glyphs (implies bar-chart fallback)")
+    parser.add_argument(
+        "--ascii", action="store_true", help="force ASCII-safe glyphs (implies bar-chart fallback)"
+    )
     parser.add_argument(
         "--radius", type=int, default=None,
         help="circle radius in columns (circular rendering only). Defaults to 60%% of the "
@@ -416,7 +422,9 @@ def main() -> None:
     colorizer = Colorizer(enabled=color_enabled)
 
     if color_enabled and not args.ascii:
-        radius = args.radius if args.radius is not None else _default_radius(chart, _terminal_width())
+        radius = args.radius
+        if radius is None:
+            radius = _default_radius(chart, _terminal_width())
         print(render_circle(chart, colorizer, radius, args.aspect))
     else:
         print(render_bar(chart, colorizer, use_ascii=args.ascii))

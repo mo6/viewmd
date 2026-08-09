@@ -1,10 +1,12 @@
 """Render Mermaid diagrams to ASCII/Unicode box-drawing art.
 
-A from-scratch Python port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT
-licensed; see /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to
-avoid bundling a per-platform compiled binary in a pure-Python CLI tool.
-Sequence diagrams, flowcharts, and entity-relationship diagrams are supported;
-other Mermaid diagram types raise `UnsupportedDiagramError`.
+Sequence, flowchart, and entity-relationship diagrams are a from-scratch Python
+port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT licensed; see
+/THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to avoid
+bundling a per-platform compiled binary in a pure-Python CLI tool. Pie charts
+(VIEWMD-0043) have no upstream reference to port from and are hand-written
+directly against Mermaid's own syntax. Other Mermaid diagram types raise
+`UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
@@ -17,6 +19,10 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.pie.parser import ParseError as _PieParseError
+from viewmd.mermaid.pie.parser import parse as _parse_pie
+from viewmd.mermaid.pie.parser import sniff as _is_pie_diagram
+from viewmd.mermaid.pie.renderer import render as _render_pie
 from viewmd.mermaid.sequence.parser import ParseError as _SequenceParseError
 from viewmd.mermaid.sequence.parser import parse as _parse_sequence
 from viewmd.mermaid.sequence.parser import sniff as _is_sequence_diagram
@@ -33,10 +39,17 @@ class UnsupportedDiagramError(MermaidError):
     """The Mermaid code block's diagram type isn't supported yet."""
 
 
-def render(text: str, *, use_ascii: bool = False) -> str:
+def render(text: str, *, use_ascii: bool = False, color: bool = False,
+           width: int | None = None) -> str:
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
-    Raises `UnsupportedDiagramError` if `text` isn't a diagram type this module
+    `color` and `width` (VIEWMD-0043) are currently read only by the
+    pie-chart renderer -- every other diagram type ignores them, unaffected.
+    `width` is the caller's resolved render width, not a hard cap (Mermaid
+    diagrams are still allowed to render wider and scroll, VIEWMD-0018); it's
+    what the pie chart's default size targets, so it doesn't size itself
+    independently of the document it's embedded in. Raises
+    `UnsupportedDiagramError` if `text` isn't a diagram type this module
     supports, or `MermaidError` if it looks like a supported type but fails to
     parse.
     """
@@ -63,4 +76,10 @@ def render(text: str, *, use_ascii: bool = False) -> str:
         except _ErParseError as e:
             raise MermaidError(str(e)) from e
         return _render_er(diagram, use_ascii=use_ascii)
+    if _is_pie_diagram(text):
+        try:
+            chart = _parse_pie(text)
+        except _PieParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_pie(chart, use_ascii=use_ascii, color=color, width=width)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

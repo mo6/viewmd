@@ -23,7 +23,13 @@ PREPROCESSORS: list[Preprocessor] = [
 ]
 
 
-def preprocess(text: str) -> str:
+def preprocess(text: str, *, color: bool = False, width: int | None = None) -> str:
+    """`color` and `width` (VIEWMD-0043) are only meaningful to
+    render_mermaid_blocks today -- every other registered step still takes
+    text in, text out, unchanged."""
     for step in PREPROCESSORS:
-        text = step(text)
+        if step is render_mermaid_blocks:
+            text = step(text, color=color, width=width)
+        else:
+            text = step(text)
     return text

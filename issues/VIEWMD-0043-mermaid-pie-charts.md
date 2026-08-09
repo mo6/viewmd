@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0043
 title: Render Mermaid pie charts
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: medium
 created: 2026-08-09
 updated: 2026-08-09
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-09
 commits: []
 related: []
 supersedes: []
@@ -419,4 +419,41 @@ lands alongside v1 or as a follow-up is a maintainer call, not required by any R
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- **Claude Sonnet 5** (agent), 2026-08-09: Implemented against Requirements 1-10 (including 4a,
+  5a, 5b, 6a) -- `viewmd/mermaid/pie/{parser,renderer}.py`, the color-flag plumbing through
+  `viewmd/__main__.py` (unchanged) -> `viewmd/render.py` -> `viewmd/preprocessors.py` ->
+  `viewmd/mermaid/preprocess.py` -> `viewmd/mermaid/__init__.py:render`, and
+  `viewmd/mermaid/grid/canvas.py:wrap_text_bold` as the sibling to `wrap_text_in_color` the Design
+  notes called for. `./run-tests.sh` is green (382 tests: pytest, ruff, pip-audit, `tools/issues.py
+  --check`); every pre-existing golden-fixture test for flowchart/sequence/ER passed unchanged,
+  satisfying requirement 10's no-regression bar without needing a new dedicated test. One real bug
+  was found and fixed while testing against the terminal-width-derived default radius (not
+  something the issue text anticipated): a thin outside-pushed slice label's computed position can
+  land outside the render grid entirely and silently vanish once the radius is large enough --
+  reproduced with the reference example at radius 24 (the actual 100-column default), fixed by
+  clamping the label position to the nearest valid cell rather than dropping it
+  (`viewmd/mermaid/pie/renderer.py`, `_render_circle`), and covered by
+  `test_thin_wedge_label_stays_on_grid_at_large_radius`. `VIEWMD_PIE_ASPECT`/`VIEWMD_PIE_RADIUS`
+  environment variables satisfy requirement 5a/5b's override; a dedicated `--color`-style CLI flag
+  was considered and not used, since an env var was explicitly listed as an acceptable option and
+  needs no changes to `viewmd/__main__.py`'s argument parser. No findings left as a follow-up issue.
+
+- **Claude Sonnet 5** (agent), 2026-08-09: A second finding, from the maintainer testing `--width`
+  against a real pie chart after the above review: the initial implementation of requirement 5b
+  independently re-queried `shutil.get_terminal_size()` inside the pie renderer (copied straight
+  from `poc/pie/pie_poc.py:_terminal_width`, which has no `--width` to defer to, being a standalone
+  script) instead of reusing viewmd's already-resolved render width -- exactly what requirement
+  5b's own text called for ("viewmd already has terminal-width detection ... to reuse here rather
+  than reimplementing ... from scratch") and what the implementation missed on the first pass.
+  Confirmed with `--width 60` vs. `--width 200` against the same source producing byte-identical
+  pie output before the fix. Fixed by threading `width` through the same four-call-site pipeline
+  `color` already uses (`viewmd/render.py` -> `viewmd/preprocessors.py` ->
+  `viewmd/mermaid/preprocess.py` -> `viewmd/mermaid/__init__.py:render` ->
+  `viewmd/mermaid/pie/renderer.py`), falling back to the raw terminal size only when no `width` is
+  given (e.g. calling the renderer directly, as `poc/pie/pie_poc.py` still does standalone).
+  Covered by `test_pie_chart_circular_size_respects_render_width` (`tests/test_render.py`, full
+  pipeline) and `test_render_width_kwarg_overrides_raw_terminal_size`
+  (`tests/test_mermaid_pie.py`, renderer unit level). `./run-tests.sh` green (384 tests). No
+  findings left as a follow-up issue.
 

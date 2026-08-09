@@ -70,3 +70,27 @@ def test_tilde_fence_is_recognized():
     assert "~~~mermaid\n" not in got
     assert f"~~~{MERMAID_RENDERED_INFO}\n" in got
     assert "┌───┐" in got
+
+
+def test_renders_a_pie_fence_as_bar_chart_by_default():
+    # No `color=True` passed -- matches the default any caller gets.
+    text = '```mermaid\npie\n    "A" : 1\n    "B" : 1\n```\n'
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "┃" in got  # bar-chart fallback glyph
+    assert "\x1b[38;2;" not in got  # no circular-only truecolor escapes
+
+
+def test_renders_a_pie_fence_as_circular_when_color_enabled():
+    text = '```mermaid\npie\n    "A" : 1\n    "B" : 1\n```\n'
+    got = render_mermaid_blocks(text, color=True)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "\x1b[38;2;" in got  # circular rendering's truecolor slice fill
+
+
+def test_invalid_pie_diagram_is_left_untouched():
+    text = '```mermaid\npie\n"bad"\n```\n'
+    assert render_mermaid_blocks(text) == text
+    assert render_mermaid_blocks(text, color=True) == text

@@ -241,6 +241,15 @@ def wrap_text_in_color(text: str, color_hex: str) -> str:
     return f"\x1b[38;2;{r};{g};{b}m{text}\x1b[0m"
 
 
+def wrap_text_bold(text: str) -> str:
+    """Raw ANSI bold wrap, sibling to wrap_text_in_color -- same
+    embed-the-escape-in-plain-text approach (VIEWMD-0043), a text-weight
+    attribute rather than a color."""
+    if not text:
+        return text
+    return f"\x1b[1m{text}\x1b[0m"
+
+
 def draw_box(
     width: int,
     height: int,

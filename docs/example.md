@@ -49,7 +49,8 @@ Paragraphs support **bold**, *italic*, ***bold italic***, ~~strikethrough~~, and
 | Wikilinks        | done        | see below                                 |
 | Mermaid sequence | done        | see below                                 |
 | Mermaid flowchart | done       | see below                                 |
-| Mermaid ER diagram | done      | see [docs/mermaid-examples.md](mermaid-examples.md) |
+| Mermaid ER diagram | done      | see below                                 |
+| Mermaid pie chart | done       | see below                                 |
 
 ## Syntax-highlighted code
 
@@ -77,11 +78,11 @@ render the same as an ordinary Markdown link, brackets gone.
 
 ## Mermaid diagrams
 
-A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart`, or `erDiagram`
-renders as box-drawing art in place of its source. See
-[docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of all three — every arrow
-type and fragment, every flowchart direction/subgraph/styling case, ER cardinality notation, and
-the graceful-fallback behavior for diagram types that aren't supported yet. Three representative
+A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart`, `erDiagram`, or
+`pie` renders as box-drawing art in place of its source. See
+[docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of the first three — every
+arrow type and fragment, every flowchart direction/subgraph/styling case, ER cardinality notation,
+and the graceful-fallback behavior for diagram types that aren't supported yet. Four representative
 examples here:
 
 ```mermaid
@@ -117,6 +118,36 @@ erDiagram
     }
 ```
 
+```mermaid
+pie title Pets adopted by volunteers
+    "Dogs" : 386
+    "Cats" : 85
+    "Rats" : 15
+```
+
 Diagram rows keep their natural width instead of being wrapped/padded to the render width
 (VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019); docs/mermaid-examples.md has
 an example wide enough to demonstrate the horizontal scroll this produces in the pager.
+
+### Pie charts render two ways, chosen by color (VIEWMD-0043)
+
+Unlike the other three diagram types, a `pie` chart renders differently depending on whether color
+is available. With color (the default on a real terminal — try the pie chart above, or run
+`./viewmd.sh docs/example.md --color always`), it draws as an actual circle: each slice a distinct
+truecolor region, a legend beside it, and its own size scaled to roughly 60% of what comfortably
+fits the render width — try `--width 60` vs. `--width 200` against this file and compare. Without
+color (`--color never`, `NO_COLOR` set, piped output, or a plain-ASCII terminal via `--ascii`-style
+rendering), the same chart falls back to a horizontal bar chart instead — a circular pie was tried
+without color and found illegible (jagged edges, indistinguishable slices), so the fallback is a
+deliberate second design, not a lesser version of the first:
+
+```
+Pets adopted by volunteers
+
+Dogs┃████████████████████████████████   79.4%
+Cats┃███████   17.5%
+Rats┃█▎    3.1%
+```
+
+Run `./viewmd.sh docs/example.md --color never` to see this file's pie chart render that way
+instead.
