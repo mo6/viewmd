@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0039
 title: Render Mermaid flowchart parallelogram/input-output node shapes
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-08
 updated: 2026-08-09
 accepted_by: George Moses
 accepted_at: 2026-08-08
-commits: []
+commits: [fa28cd8]
 related: [VIEWMD-0022, VIEWMD-0038]
 supersedes: []
-changelog:
+changelog: "[1.11.0]"
 reason:
 ---
 

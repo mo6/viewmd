@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.11.0] — 2026-08-09
+
+- **Render Mermaid flowchart parallelogram/input-output node shapes** (VIEWMD-0039, render/mermaid): adds `[/Text/]` and `[\Text\]` to the flowchart node-shape set (VIEWMD-0022) -- each row offset one column from the row above it so the box reads as genuinely slanted, `/`/`\` used as the border glyph on every row, sized like every other rectangle-family shape (`label_lines + 2` rows, self-contained width growth off the node's own label, never a sibling's). An edge still attaches flush on every side via a shared x-anchor, so a vertical chain of parallelograms connects with a straight line rather than zigzagging. See `docs/mermaid-examples.md`'s "Node shapes" section.
+
 ## [1.10.0] — 2026-08-08
 
 - **Render flowchart diamonds as a flat lozenge, and condense connector spacing** (VIEWMD-0038, render/mermaid): diamonds drop their tapered-rhombus geometry (VIEWMD-0022/0037) for the same flat-bordered-box mechanism every other shape uses -- exactly as tall as a same-content rectangle (`label_lines + 2` rows, no longer coupled to width), with a uniform `◇` marker on all four attachment points. `subroutine`'s side bars double (`‖` → `││`), `cylinder`'s heavy/light border weighting flips (heavy now on top), and the default horizontal/vertical connector gap shrinks (`PADDING_X` 5→3, `PADDING_Y` 5→2, with a labeled vertical edge separately guaranteed 1 blank line above/below its label) -- a deliberate divergence from the upstream `mermaid-ascii` reference's own defaults, consistent with this project's precedent (VIEWMD-0036, VIEWMD-0037). See `docs/mermaid-examples.md`'s "Node shapes"/"Branching and labelled edges" sections and `docs/diamonds.md`.
