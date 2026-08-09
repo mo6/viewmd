@@ -19,6 +19,10 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.packet.parser import ParseError as _PacketParseError
+from viewmd.mermaid.packet.parser import parse as _parse_packet
+from viewmd.mermaid.packet.parser import sniff as _is_packet_diagram
+from viewmd.mermaid.packet.renderer import render as _render_packet
 from viewmd.mermaid.pie.parser import ParseError as _PieParseError
 from viewmd.mermaid.pie.parser import parse as _parse_pie
 from viewmd.mermaid.pie.parser import sniff as _is_pie_diagram
@@ -82,4 +86,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _PieParseError as e:
             raise MermaidError(str(e)) from e
         return _render_pie(chart, use_ascii=use_ascii, color=color, width=width)
+    if _is_packet_diagram(text):
+        try:
+            diagram = _parse_packet(text)
+        except _PacketParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_packet(diagram, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

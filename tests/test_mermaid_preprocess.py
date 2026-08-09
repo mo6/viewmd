@@ -94,3 +94,24 @@ def test_invalid_pie_diagram_is_left_untouched():
     text = '```mermaid\npie\n"bad"\n```\n'
     assert render_mermaid_blocks(text) == text
     assert render_mermaid_blocks(text, color=True) == text
+
+
+def test_renders_a_packet_beta_fence_as_tagged_code():
+    text = '```mermaid\npacket-beta\n0-15: "Source Port"\n16-31: "Destination Port"\n```\n'
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "╭" in got
+
+
+def test_renders_a_bare_packet_fence_as_tagged_code():
+    text = '```mermaid\npacket\n0-15: "Source Port"\n16-31: "Destination Port"\n```\n'
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "╭" in got
+
+
+def test_invalid_packet_diagram_is_left_untouched():
+    text = '```mermaid\npacket-beta\nnot a field line\n```\n'
+    assert render_mermaid_blocks(text) == text
