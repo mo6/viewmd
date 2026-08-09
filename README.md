@@ -45,20 +45,25 @@ Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highli
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
 
-Mermaid support covers sequence diagrams, flowcharts, and entity-relationship diagrams: a fenced
-` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`, or `erDiagram`
-renders as box-drawing ASCII art in place of its source — sequence diagrams with notes,
-loop/alt/par fragments, and `actor` participants (drawn as a random 3-line stick figure instead of
-a box); flowcharts with subgraphs, labelled and bidirectional edges, `classDef` styling, A*-based
-routing around other nodes, and distinct node shapes (round, stadium/pill, circle, subroutine,
-cylinder/database, and diamond decision nodes rendered as a rounded lozenge); ER diagrams
-with attribute tables, crow's-foot cardinality notation, and identifying/non-identifying
-relationships. See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of
-all three, including [docs/diamonds.md](docs/diamonds.md) for the diamond shape specifically, and
-one real limitation inherited from the upstream renderer flowcharts are ported from: `BT`/`RL`
-directions are accepted but not actually reversed (aliased to `TD`/`LR`). Other Mermaid diagram
-types, and any block that fails to parse, are left as plain source text rather than causing an
-error.
+Mermaid support covers sequence diagrams, flowcharts, entity-relationship diagrams, and pie
+charts: a fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
+`erDiagram`, or `pie` renders as box-drawing ASCII art in place of its source — sequence diagrams
+with notes, loop/alt/par fragments, and `actor` participants (drawn as a random 3-line stick
+figure instead of a box); flowcharts with subgraphs, labelled and bidirectional edges, `classDef`
+styling, A*-based routing around other nodes, and distinct node shapes (round, stadium/pill,
+circle, subroutine, cylinder/database, and diamond decision nodes rendered as a rounded lozenge);
+ER diagrams with attribute tables, crow's-foot cardinality notation, and identifying/non-identifying
+relationships; and pie charts, rendered two different ways depending on whether color is available
+— a true circle (per-slice truecolor fill, Unicode quadrant-block edge anti-aliasing, a legend,
+sized relative to `--width` rather than a fixed constant) when it is, a horizontal bar chart when
+it isn't (`--color never`, `NO_COLOR` set, non-tty output, or `--ascii`) — a monochrome circle was
+tried and found illegible, so the bar chart is a deliberate second design, not a lesser fallback.
+See [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of the first
+three, [docs/example.md](docs/example.md) for a pie chart example showing both renderings, and
+[docs/diamonds.md](docs/diamonds.md) for the diamond shape specifically, plus one real limitation
+inherited from the upstream renderer flowcharts are ported from: `BT`/`RL` directions are accepted
+but not actually reversed (aliased to `TD`/`LR`). Other Mermaid diagram types, and any block that
+fails to parse, are left as plain source text rather than causing an error.
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
