@@ -51,6 +51,7 @@ Paragraphs support **bold**, *italic*, ***bold italic***, ~~strikethrough~~, and
 | Mermaid flowchart | done       | see below                                 |
 | Mermaid ER diagram | done      | see below                                 |
 | Mermaid pie chart | done       | see below                                 |
+| Mermaid packet diagram | done  | see below                                 |
 
 ## Syntax-highlighted code
 
@@ -78,11 +79,11 @@ render the same as an ordinary Markdown link, brackets gone.
 
 ## Mermaid diagrams
 
-A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart`, `erDiagram`, or
-`pie` renders as box-drawing art in place of its source. See
+A fenced ` ```mermaid ` block containing a `sequenceDiagram`, `graph`/`flowchart`, `erDiagram`,
+`pie`, or `packet-beta`/`packet` renders as box-drawing art in place of its source. See
 [docs/mermaid-examples.md](mermaid-examples.md) for an exhaustive tour of the first three — every
 arrow type and fragment, every flowchart direction/subgraph/styling case, ER cardinality notation,
-and the graceful-fallback behavior for diagram types that aren't supported yet. Four representative
+and the graceful-fallback behavior for diagram types that aren't supported yet. Five representative
 examples here:
 
 ```mermaid
@@ -125,6 +126,15 @@ pie title Pets adopted by volunteers
     "Rats" : 15
 ```
 
+```mermaid
+packet-beta
+    title UDP Packet
+    0-15: "Source Port"
+    16-31: "Destination Port"
+    32-47: "Length"
+    48-63: "Checksum"
+```
+
 Diagram rows keep their natural width instead of being wrapped/padded to the render width
 (VIEWMD-0018) — same as a wide code block's long lines (VIEWMD-0019); docs/mermaid-examples.md has
 an example wide enough to demonstrate the horizontal scroll this produces in the pager.
@@ -151,3 +161,13 @@ Rats┃█▎    3.1%
 
 Run `./viewmd.sh docs/example.md --color never` to see this file's pie chart render that way
 instead.
+
+### Packet diagrams (VIEWMD-0049)
+
+A `packet-beta`/`packet` block draws a fixed-width bit/byte field layout — the kind used to
+document a network protocol header — wrapped onto rows of 32 bits each; a field spanning a row
+boundary splits across both rows with the same label repeated. Fields can be given as explicit
+`<start>-<end>`/`<start>` ranges (as in the UDP example above) or with the `+<count>` shorthand,
+which advances from wherever the previous field left off — see
+[docs/mermaid-packet.md](mermaid-packet.md) for more fixtures, including one spanning a row
+boundary and one with a `+N`/explicit-range mix.
