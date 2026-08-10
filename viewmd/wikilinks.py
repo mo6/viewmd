@@ -58,7 +58,8 @@ def _rewrite_line(line: str) -> str:
             if match:
                 target = match.group(1)
                 display = match.group(2) if match.group(2) is not None else target
-                dest = f"wikilink:{target}".replace("\\", "\\\\").replace("<", "\\<").replace(">", "\\>")
+                dest = f"wikilink:{target}"
+                dest = dest.replace("\\", "\\\\").replace("<", "\\<").replace(">", "\\>")
                 result.append(f"[{display}](<{dest}>)")
                 i = match.end()
                 continue
