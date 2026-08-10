@@ -128,7 +128,7 @@ sequenceDiagram
 
 ## Flowcharts
 
-Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, and diamond `{}` -- render with distinct borders (VIEWMD-0022). Diamonds are a true tapered rhombus; the others keep the usual box geometry with shape-specific glyphs. `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027).
+Node shapes beyond the plain `[...]` rectangle -- round `()`, stadium `([ ])`, circle `(())`, subroutine `[[ ]]`, cylinder `[( )]`, diamond `{}`, and parallelogram `[/ /]`/`[\ \]` -- render with distinct borders (VIEWMD-0022, VIEWMD-0039). A diamond renders as a flat-topped/bottomed rounded lozenge, exactly as tall as a same-content rectangle (`label_lines + 2` rows, never coupled to width), with a `◇` marker on all four attachment points -- centred in the top/bottom border and immediately beside the label on every content row (VIEWMD-0038); every other shape keeps the usual box geometry with shape-specific glyphs. The exception is the parallelogram pair: each row is offset one column further than the row above it -- `[/Text/]` shifting left going down, `[\Text\]` shifting right going down -- so the box reads as genuinely slanted rather than glyph-substituted; an edge still attaches flush on every side, at a shared x-anchor so a vertical chain of parallelograms connects with a straight line rather than zigzagging row to row (VIEWMD-0039). `BT`/`RL` directions are still accepted but drawn the same as `TD`/`LR` rather than actually reversed (upstream `mermaid-ascii` limitation, tracked as VIEWMD-0027). Every shape's label sits immediately against its top/bottom border with no blank padding row, a deliberate divergence from the upstream reference (VIEWMD-0036) that keeps flowcharts as vertically dense as sequence and ER diagrams already are; a diamond's multi-line label packs the same way, one row per line with no gap between them.
 
 ### Node shapes
 
@@ -147,6 +147,11 @@ graph LR
     Y --> D{Diamond}
 ```
 
+```mermaid
+graph LR
+    A[/Parallelogram/] --> B[\Alt Para\]
+```
+
 ### Branching and labelled edges
 
 The classic decision diamond: a shaped declaration (`B{Decision}`) and later bare `B` references resolve to the same node, so the yes/no arms rejoin on one diamond rather than splitting into disconnected boxes:
@@ -160,7 +165,7 @@ graph TD
 
 ### Multi-line decision label
 
-Diamond labels accept `<br>` line breaks; lines pack onto consecutive rows inside the taper:
+Diamond labels accept `<br>` line breaks; lines pack onto consecutive rows, `◇` beside each one:
 
 ```mermaid
 graph TD
@@ -253,10 +258,10 @@ graph TD
 
 The `DB --> Server` edge below flows "backward" (right to left) relative to the diagram's overall
 `LR` direction, so the router sends it out the bottom of both boxes to avoid threading back
-through the nodes in between — and its horizontal segment lands on the same row as the `Backend`
-subgraph's own bottom border, visually fusing the arrow into the frame. This is an upstream
-`mermaid-ascii` layout limitation (subgraph padding doesn't reserve space for backward-routed
-edges), reproduced here byte-for-byte, not a viewmd defect:
+through the nodes in between. Upstream `mermaid-ascii` doesn't reserve extra clearance for this
+case, so the edge's horizontal segment lands on the same row as the `Backend` subgraph's own
+bottom border and visually fuses into the frame; viewmd deliberately diverges from that upstream
+behaviour (VIEWMD-0023) and reserves an extra blank row so the two stay visually distinct:
 
 ```mermaid
 graph LR

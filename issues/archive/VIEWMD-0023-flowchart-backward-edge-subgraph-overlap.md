@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0023
 title: Reserve routing clearance for backward-flowing edges inside a flowchart subgraph
-status: proposed
+status: implemented
 area: [render, mermaid]
-effort:
+effort: medium
 created: 2026-08-05
-updated: 2026-08-05
-accepted_by:
-accepted_at:
-commits: []
+updated: 2026-08-07
+accepted_by: George Moses
+accepted_at: 2026-08-06
+commits: [de0f430]
 related: [VIEWMD-0015]
 supersedes: []
-changelog:
+changelog: "[1.7.1]"
 reason:
 ---
 
@@ -51,4 +51,4 @@ VIEWMD-0015 (`issues/archive/VIEWMD-0015-mermaid-flowchart-diagrams.md` once arc
 
 ## Peer review
 
-Left blank until implemented and tested; filled in as part of the Definition of Done landing gate.
+- (agent, independent review) Traced `_subgraph_needs_backward_edge_clearance`'s detection logic against every branch of `determine_start_and_end_dir` and confirmed it correctly identifies the symmetric DOWN/DOWN (LR) and RIGHT/RIGHT (TD) backward-attach cases, and that nested-subgraph clearance resolves bottom-up without double-adding. Flagged one real gap: `_parallel_directions` assigns the same symmetric DOWN/DOWN or RIGHT/RIGHT pair to a duplicate *forward* edge routed alongside its sibling, which the original check couldn't distinguish from a genuine backward edge, causing a false-positive clearance addition (a requirement-#3 violation) on that combination. Fixed by adding `_is_backward_edge` (ported from `coords.py`'s own `is_backwards` test) as an additional gate; re-verified via a parallel-duplicate-edge fixture that output is now byte-identical to the pre-fix baseline in that case. `./run-tests.sh` clean on touched files (324 passed; the only ruff failures are pre-existing, in unrelated `poc/` scratch files from other branches).

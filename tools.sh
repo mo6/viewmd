@@ -4,8 +4,9 @@
 #   ./tools.sh <tool> [args...]
 #   ./tools.sh                     list the available tools
 #
-# <tool> is a script's name under tools/, with or without its .py suffix and with - or _
-# interchangeably. Everything after it is passed through verbatim, e.g. `./tools.sh issues --check`.
+# <tool> is a script's name under tools/ (a .py run via the venv's python, or a .sh run via
+# bash), with or without its .py/.sh suffix and with - or _ interchangeably. Everything after
+# it is passed through verbatim, e.g. `./tools.sh issues --check` or `./tools.sh record-demo`.
 set -euo pipefail
 
 # Resolve BASH_SOURCE through any symlink chain (macOS's readlink has no -f), so this still
@@ -31,6 +32,7 @@ fi
 
 list_tools() {
     for f in "$tools_dir"/*.py; do
+        [[ -e "$f" ]] || continue
         name="$(basename "$f" .py)"
         [[ "$name" == __init__ || "$name" == _* ]] && continue
         summary="$("$py" - "$f" <<'EOF'
@@ -40,6 +42,13 @@ doc = ast.get_docstring(tree) or ""
 print(doc.splitlines()[0] if doc else "")
 EOF
 )"
+        printf '  %-16s %s\n' "$name" "$summary"
+    done
+    for f in "$tools_dir"/*.sh; do
+        [[ -e "$f" ]] || continue
+        name="$(basename "$f" .sh)"
+        [[ "$name" == _* ]] && continue
+        summary="$(sed -n '2s/^#[[:space:]]*//p' "$f")"
         printf '  %-16s %s\n' "$name" "$summary"
     done
 }
@@ -53,14 +62,19 @@ fi
 
 tool="$1"; shift
 tool="${tool%.py}"
+tool="${tool%.sh}"
 tool="${tool//-/_}"
 
-script="$tools_dir/$tool.py"
-if [[ ! -f "$script" ]]; then
-    echo "tools: no such tool '$tool' (looked for $script)" >&2
+py_script="$tools_dir/$tool.py"
+sh_script="$tools_dir/$tool.sh"
+
+if [[ -f "$py_script" ]]; then
+    exec "$py" "$py_script" "$@"
+elif [[ -f "$sh_script" ]]; then
+    exec bash "$sh_script" "$@"
+else
+    echo "tools: no such tool '$tool' (looked for $py_script and $sh_script)" >&2
     echo "available tools:" >&2
     list_tools >&2
     exit 1
 fi
-
-exec "$py" "$script" "$@"

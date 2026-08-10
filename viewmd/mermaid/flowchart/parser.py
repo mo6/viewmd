@@ -14,8 +14,12 @@ from enum import Enum
 from viewmd.mermaid.grid.label import GraphLabel, new_graph_label
 
 BOX_BORDER_PADDING = 1
-PADDING_X = 5
-PADDING_Y = 5
+# Diverges from the upstream mermaid-ascii reference's own default of 5 for
+# both (VIEWMD-0038 req. 6/10) -- a deliberate density choice, consistent
+# with this project's precedent (VIEWMD-0036, VIEWMD-0037). Still
+# user-overridable via a Mermaid directive.
+PADDING_X = 3
+PADDING_Y = 2
 
 GRAPH_KEYWORDS = ("graph", "flowchart")
 
@@ -38,6 +42,8 @@ class NodeShape(str, Enum):
     SUBROUTINE = "subroutine"
     CYLINDER = "cylinder"
     DIAMOND = "diamond"
+    PARALLELOGRAM = "parallelogram"
+    PARALLELOGRAM_ALT = "parallelogram_alt"
 
 
 # Longest openers first so `((` / `([` / `[[` / `[(` win over `(` / `[`.
@@ -46,6 +52,8 @@ _SHAPE_DELIMITERS: tuple[tuple[NodeShape, str, str], ...] = (
     (NodeShape.STADIUM, "([", "])"),
     (NodeShape.SUBROUTINE, "[[", "]]"),
     (NodeShape.CYLINDER, "[(", ")]"),
+    (NodeShape.PARALLELOGRAM, "[/", "/]"),
+    (NodeShape.PARALLELOGRAM_ALT, "[\\", "\\]"),
     (NodeShape.ROUND, "(", ")"),
     (NodeShape.DIAMOND, "{", "}"),
     (NodeShape.RECTANGLE, "[", "]"),

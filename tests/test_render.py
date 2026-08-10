@@ -248,3 +248,63 @@ def test_mermaid_sentinel_still_discriminates_code_and_diagram_render_paths():
 
     # The sentinel info-string itself never leaks into rendered output.
     assert MERMAID_RENDERED_INFO not in mermaid_out
+
+
+def test_pie_chart_renders_circular_when_color_enabled_end_to_end():
+    # VIEWMD-0043: color must reach Mermaid rendering itself, not just Rich's
+    # own styling -- render_markdown(..., color=True) all the way through
+    # preprocess() and render_mermaid_blocks() to the pie renderer.
+    md = '```mermaid\npie\n    "A" : 1\n    "B" : 1\n```\n'
+    out_color = render_markdown(md, width=80, color=True)
+    out_nocolor = render_markdown(md, width=80, color=False)
+    assert ANSI_RE.search(out_color) is not None
+    assert ANSI_RE.search(out_nocolor) is None
+
+
+def test_pie_chart_bar_fallback_has_zero_ansi_when_color_disabled():
+    md = '```mermaid\npie title Split\n    "A" : 60\n    "B" : 40\n```\n'
+    out = render_markdown(md, width=80, color=False)
+    assert ANSI_RE.search(out) is None
+    assert "┃" in out
+
+
+def test_pie_chart_circular_size_respects_render_width():
+    # Regression: the pie's default sizing used to query the raw terminal
+    # size directly, ignoring --width entirely -- two renders at very
+    # different widths came out byte-identical. `width` must reach the pie
+    # renderer the same way `color` does.
+    md = '```mermaid\npie title Pets\n    "Dogs" : 386\n    "Cats" : 85\n    "Rats" : 15\n```\n'
+    narrow = strip_ansi(render_markdown(md, width=60, color=True))
+    wide = strip_ansi(render_markdown(md, width=200, color=True))
+    assert narrow != wide
+    narrow_max = max(len(line) for line in narrow.splitlines())
+    wide_max = max(len(line) for line in wide.splitlines())
+    assert narrow_max < wide_max
+
+
+def test_quadrant_chart_box_size_respects_render_width():
+    # Same regression shape as the pie chart above (VIEWMD-0047 requirement
+    # 7): `width` must reach the quadrant renderer, not a freshly-queried
+    # raw terminal size.
+    md = (
+        '```mermaid\nquadrantChart\ntitle Campaigns\nx-axis Low --> High\n'
+        'y-axis Low --> High\nA: [0.2, 0.8]\n```\n'
+    )
+    narrow = render_markdown(md, width=60, color=False)
+    wide = render_markdown(md, width=200, color=False)
+    assert narrow != wide
+    narrow_max = max(len(line) for line in narrow.splitlines())
+    wide_max = max(len(line) for line in wide.splitlines())
+    assert narrow_max < wide_max
+
+
+def test_quadrant_chart_is_colored_only_when_color_enabled():
+    md = (
+        '```mermaid\nquadrantChart\nx-axis Low --> High\ny-axis Low --> High\n'
+        'quadrant-1 Q1\nquadrant-2 Q2\nquadrant-3 Q3\nquadrant-4 Q4\nA: [0.2, 0.8]\n```\n'
+    )
+    plain = render_markdown(md, width=80, color=False)
+    colored = render_markdown(md, width=80, color=True)
+    assert ANSI_RE.search(plain) is None
+    assert ANSI_RE.search(colored) is not None
+    assert strip_ansi(colored) == plain
