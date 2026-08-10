@@ -227,17 +227,27 @@ def drawing_to_string(d: Drawing) -> str:
     return "\n".join(lines)
 
 
+def _parse_hex(color_hex: str) -> tuple[int, int, int] | None:
+    hex_ = color_hex.lstrip("#")
+    if len(hex_) == 3:
+        hex_ = "".join(ch * 2 for ch in hex_)
+    if len(hex_) != 6:
+        return None
+    try:
+        return int(hex_[0:2], 16), int(hex_[2:4], 16), int(hex_[4:6], 16)
+    except ValueError:
+        return None
+
+
 def wrap_text_in_color(text: str, color_hex: str) -> str:
     """CLI-only (viewmd has no HTML render mode): true-colour ANSI wrap,
     matching gookit/color's `HEX(c).Sprint(text)`."""
     if not color_hex:
         return text
-    hex_ = color_hex.lstrip("#")
-    if len(hex_) == 3:
-        hex_ = "".join(ch * 2 for ch in hex_)
-    if len(hex_) != 6:
+    rgb = _parse_hex(color_hex)
+    if rgb is None:
         return text
-    r, g, b = int(hex_[0:2], 16), int(hex_[2:4], 16), int(hex_[4:6], 16)
+    r, g, b = rgb
     return f"\x1b[38;2;{r};{g};{b}m{text}\x1b[0m"
 
 
@@ -248,6 +258,32 @@ def wrap_text_bold(text: str) -> str:
     if not text:
         return text
     return f"\x1b[1m{text}\x1b[0m"
+
+
+def wrap_text_styled(text: str, *, fg: str | None = None, bg: str | None = None,
+                      bold: bool = False) -> str:
+    """Combined true-colour fg/bg + bold ANSI wrap in a single escape/reset
+    pair (VIEWMD-0047) -- sibling to wrap_text_in_color/wrap_text_bold, for a
+    caller (the quadrant chart's per-quadrant background fill) that needs
+    more than one SGR attribute on the same span. Nesting the two existing
+    wrappers instead would still work (SGR codes accumulate additively until
+    a `0` reset), just with a redundant extra reset per nesting level."""
+    if not text:
+        return text
+    codes = []
+    if bold:
+        codes.append("1")
+    if fg:
+        rgb = _parse_hex(fg)
+        if rgb:
+            codes.append(f"38;2;{rgb[0]};{rgb[1]};{rgb[2]}")
+    if bg:
+        rgb = _parse_hex(bg)
+        if rgb:
+            codes.append(f"48;2;{rgb[0]};{rgb[1]};{rgb[2]}")
+    if not codes:
+        return text
+    return f"\x1b[{';'.join(codes)}m{text}\x1b[0m"
 
 
 def draw_box(
