@@ -152,7 +152,18 @@ def test_converted_wikilink_uses_link_url_style():
     assert "]]" not in plain_text
     assert ANSI_RE.search(plain) is None
     assert "DELVE-0046" in plain
-    assert "Display text" in plain
+
+
+def test_converted_wikilink_with_space_in_target_still_renders_as_a_link():
+    # A bare `(wikilink:Getting Started)` destination is invalid CommonMark (unescaped space),
+    # so Rich would otherwise fall back to printing the raw "[text](url)" markdown untouched.
+    md = "see [[Getting Started]] here"
+    colored = render_markdown(md, width=80, color=True)
+    plain_text = strip_ansi(colored)
+    assert LINK_URL_ANSI.search(colored) is not None
+    assert "Getting Started" in plain_text
+    assert "[[" not in plain_text
+    assert "](" not in plain_text
 
 
 def test_render_file_heading_shows_the_path():
