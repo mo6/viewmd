@@ -45,34 +45,57 @@ Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highli
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
 
-Mermaid support covers sequence diagrams, flowcharts, entity-relationship diagrams, pie charts,
-and packet diagrams: a fenced ` ```mermaid ` code block containing a `sequenceDiagram`,
-`graph`/`flowchart`, `erDiagram`, `pie`, or `packet-beta`/`packet` renders as box-drawing ASCII
-art in place of its source — sequence diagrams with notes, loop/alt/par fragments, and `actor`
-participants (drawn as a random 3-line stick figure instead of a box); flowcharts with subgraphs,
-labelled and bidirectional edges, `classDef` styling, A*-based routing around other nodes, and
-distinct node shapes (round, stadium/pill, circle, subroutine, cylinder/database, and diamond
-decision nodes rendered as a rounded lozenge); ER diagrams with attribute tables, crow's-foot
-cardinality notation, and identifying/non-identifying relationships; pie charts, rendered two
-different ways depending on whether color is available — a true circle (per-slice truecolor fill,
-Unicode quadrant-block edge anti-aliasing, a legend, sized relative to `--width` rather than a
-fixed constant) when it is, a horizontal bar chart when it isn't (`--color never`, `NO_COLOR` set,
-non-tty output, or `--ascii`) — a monochrome circle was tried and found illegible, so the bar
-chart is a deliberate second design, not a lesser fallback; and packet diagrams, a fixed-width
-bit/byte field layout (the kind used to document a network protocol header) wrapped onto 32-bit
-rows, with a field spanning a row boundary split across both rows under the same repeated label —
-field ranges can be given explicitly (`<start>-<end>`/`<start>`) or with the `+<count>`
-cursor-relative shorthand, freely mixed in the same diagram. See
-[docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of the first three,
-[docs/example.md](docs/example.md) for pie chart and packet diagram examples,
-[docs/mermaid-packet.md](docs/mermaid-packet.md) for more packet-diagram fixtures, and
-[docs/diamonds.md](docs/diamonds.md) for the diamond shape specifically, plus one real limitation
-inherited from the upstream renderer flowcharts are ported from: `BT`/`RL` directions are accepted
-but not actually reversed (aliased to `TD`/`LR`). Other Mermaid diagram types, and any block that
-fails to parse, are left as plain source text rather than causing an error.
-
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
+
+## Mermaid diagrams
+
+A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
+`erDiagram`, `pie`, `packet-beta`/`packet`, or `quadrantChart` renders as box-drawing ASCII art in
+place of its source. Other Mermaid diagram types, and any block that fails to parse, are left as
+plain source text rather than causing an error. See
+[docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
+flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
+diagram type below, side by side with the rest of viewmd's Markdown support.
+
+### Sequence diagrams, flowcharts, and ER diagrams
+
+Sequence diagrams support notes, loop/alt/par fragments, and `actor` participants (drawn as a
+random 3-line stick figure instead of a box). Flowcharts support subgraphs, labelled and
+bidirectional edges, `classDef` styling, A*-based routing around other nodes, and distinct node
+shapes (round, stadium/pill, circle, subroutine, cylinder/database, and diamond decision nodes
+rendered as a rounded lozenge) — see [docs/diamonds.md](docs/diamonds.md) for the diamond shape
+specifically, plus one real limitation inherited from the upstream renderer flowcharts are ported
+from: `BT`/`RL` directions are accepted but not actually reversed (aliased to `TD`/`LR`). ER
+diagrams support attribute tables, crow's-foot cardinality notation, and identifying/non-identifying
+relationships.
+
+### Pie charts
+
+Pie charts render two different ways depending on whether color is available: a true circle
+(per-slice truecolor fill, Unicode quadrant-block edge anti-aliasing, a legend, sized relative to
+`--width` rather than a fixed constant) when it is, a horizontal bar chart when it isn't
+(`--color never`, `NO_COLOR` set, non-tty output, or `--ascii`) — a monochrome circle was tried
+and found illegible, so the bar chart is a deliberate second design, not a lesser fallback.
+
+### Packet diagrams
+
+A `packet-beta`/`packet` block draws a fixed-width bit/byte field layout (the kind used to
+document a network protocol header) wrapped onto 32-bit rows, with a field spanning a row boundary
+split across both rows under the same repeated label. Field ranges can be given explicitly
+(`<start>-<end>`/`<start>`) or with the `+<count>` cursor-relative shorthand, freely mixed in the
+same diagram. See [docs/mermaid-packet.md](docs/mermaid-packet.md) for more packet-diagram
+fixtures.
+
+### Quadrant charts
+
+A `quadrantChart` block draws a bordered box split into four labelled quadrants by an internal
+cross, with each `<label>: [x, y]` data point plotted at its normalized `0.0`-`1.0` position and
+labelled beneath its marker. Like the pie chart, it's sized relative to `--width` rather than a
+fixed constant; with color available, each quadrant's border/label/points are tinted a distinct
+color over a darkened background fill, with a point's own `color:`/`classDef` styling overriding
+its quadrant's tint. See [docs/mermaid-quadrant.md](docs/mermaid-quadrant.md) for more
+quadrant-chart fixtures.
 
 ## Development
 

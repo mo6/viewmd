@@ -115,3 +115,32 @@ def test_renders_a_bare_packet_fence_as_tagged_code():
 def test_invalid_packet_diagram_is_left_untouched():
     text = '```mermaid\npacket-beta\nnot a field line\n```\n'
     assert render_mermaid_blocks(text) == text
+
+
+def test_renders_a_quadrant_chart_fence_as_tagged_code():
+    text = (
+        '```mermaid\nquadrantChart\nx-axis Low --> High\ny-axis Low --> High\n'
+        'A: [0.2, 0.8]\n```\n'
+    )
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "┌" in got
+    assert "\x1b[38;2;" not in got  # no color by default
+
+
+def test_renders_a_quadrant_chart_fence_in_color_when_color_enabled():
+    text = (
+        '```mermaid\nquadrantChart\nx-axis Low --> High\ny-axis Low --> High\n'
+        'quadrant-1 Q1\nquadrant-2 Q2\nquadrant-3 Q3\nquadrant-4 Q4\n'
+        'A: [0.2, 0.8]\n```\n'
+    )
+    got = render_mermaid_blocks(text, color=True)
+    assert "\x1b[38;2;" in got  # per-quadrant true-color tint
+    assert "\x1b[48;2;" in got  # per-quadrant background fill
+
+
+def test_invalid_quadrant_chart_is_left_untouched():
+    text = '```mermaid\nquadrantChart\nnot a real line\n```\n'
+    assert render_mermaid_blocks(text) == text
+    assert render_mermaid_blocks(text, color=True) == text

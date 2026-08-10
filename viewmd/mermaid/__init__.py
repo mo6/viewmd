@@ -27,6 +27,10 @@ from viewmd.mermaid.pie.parser import ParseError as _PieParseError
 from viewmd.mermaid.pie.parser import parse as _parse_pie
 from viewmd.mermaid.pie.parser import sniff as _is_pie_diagram
 from viewmd.mermaid.pie.renderer import render as _render_pie
+from viewmd.mermaid.quadrant.parser import ParseError as _QuadrantParseError
+from viewmd.mermaid.quadrant.parser import parse as _parse_quadrant
+from viewmd.mermaid.quadrant.parser import sniff as _is_quadrant_diagram
+from viewmd.mermaid.quadrant.renderer import render as _render_quadrant
 from viewmd.mermaid.sequence.parser import ParseError as _SequenceParseError
 from viewmd.mermaid.sequence.parser import parse as _parse_sequence
 from viewmd.mermaid.sequence.parser import sniff as _is_sequence_diagram
@@ -47,12 +51,13 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
            width: int | None = None) -> str:
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
-    `color` and `width` (VIEWMD-0043) are currently read only by the
-    pie-chart renderer -- every other diagram type ignores them, unaffected.
-    `width` is the caller's resolved render width, not a hard cap (Mermaid
-    diagrams are still allowed to render wider and scroll, VIEWMD-0018); it's
-    what the pie chart's default size targets, so it doesn't size itself
-    independently of the document it's embedded in. Raises
+    `color` and `width` (VIEWMD-0043) are currently read only by the pie and
+    quadrant-chart renderers (VIEWMD-0047) -- every other diagram type
+    ignores them, unaffected. `width` is the caller's resolved render width,
+    not a hard cap (Mermaid diagrams are still allowed to render wider and
+    scroll, VIEWMD-0018); it's what the pie chart's and quadrant chart's
+    default sizing targets, so neither sizes itself independently of the
+    document it's embedded in. Raises
     `UnsupportedDiagramError` if `text` isn't a diagram type this module
     supports, or `MermaidError` if it looks like a supported type but fails to
     parse.
@@ -92,4 +97,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _PacketParseError as e:
             raise MermaidError(str(e)) from e
         return _render_packet(diagram, use_ascii=use_ascii)
+    if _is_quadrant_diagram(text):
+        try:
+            chart = _parse_quadrant(text)
+        except _QuadrantParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_quadrant(chart, use_ascii=use_ascii, color=color, width=width)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

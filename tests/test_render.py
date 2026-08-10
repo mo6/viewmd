@@ -280,3 +280,31 @@ def test_pie_chart_circular_size_respects_render_width():
     narrow_max = max(len(line) for line in narrow.splitlines())
     wide_max = max(len(line) for line in wide.splitlines())
     assert narrow_max < wide_max
+
+
+def test_quadrant_chart_box_size_respects_render_width():
+    # Same regression shape as the pie chart above (VIEWMD-0047 requirement
+    # 7): `width` must reach the quadrant renderer, not a freshly-queried
+    # raw terminal size.
+    md = (
+        '```mermaid\nquadrantChart\ntitle Campaigns\nx-axis Low --> High\n'
+        'y-axis Low --> High\nA: [0.2, 0.8]\n```\n'
+    )
+    narrow = render_markdown(md, width=60, color=False)
+    wide = render_markdown(md, width=200, color=False)
+    assert narrow != wide
+    narrow_max = max(len(line) for line in narrow.splitlines())
+    wide_max = max(len(line) for line in wide.splitlines())
+    assert narrow_max < wide_max
+
+
+def test_quadrant_chart_is_colored_only_when_color_enabled():
+    md = (
+        '```mermaid\nquadrantChart\nx-axis Low --> High\ny-axis Low --> High\n'
+        'quadrant-1 Q1\nquadrant-2 Q2\nquadrant-3 Q3\nquadrant-4 Q4\nA: [0.2, 0.8]\n```\n'
+    )
+    plain = render_markdown(md, width=80, color=False)
+    colored = render_markdown(md, width=80, color=True)
+    assert ANSI_RE.search(plain) is None
+    assert ANSI_RE.search(colored) is not None
+    assert strip_ansi(colored) == plain
