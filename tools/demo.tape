@@ -6,24 +6,16 @@
 Output docs/demo.gif
 
 Set Shell "bash"
-Set FontSize 16
-Set Width 1200
-Set Height 800
+Set FontSize 13
+Set Width 1100
+Set Height 780
 Set Theme "Dracula"
-Set Padding 20
+Set Padding 10
+Set Framerate 1
 
-Type "md docs/example.md"
+# tools/demo-pages/*.md splits docs/example.md into one-topic-per-page files
+# that each fit on one screen; tools/demo_pages_loop.sh shows each in turn via
+# `md` (less -F auto-advances since the page fits) with a 5s pause between.
+Type "./tools/demo_pages_loop.sh"
 Enter
-Sleep 2s
-
-Down@300ms 10
-Sleep 1s
-Down@300ms 10
-Sleep 1s
-Down@300ms 10
-Sleep 1s
-Down@300ms 10
-Sleep 2s
-
-Type "q"
-Sleep 1s
+Sleep 55s
