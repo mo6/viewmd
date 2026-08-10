@@ -261,18 +261,22 @@ def wrap_text_bold(text: str) -> str:
 
 
 def wrap_text_styled(text: str, *, fg: str | None = None, bg: str | None = None,
-                      bold: bool = False) -> str:
-    """Combined true-colour fg/bg + bold ANSI wrap in a single escape/reset
-    pair (VIEWMD-0047) -- sibling to wrap_text_in_color/wrap_text_bold, for a
-    caller (the quadrant chart's per-quadrant background fill) that needs
-    more than one SGR attribute on the same span. Nesting the two existing
-    wrappers instead would still work (SGR codes accumulate additively until
-    a `0` reset), just with a redundant extra reset per nesting level."""
+                      bold: bool = False, underline: bool = False) -> str:
+    """Combined true-colour fg/bg + bold/underline ANSI wrap in a single
+    escape/reset pair (VIEWMD-0047, `underline` added by VIEWMD-0034) --
+    sibling to wrap_text_in_color/wrap_text_bold, for a caller (the quadrant
+    chart's per-quadrant background fill; the kanban board's underlined
+    `ticket` field) that needs more than one SGR attribute on the same span.
+    Nesting the two existing wrappers instead would still work (SGR codes
+    accumulate additively until a `0` reset), just with a redundant extra
+    reset per nesting level."""
     if not text:
         return text
     codes = []
     if bold:
         codes.append("1")
+    if underline:
+        codes.append("4")
     if fg:
         rgb = _parse_hex(fg)
         if rgb:
