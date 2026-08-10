@@ -1,5 +1,8 @@
 # Security gate
 
+For how to report a vulnerability, see [../SECURITY.md](../SECURITY.md). This file is the
+maintainer-facing runbook for the automated checks below, not the disclosure policy.
+
 **Status: implemented (1.1.0).** A maintainer-facing gate, not a certification. It asks two
 questions every `./run-tests.sh` run: are there common insecure patterns in our Python, and are
 any installed packages known-vulnerable? [VIEWMD-0009](../issues/archive/VIEWMD-0009-security-gate.md)

@@ -107,6 +107,7 @@ quadrant-chart fixtures.
   lints without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
-  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook.
+  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook, and
+  [SECURITY.md](SECURITY.md) to report a vulnerability.
 - See [TODO.md](TODO.md) — or directly, [issues/README.md](issues/README.md) — for what's
   proposed, in progress, and implemented.
