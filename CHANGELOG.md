@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.14.0] — 2026-08-10
+
+- **Render Mermaid quadrant charts** (VIEWMD-0047, render/mermaid): a sixth Mermaid diagram type, `quadrantChart`, drawing a bordered box split into four labelled quadrants by an internal cross, with each `<label>: [x, y]` data point plotted at its normalized `0.0`-`1.0` position and labelled beneath its marker. No upstream reference implementation to port from (`mermaid-ascii` has no quadrant-chart support), so this is hand-written against Mermaid's own syntax. Its default size scales with the document's actual render width, the same posture as the pie chart (`--width`, not the raw terminal); with color available, each quadrant's border, label, and points are tinted a distinct hue over a darkened background fill, and a point's own `color:` style (or its `:::class`'s `classDef color:`) overrides its quadrant's fallback tint -- the second diagram type (after pie) where `color` changes the rendering. See `docs/example.md` and `docs/mermaid-quadrant.md`.
+
 ## [1.13.0] — 2026-08-09
 
 - **Render Mermaid packet diagrams** (VIEWMD-0049, render/mermaid): a fifth Mermaid diagram type, `packet-beta`/`packet`, drawing a fixed-width bit/byte field layout -- the kind used to document a network protocol header -- wrapped onto rows of 32 bits each, a field spanning a row boundary split across both rows under the same repeated label. Field ranges can be given explicitly (`<start>-<end>` or the single-bit `<start>` shorthand) or with the `+<count>` cursor-relative shorthand, freely mixed within one diagram; an optional `title` line renders centered above the diagram. No upstream reference implementation to port from (`mermaid-ascii` has no packet support, and real Mermaid renders to SVG, not a terminal grid), so this is hand-written against Mermaid's own syntax and, for field-contiguity validation, its actual parser source read directly from GitHub. See `docs/example.md` and `docs/mermaid-packet.md`.

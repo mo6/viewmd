@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0047
 title: Render Mermaid quadrant charts
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-09
 updated: 2026-08-10
 accepted_by: George Moses
 accepted_at: 2026-08-10
-commits: []
+commits: [6bf9dc3]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.14.0]"
 reason:
 ---
 
