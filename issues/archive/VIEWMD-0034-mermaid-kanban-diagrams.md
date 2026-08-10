@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0034
 title: Render Mermaid kanban diagrams
-status: proposed
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-06
-updated: 2026-08-06
-accepted_by:
-accepted_at:
-commits: []
+updated: 2026-08-10
+accepted_by: George Moses
+accepted_at: 2026-08-10
+commits: [1a88e08]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.15.0]"
 reason:
 ---
 
@@ -89,22 +89,21 @@ Modelled on real Mermaid's own rendering (the maintainer supplied a screenshot: 
 │  ┌────────────────────────────┐  │ │  ┌────────────────────────────┐  │ │  ┌────────────────────────────┐  │ │  ┌────────────────────────────┐  │ │  ┌────────────────────────────┐  │ │  ┌────────────────────────────┐  │
 │  │ Create Documentation       │  │ │  │ Create renderer so that it │  │ │  │ Design grammar             │  │ │  │ Create parsing tests       │  │ │  │ define getData             │  │ │  │ Weird flickering in        │  │
 │  └────────────────────────────┘  │ │  │ works in all cases. We     │  │ │  │                       knsv │  │ │  │ [H] MC-2038   K.Sveidqvist │  │ │  └────────────────────────────┘  │ │  │ Firefox                    │  │
-│                                  │ │  │ also add some extra text   │  │ │  └────────────────────────────┘  │ │  └────────────────────────────┘  │ │                                  │ │  └────────────────────────────┘  │
-│  ┌────────────────────────────┐  │ │  │ here for testing purposes. │  │ │                                  │ │                                  │ │  ┌────────────────────────────┐  │ │                                  │
-│  │ Create Blog about the new  │  │ │  │ And some more just for the │  │ └──────────────────────────────────┘ │  ┌────────────────────────────┐  │ │  │ Title of diagram is more   │  │ └──────────────────────────────────┘
-│  │ diagram                    │  │ │  │ extra flare.               │  │                                      │  │ last item                  │  │ │  │ than 100 chars when user   │  │
-│  └────────────────────────────┘  │ │  └────────────────────────────┘  │                                      │  │ [VL]                  knsv │  │ │  │ duplicates diagram with    │  │
-│                                  │ │                                  │                                      │  └────────────────────────────┘  │ │  │ 100 char                   │  │
-└──────────────────────────────────┘ └──────────────────────────────────┘                                      │                                  │ │  │ [VH] MC-2036               │  │
-                                                                                                               └──────────────────────────────────┘ │  └────────────────────────────┘  │
-                                                                                                                                                    │                                  │
+│  ┌────────────────────────────┐  │ │  │ also add some extra text   │  │ │  └────────────────────────────┘  │ │  └────────────────────────────┘  │ │  ┌────────────────────────────┐  │ │  └────────────────────────────┘  │
+│  │ Create Blog about the new  │  │ │  │ here for testing purposes. │  │ └──────────────────────────────────┘ │  ┌────────────────────────────┐  │ │  │ Title of diagram is more   │  │ └──────────────────────────────────┘
+│  │ diagram                    │  │ │  │ And some more just for the │  │                                      │  │ last item                  │  │ │  │ than 100 chars when user   │  │
+│  └────────────────────────────┘  │ │  │ extra flare.               │  │                                      │  │ [VL]                  knsv │  │ │  │ duplicates diagram with    │  │
+└──────────────────────────────────┘ │  └────────────────────────────┘  │                                      │  └────────────────────────────┘  │ │  │ 100 char                   │  │
+                                     └──────────────────────────────────┘                                      └──────────────────────────────────┘ │  │ [VH] MC-2036               │  │
+                                                                                                                                                    │  └────────────────────────────┘  │
                                                                                                                                                     │  ┌────────────────────────────┐  │
                                                                                                                                                     │  │ Update DB function         │  │
                                                                                                                                                     │  │ [H] MC-2037           knsv │  │
                                                                                                                                                     │  └────────────────────────────┘  │
-                                                                                                                                                    │                                  │
                                                                                                                                                     └──────────────────────────────────┘
 ```
+
+(Revised 2026-08-10 per the maintainer's post-implementation review: the blank line originally drawn between/after each card, above and in the earlier draft, added unnecessary vertical size and was removed. Cards now stack directly against each other, separated only by their own box borders.)
 
 **Color legend** (what the header-tag annotations and the plain-looking metadata line above stand in for):
 
@@ -118,17 +117,32 @@ Modelled on real Mermaid's own rendering (the maintainer supplied a screenshot: 
 | `ticket` (e.g. `MC-2038`) | "link" hue | `#2a78d6`/`#3987e5` (categorical slot 1, reused) | foreground, underlined |
 | `assigned` (e.g. `K.Sveidqvist`) | secondary ink | `#52514e`/`#c3c2b7` | foreground, no underline |
 
-Open questions for maintainer sign-off: (a) whether uniform card width across every column (as above, all six columns the same width) is right, or whether each column should size to its own widest card/label independently -- uniform width keeps the grid tidy but wastes horizontal space on narrow columns like "Ready for deploy"; (b) the exact priority abbreviation scheme (`[H]`/`[VH]`/`[L]`/`[VL]` above) -- worth spelling out in full (`[High]`) instead, trading compactness for clarity; (c) whether a card missing every metadata field (no ticket/assigned/priority, e.g. `Create Documentation`) should keep the blank line's worth of vertical space the metadata line would have taken (for a uniform card height within a column) or omit it entirely as shown above (variable card height, matching the screenshot); (d) how the bottom-of-column blank padding row (visible above under each column's last card) should behave when columns end up wildly different heights, as in this example ("Todo"/"Can't reproduce" are short, "Done" is tall) -- pad every column to the tallest one's height (as shown) or let each column's box hug its own content; (e) whether collapsing `Very Low`/`Low` onto one status color (both render as "good") loses too much distinction, given the reference example actually uses `Very Low` -- the status palette only has 4 steps for 5 conventional priority levels, so *something* has to double up; (f) whether `assigned` should get its own saturated hue after all (the design here deliberately keeps it muted, on the principle that plain informational text shouldn't carry a series-style color when nothing is being compared against it) or whether the maintainer wants stronger visual pop for who's assigned.
+**Maintainer sign-off on open questions (2026-08-10):**
+
+(a) Uniform card width across every column, as drawn in the mock-up.
+
+(b) Short priority tokens (`[H]`/`[VH]`/`[L]`/`[VL]`), as drawn in the mock-up.
+
+(c) A card with no metadata omits the metadata line entirely (variable card height), as drawn in the mock-up.
+
+(d) Each column's box hugs its own content height -- do NOT pad every column to the tallest column's height. This is in fact what the mock-up above already draws (`Todo`'s and `Can't reproduce`'s boxes close right after their own last card, well above `Done`'s much longer box), confirmed as the intended behavior rather than a padding gap the ASCII art just failed to show.
+
+(e) Collapse `Very Low`/`Low` onto the single "good" status color, as drawn in the mock-up and legend.
+
+(f) `assigned` gets its own fixed, saturated hue (not the muted/secondary ink drawn in the mock-up) -- one hue for every assignee (not per-name), distinct from every other role in this issue's palette. Use violet `#4a3aa7`/`#9085e9` (categorical slot 7, otherwise unused by the six-column reference example) foreground, no underline. The color legend and mock-up's assignee rendering (both the "muted ink" table row and the plain-text assignee positions in the ASCII mock-up) are superseded by this: implement `assigned` in violet, not muted ink.
 
 ## Acceptance / verification
 
 - Unit tests for the parser: bare and id-prefixed column declarations, bare and id-prefixed card declarations, `@{ ... }` metadata parsing (all three recognized keys, an unrecognized key ignored, unquoted vs. single-quoted values), and duplicate ids across columns not raising.
 - A rendered fixture (hand-verified, no upstream binary to diff against per Non-goals) reproducing the maintainer's reference example above per the mock-up.
 - A fixture covering a card with no metadata at all, and one with each of the four priority levels.
-- A fixture asserting the emitted ANSI escapes: column header background per requirement 8a (cycling the categorical palette past 8 columns), the priority-to-status-color mapping in 8b, and the ticket/assignee foreground+underline treatment in 8c.
+- A fixture asserting the emitted ANSI escapes: column header background per requirement 8a (cycling the categorical palette past 8 columns), the priority-to-status-color mapping in 8b, and the ticket (foreground+underline) / assignee (foreground only, per sign-off (f) above) treatment in 8c.
 - A fixture covering a `kanban` fence with a leading `---\nconfig:\n...\n---` front-matter block, confirming it's ignored rather than breaking the parse (Non-goals).
 - A malformed `kanban` fence (e.g. a card line with an unterminated `@{` block) falls back to showing the raw fence rather than crashing viewmd.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- Agent (implementing, 2026-08-10): Implemented `viewmd/mermaid/kanban/{parser,renderer}.py`, wired into `viewmd/mermaid/__init__.py`'s dispatch (6th branch, mirroring `er`). Added `textutil.wrap_words` (greedy word-wrap) and `grid/canvas.wrap_text_styled`'s `underline` param (new, for the `ticket` field). Verified the reference example's plain-text render is byte-for-byte identical to the issue's mock-up (`tests/fixtures/mermaid_kanban/reference.out`, generated from the renderer itself and hand-diffed against the mock-up's ASCII art). All 6 sign-off decisions (a-f) implemented as recorded above. `./run-tests.sh` green (535 tests, ruff, pip-audit, issues --check). Manually verified: empty column (no cards) renders without crashing; duplicate ids across columns don't raise; a card with no metadata omits the metadata line entirely (3-row box, not 4). One open risk: header-background contrast-ink (`_contrast_ink`) uses a luminance threshold rather than the mock-up's implied per-hue judgment call -- worth the maintainer's own visual check in a real terminal, since I can't render true-color ANSI to verify contrast directly in this environment.
+- Maintainer (George Moses, 2026-08-10): Reviewed the implementation. Requested removing the blank line drawn between/after cards within a column (`_render_column`'s `blank_row`, both the original mock-up and the shipped renderer) -- it added unnecessary vertical size to the board. Agent removed it (`viewmd/mermaid/kanban/renderer.py:_render_column`), regenerated `tests/fixtures/mermaid_kanban/reference.out` and the issue's own mock-up above to match, and reran `./run-tests.sh` (535 tests, green). No other remarks.
 

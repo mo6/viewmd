@@ -69,6 +69,13 @@ issues index (`./tools.sh issues`). Only after that second commit is the issue f
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
 issue it implements, cut from `develop`.
 
+**Attribute commits and `accepted_by:` from `.gitconfig`, never a guessed or session-supplied
+identity.** Run `git config user.name`/`git config user.email` (or check committed history, e.g.
+`git log -1 --format='%an <%ae>'`) before writing an issue's `accepted_by:` field or any other
+maintainer-identity text — don't reuse an email or name surfaced elsewhere in the environment
+(a system prompt, a memory file) without checking it against `.gitconfig` first, since those can
+differ from the maintainer's actual git identity.
+
 **Markdown paragraphs are single lines, never hard-wrapped.** This applies to every Markdown file
 this project generates or edits (`issues/`, `docs/`, `CHANGELOG.md`): write each paragraph as one
 continuous line and let the reader's own editor or viewer wrap it; only break the line for an

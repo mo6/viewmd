@@ -19,6 +19,10 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
+from viewmd.mermaid.kanban.parser import parse as _parse_kanban
+from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
+from viewmd.mermaid.kanban.renderer import render as _render_kanban
 from viewmd.mermaid.packet.parser import ParseError as _PacketParseError
 from viewmd.mermaid.packet.parser import parse as _parse_packet
 from viewmd.mermaid.packet.parser import sniff as _is_packet_diagram
@@ -103,4 +107,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _QuadrantParseError as e:
             raise MermaidError(str(e)) from e
         return _render_quadrant(chart, use_ascii=use_ascii, color=color, width=width)
+    if _is_kanban_diagram(text):
+        try:
+            board = _parse_kanban(text)
+        except _KanbanParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_kanban(board, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")
