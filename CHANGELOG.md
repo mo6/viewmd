@@ -4,6 +4,11 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.14.1] — 2026-08-10
+
+- **Fix wikilinks with a space in their target rendering as raw markdown instead of a styled link** (render/wikilinks): `rewrite_wikilinks` rewrote `[[Getting Started]]` to `[Getting Started](wikilink:Getting Started)`, an unescaped space in the link destination that's invalid CommonMark outside of the `<...>` bracketed form — Rich silently fell back to printing the raw `[text](url)` markdown instead of a styled hyperlink, for any wikilink target containing a space. The destination is now wrapped in `<...>` (escaping backslash/`<`/`>`), which is always valid. See `docs/example.md`.
+- **Rebuild `docs/demo.gif` as a page-by-page screencast, `docs/example.md` now generated from `tools/demo-pages/*.md`** (docs): replaces the single scrolling-pager recording with one that pages through the showcase a topic at a time; `tools/demo-pages/*.md` is now the source of truth, concatenated into `docs/example.md` by `tools/build_example_md.sh`. Cuts the demo GIF from 27M to ~320K and adds it to the README.
+
 ## [1.14.0] — 2026-08-10
 
 - **Render Mermaid quadrant charts** (VIEWMD-0047, render/mermaid): a sixth Mermaid diagram type, `quadrantChart`, drawing a bordered box split into four labelled quadrants by an internal cross, with each `<label>: [x, y]` data point plotted at its normalized `0.0`-`1.0` position and labelled beneath its marker. No upstream reference implementation to port from (`mermaid-ascii` has no quadrant-chart support), so this is hand-written against Mermaid's own syntax. Its default size scales with the document's actual render width, the same posture as the pie chart (`--width`, not the raw terminal); with color available, each quadrant's border, label, and points are tinted a distinct hue over a darkened background fill, and a point's own `color:` style (or its `:::class`'s `classDef color:`) overrides its quadrant's fallback tint -- the second diagram type (after pie) where `color` changes the rendering. See `docs/example.md` and `docs/mermaid-quadrant.md`.
