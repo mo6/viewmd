@@ -144,3 +144,16 @@ def test_invalid_quadrant_chart_is_left_untouched():
     text = '```mermaid\nquadrantChart\nnot a real line\n```\n'
     assert render_mermaid_blocks(text) == text
     assert render_mermaid_blocks(text, color=True) == text
+
+
+def test_renders_a_kanban_fence_as_tagged_code():
+    text = '```mermaid\nkanban\n  Todo\n    [Create Documentation]\n```\n'
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "┌" in got
+
+
+def test_invalid_kanban_diagram_with_unterminated_metadata_block_is_left_untouched():
+    text = '```mermaid\nkanban\n  Todo\n    id1[A card]@{ ticket: T-1\n```\n'
+    assert render_mermaid_blocks(text) == text

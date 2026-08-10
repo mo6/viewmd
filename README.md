@@ -53,9 +53,9 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, or `quadrantChart` renders as box-drawing ASCII art in
-place of its source. Other Mermaid diagram types, and any block that fails to parse, are left as
-plain source text rather than causing an error. See
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, or `kanban` renders as box-drawing
+ASCII art in place of its source. Other Mermaid diagram types, and any block that fails to parse,
+are left as plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -99,6 +99,15 @@ color over a darkened background fill, with a point's own `color:`/`classDef` st
 its quadrant's tint. See [docs/mermaid-quadrant.md](docs/mermaid-quadrant.md) for more
 quadrant-chart fixtures.
 
+### Kanban boards
+
+A `kanban` block draws ordered columns of stacked task cards: each column its own box with a
+colored header (one hue per column, cycling past 8), each card its own nested box word-wrapped to
+a uniform width. A card's optional `@{ ticket, assigned, priority }` metadata renders as a colored
+line under its label — a severity-colored `[H]`/`[VH]`/`[L]`/`[VL]`/`[M]` priority token and an
+underlined ticket ID on the left, the assignee right-aligned. Columns hug their own content
+height rather than padding out to match a taller neighbor.
+
 ## Development
 
 - `./run-tests.sh` — the full check gate (pytest, ruff incl. security rules, `pip-audit`,
@@ -107,4 +116,7 @@ quadrant-chart fixtures.
   lints without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
-  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook.
+  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook, and
+  [SECURITY.md](SECURITY.md) to report a vulnerability.
+- See [TODO.md](TODO.md) — or directly, [issues/README.md](issues/README.md) — for what's
+  proposed, in progress, and implemented.
