@@ -2,9 +2,11 @@
 
 Rich has no public extension point for custom inline rules, so this runs as a text-level
 preprocessing pass before the body reaches ``rich.markdown.Markdown``. Rewriting to
-``[Display](wikilink:Target)`` reuses Rich's existing ``markdown.link_url`` styling; the
+``[Display](<wikilink:Target>)`` reuses Rich's existing ``markdown.link_url`` styling; the
 ``wikilink:`` scheme is inert (never opened) and exists only so the text is a valid Markdown
-link.
+link. The destination is wrapped in ``<...>`` (with backslash/``<``/``>`` escaped) because
+CommonMark only allows spaces in a link destination inside that bracketed form -- a bare
+``(wikilink:Target With Spaces)`` is invalid and Rich falls back to printing the raw markdown.
 """
 
 from __future__ import annotations
@@ -56,7 +58,9 @@ def _rewrite_line(line: str) -> str:
             if match:
                 target = match.group(1)
                 display = match.group(2) if match.group(2) is not None else target
-                result.append(f"[{display}](wikilink:{target})")
+                dest = f"wikilink:{target}"
+                dest = dest.replace("\\", "\\\\").replace("<", "\\<").replace(">", "\\>")
+                result.append(f"[{display}](<{dest}>)")
                 i = match.end()
                 continue
         result.append(line[i])

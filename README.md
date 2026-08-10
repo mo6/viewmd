@@ -4,6 +4,8 @@ View Markdown files from the command line — headers, emphasis, tables, syntax-
 blocks, basic Mermaid diagram support, and any ASCII art in fenced code blocks, rendered to your
 terminal with color and auto-paged into `less`.
 
+![viewmd demo](docs/demo.gif)
+
 ## Install
 
 ```

@@ -10,7 +10,7 @@ def test_registry_contains_the_built_in_preprocessors_in_order():
 def test_preprocess_runs_every_registered_step():
     text = "See [[Home]].\n\n```mermaid\nsequenceDiagram\nA->>B: hi\n```\n"
     got = preprocess(text)
-    assert "[Home](wikilink:Home)" in got
+    assert "[Home](<wikilink:Home>)" in got
     assert "```mermaid\n" not in got
     assert f"```{MERMAID_RENDERED_INFO}\n" in got
     assert "│" in got
