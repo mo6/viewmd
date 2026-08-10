@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.15.0] — 2026-08-10
+
+- **Render Mermaid kanban diagrams** (VIEWMD-0034, render/mermaid): a sixth Mermaid diagram type, `kanban`, drawing ordered columns of stacked task cards -- each column its own box with a categorical-hue header (one hue per column, cycling past 8), each card its own nested box with a word-wrapped label and, where present, an `@{ ticket, assigned, priority }` metadata line rendered as a severity-colored priority token, an underlined ticket ID, and a right-aligned assignee. Card width is uniform across the whole board; a column's box hugs its own content height rather than padding out to match a taller neighbor. No upstream reference implementation to port from, so this is hand-written against Mermaid's own syntax. See `docs/example.md`.
+
 ## [1.14.1] — 2026-08-10
 
 - **Fix wikilinks with a space in their target rendering as raw markdown instead of a styled link** (render/wikilinks): `rewrite_wikilinks` rewrote `[[Getting Started]]` to `[Getting Started](wikilink:Getting Started)`, an unescaped space in the link destination that's invalid CommonMark outside of the `<...>` bracketed form — Rich silently fell back to printing the raw `[text](url)` markdown instead of a styled hyperlink, for any wikilink target containing a space. The destination is now wrapped in `<...>` (escaping backslash/`<`/`>`), which is always valid. See `docs/example.md`.

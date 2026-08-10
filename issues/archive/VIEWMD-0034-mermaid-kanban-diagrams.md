@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0034
 title: Render Mermaid kanban diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-06
 updated: 2026-08-10
 accepted_by: George Moses
 accepted_at: 2026-08-10
-commits: []
+commits: [1a88e08]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.15.0]"
 reason:
 ---
 
