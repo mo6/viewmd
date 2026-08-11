@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.16.0] — 2026-08-11
+
+- **Add `tools/worktree.sh` for parallel per-issue git worktrees** (VIEWMD-0051, tools/docs): `./tools.sh worktree add|list|remove` creates a sibling `../viewmd-VIEWMD-NNNN` git worktree per issue, branched from `develop` with the correct `bug|feature|story/VIEWMD-NNNN` name, and bootstraps its own standalone `.venv` (`pip install -e '.[dev]'`) so `./run-tests.sh`/`./tools.sh` work from it immediately — letting multiple issues be worked in parallel, each in its own directory with its own Claude Code or Cursor session, without one session's uncommitted changes or branch checkout stepping on another's. `worktree remove` only tears down the directory; branch deletion stays a separate, explicit step. See `AGENTS.md`'s "Working multiple issues in parallel" section.
+
 ## [1.15.0] — 2026-08-10
 
 - **Render Mermaid kanban diagrams** (VIEWMD-0034, render/mermaid): a sixth Mermaid diagram type, `kanban`, drawing ordered columns of stacked task cards -- each column its own box with a categorical-hue header (one hue per column, cycling past 8), each card its own nested box with a word-wrapped label and, where present, an `@{ ticket, assigned, priority }` metadata line rendered as a severity-colored priority token, an underlined ticket ID, and a right-aligned assignee. Card width is uniform across the whole board; a column's box hugs its own content height rather than padding out to match a taller neighbor. No upstream reference implementation to port from, so this is hand-written against Mermaid's own syntax. See `docs/example.md`.

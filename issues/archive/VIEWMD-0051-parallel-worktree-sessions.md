@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0051
 title: Bootstrap script for parallel per-issue git worktree sessions
-status: in-progress
+status: implemented
 area: [tools, docs]
 effort: low
 created: 2026-08-11
 updated: 2026-08-11
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-11
-commits: []
+commits: [3b8518b]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.16.0]"
 reason:
 ---
 
