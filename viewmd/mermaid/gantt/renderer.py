@@ -15,6 +15,11 @@ characters wide against a 7-day/7-column tick spacing, while a "MM-DD" label
 is a fixed 5 characters against a 3-day tick spacing, which needs 2
 characters/day (6-column spacing) to leave a label its own column of
 breathing room.
+
+Week mode's "W<n>" tick labels don't say what calendar date the timeline
+starts from (day mode's "MM-DD" labels already do), so an anchor line under
+the chart maps every 4th week tick to its absolute date, e.g. "W1: 2014-01-01,
+W5: 2014-01-29" (maintainer review feedback, 2026-08-11).
 """
 
 from __future__ import annotations
@@ -39,6 +44,12 @@ __all__ = ["render"]
 _WEEK_MODE_THRESHOLD_DAYS = 28
 _WEEK_UNIT_DAYS = 7
 _DAY_UNIT_DAYS = 3
+
+# In week mode, "W<n>" labels alone don't say which calendar date the timeline
+# starts from -- unlike day mode, whose tick labels are already absolute dates.
+# Every 4th week tick gets an absolute-date anchor on its own line under the
+# chart (maintainer review feedback on this issue, 2026-08-11).
+_WEEK_ANCHOR_INTERVAL = 4
 
 _SECTION_INDENT = 2
 _TASK_INDENT = 4
@@ -124,6 +135,11 @@ def render(diagram: GanttDiagram, *, use_ascii: bool = False) -> str:
     lines.append(_axis_tick_line(axis, g, g.tee_up, label_col_width, body_width))
     lines.append(_axis_label_line(axis, label_col_width, body_width))
 
+    anchor_line = _week_anchor_line(axis, day0, label_col_width)
+    if anchor_line is not None:
+        lines.append("")
+        lines.append(anchor_line)
+
     return "\n".join(lines)
 
 
@@ -149,6 +165,16 @@ def _build_axis(day0, total_days: int) -> _TickAxis:
     stub = math.ceil((spacing - 1) / 2)
     return _TickAxis(unit_days=unit_days, chars_per_day=chars_per_day, tick_cols=tick_cols,
                       labels=labels, stub=stub)
+
+
+def _week_anchor_line(axis: _TickAxis, day0, label_col_width: int) -> str | None:
+    if axis.unit_days != _WEEK_UNIT_DAYS:
+        return None
+    anchors = [
+        f"{axis.labels[i]}: {(day0 + timedelta(days=i * axis.unit_days)).strftime('%Y-%m-%d')}"
+        for i in range(0, len(axis.tick_cols), _WEEK_ANCHOR_INTERVAL)
+    ]
+    return " " * label_col_width + ", ".join(anchors)
 
 
 def _group_by_section(tasks: list[Task]) -> list[tuple[str | None, list[Task]]]:

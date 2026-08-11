@@ -58,6 +58,21 @@ def test_d1_uses_week_ticks_and_d2_uses_day_ticks():
     assert re.search(r"\d\d-\d\d", render(d2))
 
 
+def test_week_mode_anchors_dates_under_the_chart_every_4_weeks():
+    # Maintainer review feedback (2026-08-11): "W<n>" labels alone don't say
+    # what date the timeline starts from, unlike day mode's already-absolute
+    # "MM-DD" labels -- an anchor line under the chart fixes that.
+    diagram = parse((FIXTURES / "d1_basic.mmd").read_text())
+    out = render(diagram)
+    assert out.rstrip("\n").endswith("W1: 2014-01-01, W5: 2014-01-29")
+
+
+def test_day_mode_has_no_anchor_line():
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    out = render(diagram)
+    assert ": 20" not in out.splitlines()[-1]  # no "Wn: YYYY-MM-DD" trailer
+
+
 def test_section_headers_render_as_their_own_row_with_no_gridlines():
     diagram = parse((FIXTURES / "d1_basic.mmd").read_text())
     lines = render(diagram).splitlines()
