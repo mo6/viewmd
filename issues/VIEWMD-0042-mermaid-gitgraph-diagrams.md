@@ -244,3 +244,5 @@ main      develop
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- (agent, independent `code-review` pass) Traced the parser/renderer by hand against all four reference examples (all match) and probed edge cases outside the fixture set; found that `merge <name> id: "<id>"` didn't check its id against the same `commit_owner` duplicate table plain `commit` does, so a merge id colliding with an earlier commit id silently overwrote the id -> lane mapping a later cross-lane `cherry-pick` relies on -- fixed in `viewmd/mermaid/gitgraph/parser.py` (now raises `ParseError` on collision, matching `commit`'s existing check) with a regression test added. Also flagged that a `branch` statement immediately superseded by another `branch` before ever receiving a commit leaves its `pending_parent_row` unresolved and draws no connector for that (commit-less) lane; on inspection this isn't a defect against any requirement -- a lane with zero commits has nothing to connect, and rendering confirms it degrades gracefully (no crash, no misleading marks) -- so left as-is.

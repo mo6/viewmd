@@ -188,6 +188,8 @@ def parse(text: str) -> GitGraph:
                 raise ParseError(f'line {lineno}: merge of undeclared branch "{name}"')
             attrs = dict(_ATTR_RE.findall(m.group(2)))
             id_ = attrs.get("id", "")
+            if id_ and id_ in commit_owner:
+                raise ParseError(f'line {lineno}: duplicate commit id "{id_}"')
             gc = GitCommit(id=id_, column=column, label=id_)
             current.commits.append(gc)
             if id_:

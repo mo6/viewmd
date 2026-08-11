@@ -85,6 +85,17 @@ def test_merge_with_explicit_id_adds_commit_and_connector():
     assert merge_conn.column == main.commits[-1].column
 
 
+def test_merge_with_id_colliding_an_earlier_commit_id_is_a_parse_error():
+    # A merge's id: shares the same commit_owner table as a plain commit's --
+    # a collision must be rejected, not silently overwrite the id -> lane
+    # mapping a later cherry-pick relies on to find the right source lane.
+    with pytest.raises(ParseError, match=re.escape('duplicate commit id "A"')):
+        parse(
+            'gitGraph\n    branch develop\n    commit id: "A"\n'
+            '    checkout main\n    merge develop id: "A"\n'
+        )
+
+
 def test_merge_without_explicit_id_still_adds_a_commit_and_connector():
     graph = parse(
         'gitGraph\n    commit id: "A"\n    branch develop\n    commit id: "B"\n'
