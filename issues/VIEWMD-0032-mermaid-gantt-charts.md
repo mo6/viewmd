@@ -176,3 +176,5 @@ Maintainer decisions (2026-08-11, George Moses): (a) pull D2's `crit`, `excludes
 
 ## Peer review
 
+- George Moses (maintainer), 2026-08-11: reviewed the D1/D2 fixtures and live-rendered output across several rounds -- requested and confirmed the week-mode date-anchor line (requirement 7c), requested and confirmed status-based bar coloring (requirement 11), requested the demo page example be swapped to the D2 full-syntax mock-up and then trimmed to two sections for size. Approved to land.
+
