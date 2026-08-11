@@ -19,6 +19,10 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.gitgraph.parser import ParseError as _GitgraphParseError
+from viewmd.mermaid.gitgraph.parser import parse as _parse_gitgraph
+from viewmd.mermaid.gitgraph.parser import sniff as _is_gitgraph_diagram
+from viewmd.mermaid.gitgraph.renderer import render as _render_gitgraph
 from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
 from viewmd.mermaid.kanban.parser import parse as _parse_kanban
 from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
@@ -113,4 +117,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _KanbanParseError as e:
             raise MermaidError(str(e)) from e
         return _render_kanban(board, use_ascii=use_ascii)
+    if _is_gitgraph_diagram(text):
+        try:
+            graph = _parse_gitgraph(text)
+        except _GitgraphParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_gitgraph(graph, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")
