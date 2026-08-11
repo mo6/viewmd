@@ -53,8 +53,8 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, or `gantt` renders as
-box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, or `gitGraph`
+renders as box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
 fails to parse, are left as plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
@@ -118,6 +118,18 @@ week-level (`W<n>`) ticks for a longer date span, adding a date-anchor line unde
 available, each status gets its own hue and a `crit` task's bracket markers get a distinct hue
 layered on top, independent of `--ascii`. See [docs/mermaid-gantt.md](docs/mermaid-gantt.md) for
 more gantt-chart fixtures.
+
+### gitGraph diagrams
+
+A `gitGraph` block (default left-right orientation) draws one horizontal lane per branch, in
+first-appearance order, as `──●──` segments with commit ids centered beneath each marker. Supports
+`commit`/`branch`/`checkout`/`merge`/`cherry-pick`, an optional `tag:` rendered in `[brackets]`,
+and a bare `commit` with no `id:` (auto-generates a random 4-hex-char id, matching Mermaid's own
+behavior). Vertical connectors between lanes merge into `┼`/`├`/`┤` where they cross a lane's own
+content. With color available, each branch gets its own hue and every commit id shares one neutral
+hue across the diagram, independent of `--ascii`; connectors and tags stay uncolored.
+`gitGraph TB:`/`BT:`/`RL:` orientations are not supported. See
+[docs/mermaid-gitgraph.md](docs/mermaid-gitgraph.md) for more gitGraph fixtures.
 
 ## Development
 

@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0042
 title: Render Mermaid gitGraph diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-09
-updated: 2026-08-09
+updated: 2026-08-11
 accepted_by: George Moses
 accepted_at: 2026-08-09
-commits: []
+commits: [3e53818, eb05087, 4593579, 7ff1019]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.18.0]"
 reason:
 ---
 
@@ -262,3 +262,4 @@ main      develop
 ## Peer review
 
 - (agent, independent `code-review` pass) Traced the parser/renderer by hand against all four reference examples (all match) and probed edge cases outside the fixture set; found that `merge <name> id: "<id>"` didn't check its id against the same `commit_owner` duplicate table plain `commit` does, so a merge id colliding with an earlier commit id silently overwrote the id -> lane mapping a later cross-lane `cherry-pick` relies on -- fixed in `viewmd/mermaid/gitgraph/parser.py` (now raises `ParseError` on collision, matching `commit`'s existing check) with a regression test added. Also flagged that a `branch` statement immediately superseded by another `branch` before ever receiving a commit leaves its `pending_parent_row` unresolved and draws no connector for that (commit-less) lane; on inspection this isn't a defect against any requirement -- a lane with zero commits has nothing to connect, and rendering confirms it degrades gracefully (no crash, no misleading marks) -- so left as-is.
+- George Moses (maintainer), 2026-08-11: reviewed and tested the coloring pass (requirement 12: per-branch hues from the same categorical palette as kanban, one shared neutral hue for every commit id, connectors/tags left uncolored) and the bare-`commit`-with-auto-generated-id follow-up (requirement 2 update). Approved to land.
