@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0030
 title: Mermaid ER diagram non-identifying relationships use box-drawing glyphs most terminal fonts do not render
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-05
 updated: 2026-08-11
 accepted_by: George Moses
 accepted_at: 2026-08-11
-commits: []
+commits: [dd97de9]
 related: [VIEWMD-0016, VIEWMD-0021]
 supersedes: []
-changelog:
+changelog: "[1.16.1]"
 reason:
 ---
 
