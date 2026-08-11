@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0030
 title: Mermaid ER diagram non-identifying relationships use box-drawing glyphs most terminal fonts do not render
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: low
 created: 2026-08-05
-updated: 2026-08-05
-accepted_by:
-accepted_at:
+updated: 2026-08-11
+accepted_by: George Moses
+accepted_at: 2026-08-11
 commits: []
 related: [VIEWMD-0016, VIEWMD-0021]
 supersedes: []
@@ -19,7 +19,7 @@ reason:
 
 ## Summary
 
-`viewmd/mermaid/er/charset.py`'s `UNICODE` charset renders a non-identifying relationship's dashed connector line with `┈` (U+2508, BOX DRAWINGS LIGHT QUADRUPLE DASH HORIZONTAL) for horizontal runs and `┊` (U+2504... actually U+2508's vertical sibling, U+2506) for vertical runs. Both codepoints sit outside the basic box-drawing block most monospace terminal fonts actually cover, so on many setups a dashed relationship line renders as a blank/tofu gap instead of a visible dashed line -- making non-identifying relationships look identical to empty space rather than visually distinguishable from identifying (solid) ones.
+`viewmd/mermaid/er/charset.py`'s `UNICODE` charset renders a non-identifying relationship's dashed connector line with `┈` (U+2508, BOX DRAWINGS LIGHT QUADRUPLE DASH HORIZONTAL) for horizontal runs and `┊` (U+250A, BOX DRAWINGS LIGHT QUADRUPLE DASH VERTICAL, U+2508's vertical sibling) for vertical runs. Both codepoints sit outside the basic box-drawing block most monospace terminal fonts actually cover, so on many setups a dashed relationship line renders as a blank/tofu gap instead of a visible dashed line -- making non-identifying relationships look identical to empty space rather than visually distinguishable from identifying (solid) ones.
 
 ## Motivation / problem
 
