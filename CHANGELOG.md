@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.17.0] — 2026-08-11
+
+- **Render Mermaid Gantt charts** (VIEWMD-0032, render/mermaid): a seventh Mermaid diagram type, `gantt`, drawing one row per task -- a status-tagged bar (`done`/`active`/untagged/`crit`) or a single point glyph for a `milestone` -- against a scaled timeline axis with full-height gridlines and `section`-grouped rows. Parses `section` grouping, `after <id>`/`until <id>` task chaining (including id reuse across sections), `d`/`w`/`h` durations, `excludes weekends` day-skipping, and every status tag including `crit` (rendered with its own `[`/`]` bracket marker layered over the task's other status). The tick axis automatically switches between day-level (`MM-DD`) and week-level (`W<n>`) granularity based on the diagram's total span, adding a date-anchor line under the chart in week mode so `W<n>` labels still say what date they fall on. With color available, each status gets its own hue and `crit`'s brackets get a distinct hue layered on top, independent of `--ascii` -- the third diagram type (after pie, quadrant) where `color` changes the rendering. No upstream reference implementation to port from (`mermaid-ascii` has no gantt support), so this is hand-written and hand-verified against Mermaid's own "basic" and "full syntax" reference examples. See `docs/example.md` and `docs/mermaid-gantt.md`.
+
 ## [1.16.1] — 2026-08-11
 
 - **Fix Mermaid ER diagram non-identifying relationships using box-drawing glyphs most terminal fonts do not render** (VIEWMD-0030, render/mermaid): `UNICODE.hd`/`UNICODE.vd` (the dashed connector glyphs for non-identifying relationships) changed from `┈`/`┊` (U+2508/U+250A) to `·`/`:`, since those box-drawing codepoints sit outside the basic box-drawing block most monospace terminal fonts cover and rendered as blank space instead of a visible dashed line -- the same font-coverage problem VIEWMD-0021 fixed for sequence-diagram dotted arrows.

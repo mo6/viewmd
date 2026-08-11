@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0032
 title: Render Mermaid Gantt charts
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-06
 updated: 2026-08-11
 accepted_by: George Moses
 accepted_at: 2026-08-11
-commits: []
+commits: [1314772, 48ced38, 8a5f909, 0df9c05, 67a11e4, ec3b680, 2b97ac9]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.17.0]"
 reason:
 ---
 
