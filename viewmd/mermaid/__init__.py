@@ -19,6 +19,10 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.gantt.parser import ParseError as _GanttParseError
+from viewmd.mermaid.gantt.parser import parse as _parse_gantt
+from viewmd.mermaid.gantt.parser import sniff as _is_gantt_diagram
+from viewmd.mermaid.gantt.renderer import render as _render_gantt
 from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
 from viewmd.mermaid.kanban.parser import parse as _parse_kanban
 from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
@@ -55,9 +59,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
            width: int | None = None) -> str:
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
-    `color` and `width` (VIEWMD-0043) are currently read only by the pie and
-    quadrant-chart renderers (VIEWMD-0047) -- every other diagram type
-    ignores them, unaffected. `width` is the caller's resolved render width,
+    `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
+    and gantt-chart (VIEWMD-0032) renderers -- every other diagram type
+    ignores it, unaffected. `width` is read only by pie/quadrant, and is the
+    caller's resolved render width,
     not a hard cap (Mermaid diagrams are still allowed to render wider and
     scroll, VIEWMD-0018); it's what the pie chart's and quadrant chart's
     default sizing targets, so neither sizes itself independently of the
@@ -113,4 +118,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _KanbanParseError as e:
             raise MermaidError(str(e)) from e
         return _render_kanban(board, use_ascii=use_ascii)
+    if _is_gantt_diagram(text):
+        try:
+            diagram = _parse_gantt(text)
+        except _GanttParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_gantt(diagram, use_ascii=use_ascii, color=color)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

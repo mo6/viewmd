@@ -39,9 +39,11 @@ Add a fourth Mermaid diagram type -- `gantt` -- alongside the existing flowchart
 7. MUST render a timeline axis (top and/or bottom of the chart) showing tick marks and labels at a reasonable interval given the overall date span (e.g. week numbers for a multi-week chart, like the mock-ups below) -- exact tick spacing/labelling is a design decision for this issue, not dictated by any upstream reference.
 7a. MUST extend each axis tick as a vertical gridline (`|`) down through every row of the chart body, not just the top/bottom axis labels -- see mock-up D below. Where a task's bar overlaps a gridline column, the bar glyph takes precedence over the `|`.
 7b. MUST automatically switch tick granularity based on the diagram's total date span rather than using a single fixed granularity always: week-level ticks (labelled `W<n>`) for longer spans, day-level ticks (labelled `MM-DD`, at a multi-day interval so labels don't collide) for shorter spans -- matching mock-up D1 (~7-week span, week ticks) vs. D2 (~19-day span, day ticks at 3-day intervals) below. The exact threshold between the two is an implementation judgment call (a span around 3-4 weeks is a reasonable boundary), not dictated by any upstream reference.
+7c. MUST render an anchor line under the chart when in week-mode (requirement 7b), mapping every 4th `W<n>` tick to its absolute calendar date (`W<n>: YYYY-MM-DD`, comma-separated, aligned under the label column), since `W<n>` labels alone don't say what date the timeline starts from the way day-mode's already-absolute `MM-DD` labels do -- e.g. `W1: 2014-01-01, W5: 2014-01-29` for mock-up D1 (maintainer review feedback, 2026-08-11). Day-mode charts need no such line.
 8. MUST parse an `excludes weekends` line when present and, when it is, skip Saturday/Sunday when computing a task's end date from a day/week duration (calendar-day math otherwise, per the Non-goals below `excludes <specific date>`/`excludes <day-of-week name>` stay unsupported for v1 -- a fence using either falls back to the raw-fence behavior of requirement 9).
 9. MUST leave a `gantt` fence whose content fails to parse untouched (fall back to showing the raw fence), same fallback discipline as the other three Mermaid renderers' MUST-NOT-crash requirement.
 10. MUST NOT change behavior for any existing recognized Mermaid diagram type (flowchart, sequence, er).
+11. MUST tint each task's fill glyphs by status when the caller passes `color=True` (the same `--color` plumbing already read by `viewmd/mermaid/pie/renderer.py` and `viewmd/mermaid/quadrant/renderer.py`), one hue per `done`/`active`/untagged/`milestone` status, approximating Mermaid's own default gantt palette the same way the pie/quadrant renderers approximate theirs -- not a byte-for-byte theme match, since gantt has no upstream reference to port a palette from either (maintainer review feedback, 2026-08-11). `crit`'s bracket markers (requirement 5a) MUST get their own distinct hue, layered on top of whichever status hue the task's fill already carries, not a replacement for it. Grid lines, section headers, and the axis stay uncolored. `color` and `use_ascii` are independent, matching the quadrant renderer's convention (`--ascii` picks the glyph set, `--color` tints it, either can be on without the other).
 
 ## Non-goals
 
@@ -88,6 +90,8 @@ A Gantt Diagram
     another task        │      │      │      │ ░░░░░░░░░░░░░░░░░░░░░░░░  │
                         ┴──────┴──────┴──────┴──────┴──────┴──────┴──────┴───
                         W1     W2     W3     W4     W5     W6     W7     W8
+
+                        W1: 2014-01-01, W5: 2014-01-29
 ```
 
 **Mock-up D2 -- the mermaid.js "full syntax" reference example**, deliberately the messiest input tried against this design: four sections, `done`/`active`/`crit` combined on one task (`crit,done`), bare (unstatused) tasks meant to read as "future work" (matching this issue's untagged-means-not-yet-started interpretation), an hour-granularity duration (`24h`, `20h`, `48h`), a `milestone`, an `until <id>` end-bound, an `excludes weekends` line, and a reused task id (`a1`) across two different sections:
@@ -167,7 +171,10 @@ Maintainer decisions (2026-08-11, George Moses): (a) pull D2's `crit`, `excludes
 - A rendered fixture (hand-verified, no upstream binary to diff against per Non-goals) reproducing mock-up D1 (`A Gantt Diagram`) byte-for-byte against this issue's own math, plus mock-up D2 (`Adding GANTT diagram functionality to mermaid`) in full, including the `crit` brackets noted above.
 - A fixture exercising `use_ascii` mode's fallback glyphs for all four status states plus the `crit` bracket marker.
 - A malformed `gantt` fence (e.g. a task line missing its `:` separator) falls back to showing the raw fence rather than crashing viewmd.
+- Tests for requirement 11: no ANSI when `color=False` (the default); stripping ANSI from a `color=True` render reproduces the `color=False` render exactly; one distinct hue per status is present plus a distinct crit-marker hue on a `crit`-tagged task's brackets; `color` and `use_ascii` combine independently.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- George Moses (maintainer), 2026-08-11: reviewed the D1/D2 fixtures and live-rendered output across several rounds -- requested and confirmed the week-mode date-anchor line (requirement 7c), requested and confirmed status-based bar coloring (requirement 11), requested the demo page example be swapped to the D2 full-syntax mock-up and then trimmed to two sections for size. Approved to land.
 
