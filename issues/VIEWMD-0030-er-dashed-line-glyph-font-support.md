@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0030
 title: Mermaid ER diagram non-identifying relationships use box-drawing glyphs most terminal fonts do not render
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: low
 created: 2026-08-05
-updated: 2026-08-05
-accepted_by:
-accepted_at:
+updated: 2026-08-11
+accepted_by: George Moses
+accepted_at: 2026-08-11
 commits: []
 related: [VIEWMD-0016, VIEWMD-0021]
 supersedes: []
@@ -19,7 +19,7 @@ reason:
 
 ## Summary
 
-`viewmd/mermaid/er/charset.py`'s `UNICODE` charset renders a non-identifying relationship's dashed connector line with `┈` (U+2508, BOX DRAWINGS LIGHT QUADRUPLE DASH HORIZONTAL) for horizontal runs and `┊` (U+2504... actually U+2508's vertical sibling, U+2506) for vertical runs. Both codepoints sit outside the basic box-drawing block most monospace terminal fonts actually cover, so on many setups a dashed relationship line renders as a blank/tofu gap instead of a visible dashed line -- making non-identifying relationships look identical to empty space rather than visually distinguishable from identifying (solid) ones.
+`viewmd/mermaid/er/charset.py`'s `UNICODE` charset renders a non-identifying relationship's dashed connector line with `┈` (U+2508, BOX DRAWINGS LIGHT QUADRUPLE DASH HORIZONTAL) for horizontal runs and `┊` (U+250A, BOX DRAWINGS LIGHT QUADRUPLE DASH VERTICAL, U+2508's vertical sibling) for vertical runs. Both codepoints sit outside the basic box-drawing block most monospace terminal fonts actually cover, so on many setups a dashed relationship line renders as a blank/tofu gap instead of a visible dashed line -- making non-identifying relationships look identical to empty space rather than visually distinguishable from identifying (solid) ones.
 
 ## Motivation / problem
 
@@ -48,4 +48,5 @@ Render an `erDiagram` with a non-identifying relationship (e.g. `A }o..o{ B`) an
 
 ## Peer review
 
-Left blank until implemented and tested; filled in as part of the Definition of Done landing gate.
+- **Claude** (agent), 2026-08-11: Verified `UNICODE.hd`/`UNICODE.vd` changed from `┈`/`┊` to `·`/`:` per spec — both single-width, visually distinct from solid `─`/`│`. Confirmed `ASCII.hd`/`ASCII.vd` and all other glyphs untouched, and via `grep -rlP '[\x{2508}\x{250a}]' tests/fixtures/mermaid_er/` that no fixture still embeds the old glyphs — all four affected `.unicode.out` fixtures were updated, covering both horizontal and vertical dashed runs (including a self-loop trunk). The new `test_dashed_relationship_glyphs_are_broadly_renderable` unit test pins the exact codepoints, complementing (not duplicating) the existing fixture-diff test which already exercises both glyphs end-to-end. Ran `./run-tests.sh`: 536 tests passed, ruff clean, pip-audit clean, issues check green. Pass.
+- **George Moses** (maintainer), 2026-08-11: approved. Commit and close out.
