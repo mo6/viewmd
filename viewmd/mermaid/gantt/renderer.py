@@ -20,6 +20,18 @@ Week mode's "W<n>" tick labels don't say what calendar date the timeline
 starts from (day mode's "MM-DD" labels already do), so an anchor line under
 the chart maps every 4th week tick to its absolute date, e.g. "W1: 2014-01-01,
 W5: 2014-01-29" (maintainer review feedback, 2026-08-11).
+
+`color=True` (maintainer review feedback, 2026-08-11) tints each task's fill
+glyphs by status, approximating Mermaid's own default gantt palette the same
+way `viewmd/mermaid/pie/renderer.py`'s `_SLICE_COLORS`/
+`viewmd/mermaid/quadrant/renderer.py`'s `_QUADRANT_COLORS` approximate theirs
+-- not a byte-for-byte match to Mermaid's SVG theme, since gantt has no
+upstream reference to port from at all (see the module docstring above). The
+`crit` bracket markers (requirement 5a) get their own red tint layered on top
+of whichever status color the task's fill already has, mirroring how the
+brackets are already a layered marker rather than a replacement glyph. Grid
+lines, section headers, and the axis stay uncolored so the colored bars read
+clearly against them.
 """
 
 from __future__ import annotations
@@ -29,6 +41,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from viewmd.mermaid.gantt.parser import GanttDiagram, Task, round_half_up
+from viewmd.mermaid.grid.canvas import wrap_text_in_color
 from viewmd.mermaid.textutil import width as string_width
 
 __all__ = ["render"]
@@ -58,6 +71,18 @@ _TASK_INDENT = 4
 # 19 display columns) sits 5 columns short of the label column's own width
 # (24), and that same gutter is reused for every diagram this renders.
 _LABEL_GUTTER = 5
+
+# Approximating Mermaid's own default gantt status palette (`color=True`,
+# maintainer review feedback, 2026-08-11) -- one hue per status, matching the
+# convention of viewmd/mermaid/pie/renderer.py's _SLICE_COLORS/
+# viewmd/mermaid/quadrant/renderer.py's _QUADRANT_COLORS. `_CRIT_COLOR` tints
+# only the bracket markers (requirement 5a), layered on top of whichever of
+# these a task's fill already uses, not a replacement for it.
+_DONE_COLOR = "58d68d"
+_ACTIVE_COLOR = "5dade2"
+_UNTAGGED_COLOR = "8a90dd"
+_MILESTONE_COLOR = "f4d03f"
+_CRIT_COLOR = "e74c3c"
 
 
 @dataclass(frozen=True)
@@ -99,7 +124,7 @@ class _TickAxis:
         return self.last_tick_col + 1
 
 
-def render(diagram: GanttDiagram, *, use_ascii: bool = False) -> str:
+def render(diagram: GanttDiagram, *, use_ascii: bool = False, color: bool = False) -> str:
     if not diagram.tasks:
         return diagram.title
 
@@ -130,7 +155,8 @@ def render(diagram: GanttDiagram, *, use_ascii: bool = False) -> str:
         if section is not None:
             lines.append(" " * _SECTION_INDENT + section)
         for task in tasks:
-            lines.append(_task_row(task, geometry[id(task)], axis, g, label_col_width, body_width))
+            lines.append(_task_row(task, geometry[id(task)], axis, g, label_col_width, body_width,
+                                    color=color))
 
     lines.append(_axis_tick_line(axis, g, g.tee_up, label_col_width, body_width))
     lines.append(_axis_label_line(axis, label_col_width, body_width))
@@ -235,13 +261,23 @@ def _axis_tick_line(axis: _TickAxis, g: _Glyphs, tee: str, label_col_width: int,
     return "".join(chars).rstrip()
 
 
+def _status_color(task: Task) -> str:
+    if task.milestone:
+        return _MILESTONE_COLOR
+    if task.done:
+        return _DONE_COLOR
+    if task.active:
+        return _ACTIVE_COLOR
+    return _UNTAGGED_COLOR
+
+
 def _task_row(task: Task, geom: _TaskGeometry, axis: _TickAxis, g: _Glyphs,
-              label_col_width: int, body_width: int) -> str:
+              label_col_width: int, body_width: int, *, color: bool = False) -> str:
     prefix = " " * _TASK_INDENT + task.label
     pad = max(label_col_width - string_width(prefix), 1)
-    row = list(prefix) + [" "] * pad
+    row: list[str] = list(prefix) + [" "] * pad
 
-    body = [" "] * body_width
+    body: list[str] = [" "] * body_width
     for col in axis.tick_cols:
         if col < body_width:
             body[col] = g.grid_v
@@ -255,26 +291,53 @@ def _task_row(task: Task, geom: _TaskGeometry, axis: _TickAxis, g: _Glyphs,
     else:
         fill_char = g.untagged
 
+    # (col_start, col_end_exclusive, color_hex) spans within `body`, applied
+    # after all glyph placement below so coloring never disturbs the
+    # single-char-per-column placement logic those columns were computed for.
+    color_spans: list[tuple[int, int, str]] = []
+    status_color = _status_color(task)
+
     if task.milestone:
         if geom.col_start < body_width:
             body[geom.col_start] = fill_char
+            color_spans.append((geom.col_start, geom.col_start + 1, status_color))
     else:
-        for col in range(geom.col_start, min(geom.col_end, body_width)):
+        fill_end = min(geom.col_end, body_width)
+        for col in range(geom.col_start, fill_end):
             body[col] = fill_char
+        if fill_end > geom.col_start:
+            color_spans.append((geom.col_start, fill_end, status_color))
         if task.crit:
             if geom.col_start - 1 >= 0:
                 body[geom.col_start - 1] = "["
+                color_spans.append((geom.col_start - 1, geom.col_start, _CRIT_COLOR))
             elif row:
                 # The task starts at the very first body column, leaving no
                 # room before it for the opening bracket -- borrow the last
                 # column of the label gutter instead of dropping it, so a
                 # crit task pinned to the chart's own start date still gets
                 # both brackets (requirement 5a).
-                row[-1] = "["
+                row[-1] = wrap_text_in_color("[", _CRIT_COLOR) if color else "["
             if geom.col_end < body_width:
                 body[geom.col_end] = "]"
+                color_spans.append((geom.col_end, geom.col_end + 1, _CRIT_COLOR))
 
-    return "".join(row) + "".join(body).rstrip()
+    body_str = _colorize_spans(body, color_spans) if color else "".join(body)
+    return "".join(row) + body_str.rstrip()
+
+
+def _colorize_spans(chars: list[str], spans: list[tuple[int, int, str]]) -> str:
+    if not spans:
+        return "".join(chars)
+    out: list[str] = []
+    pos = 0
+    for start, end, hex_ in sorted(spans):
+        if start > pos:
+            out.append("".join(chars[pos:start]))
+        out.append(wrap_text_in_color("".join(chars[start:end]), hex_))
+        pos = end
+    out.append("".join(chars[pos:]))
+    return "".join(out)
 
 
 def _place(chars: list[str], start: int, text: str) -> None:

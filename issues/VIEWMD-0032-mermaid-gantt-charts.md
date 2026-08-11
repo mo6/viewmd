@@ -43,6 +43,7 @@ Add a fourth Mermaid diagram type -- `gantt` -- alongside the existing flowchart
 8. MUST parse an `excludes weekends` line when present and, when it is, skip Saturday/Sunday when computing a task's end date from a day/week duration (calendar-day math otherwise, per the Non-goals below `excludes <specific date>`/`excludes <day-of-week name>` stay unsupported for v1 -- a fence using either falls back to the raw-fence behavior of requirement 9).
 9. MUST leave a `gantt` fence whose content fails to parse untouched (fall back to showing the raw fence), same fallback discipline as the other three Mermaid renderers' MUST-NOT-crash requirement.
 10. MUST NOT change behavior for any existing recognized Mermaid diagram type (flowchart, sequence, er).
+11. MUST tint each task's fill glyphs by status when the caller passes `color=True` (the same `--color` plumbing already read by `viewmd/mermaid/pie/renderer.py` and `viewmd/mermaid/quadrant/renderer.py`), one hue per `done`/`active`/untagged/`milestone` status, approximating Mermaid's own default gantt palette the same way the pie/quadrant renderers approximate theirs -- not a byte-for-byte theme match, since gantt has no upstream reference to port a palette from either (maintainer review feedback, 2026-08-11). `crit`'s bracket markers (requirement 5a) MUST get their own distinct hue, layered on top of whichever status hue the task's fill already carries, not a replacement for it. Grid lines, section headers, and the axis stay uncolored. `color` and `use_ascii` are independent, matching the quadrant renderer's convention (`--ascii` picks the glyph set, `--color` tints it, either can be on without the other).
 
 ## Non-goals
 
@@ -170,6 +171,7 @@ Maintainer decisions (2026-08-11, George Moses): (a) pull D2's `crit`, `excludes
 - A rendered fixture (hand-verified, no upstream binary to diff against per Non-goals) reproducing mock-up D1 (`A Gantt Diagram`) byte-for-byte against this issue's own math, plus mock-up D2 (`Adding GANTT diagram functionality to mermaid`) in full, including the `crit` brackets noted above.
 - A fixture exercising `use_ascii` mode's fallback glyphs for all four status states plus the `crit` bracket marker.
 - A malformed `gantt` fence (e.g. a task line missing its `:` separator) falls back to showing the raw fence rather than crashing viewmd.
+- Tests for requirement 11: no ANSI when `color=False` (the default); stripping ANSI from a `color=True` render reproduces the `color=False` render exactly; one distinct hue per status is present plus a distinct crit-marker hue on a `crit`-tagged task's brackets; `color` and `use_ascii` combine independently.
 - `./run-tests.sh` green.
 
 ## Peer review

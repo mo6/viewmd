@@ -136,6 +136,56 @@ def test_use_ascii_mode_has_no_unicode_glyphs():
         assert glyph not in out
 
 
+def test_no_ansi_when_color_disabled():
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    assert "\x1b[" not in render(diagram, color=False)
+
+
+def test_color_disabled_by_default():
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    assert render(diagram) == render(diagram, color=False)
+
+
+def test_color_output_strips_to_the_same_plain_text():
+    # Coloring must be a pure overlay -- stripping ANSI from the colored
+    # render reproduces the uncolored render exactly, same invariant as the
+    # pie/quadrant renderers' own color tests.
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    assert _strip_ansi(render(diagram, color=True)) == render(diagram, color=False)
+
+
+def test_color_uses_one_hue_per_status_plus_a_crit_marker_hue():
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    out = render(diagram, color=True)
+    colors = set(re.findall(r"38;2;(\d+;\d+;\d+)", out))
+    # done, active, untagged, milestone, crit -- all five statuses are
+    # exercised by mock-up D2 (see its Requirements coverage in the issue).
+    assert len(colors) == 5
+
+
+def test_crit_task_color_layers_marker_hue_onto_status_hue():
+    # "Completed task in the critical line" is crit+done: its brackets carry
+    # the crit hue, its fill glyphs carry the done hue, both present on the
+    # same line, distinct from each other.
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    line = next(
+        ln for ln in render(diagram, color=True).splitlines()
+        if "Completed task in the critical line" in ln
+    )
+    colors_on_line = re.findall(r"38;2;(\d+;\d+;\d+)", line)
+    assert len(set(colors_on_line)) == 2
+
+
+def test_color_and_use_ascii_are_independent():
+    # --ascii picks the glyph set; --color tints it -- the two flags don't
+    # interact, matching viewmd/mermaid/quadrant/renderer.py's convention.
+    diagram = parse((FIXTURES / "d2_full_syntax.mmd").read_text())
+    out = render(diagram, use_ascii=True, color=True)
+    assert "\x1b[38;2;" in out
+    for glyph in "█▓░◆│┬┴─":
+        assert glyph not in out
+
+
 def test_malformed_fence_raises_parse_error_not_a_crash():
     # A task line missing its ':' separator -- per requirement 9, this must
     # surface as a ParseError so the caller (viewmd.mermaid.render) can fall
