@@ -162,9 +162,15 @@ def test_non_lr_orientation_is_a_parse_error(orientation):
         parse(f'gitGraph {orientation}:\n    commit id: "A"\n')
 
 
-def test_bare_commit_with_no_id_is_a_parse_error():
-    with pytest.raises(ParseError, match="no id"):
-        parse("gitGraph\n    commit\n")
+def test_bare_commit_with_no_id_gets_a_random_4char_hex_id():
+    graph = parse("gitGraph\n    commit\n    commit\n    commit\n")
+    main = graph.branches[0]
+    ids = [c.id for c in main.commits]
+    assert len(ids) == 3
+    assert len(set(ids)) == 3  # each commit gets its own random id
+    for id_ in ids:
+        assert re.fullmatch(r"[0-9a-f]{4}", id_)
+        assert id_ == main.commits[ids.index(id_)].label
 
 
 def test_empty_input_is_a_parse_error():

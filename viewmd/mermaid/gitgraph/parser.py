@@ -19,6 +19,7 @@ fence), not a silent re-render as LR.
 
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import dataclass, field
 
@@ -170,7 +171,7 @@ def parse(text: str) -> GitGraph:
             attrs = dict(_ATTR_RE.findall(m.group(1)))
             id_ = attrs.get("id")
             if not id_:
-                raise ParseError(f'line {lineno}: bare "commit" with no id: is not supported')
+                id_ = _random_commit_id(commit_owner)
             if id_ in commit_owner:
                 raise ParseError(f'line {lineno}: duplicate commit id "{id_}"')
             gc = GitCommit(id=id_, column=column, label=id_, tag=attrs.get("tag"))
@@ -227,6 +228,18 @@ def parse(text: str) -> GitGraph:
         raise ParseError("no commits found")
 
     return graph
+
+
+def _random_commit_id(commit_owner: dict[str, int]) -> str:
+    """A random 4-hex-char id for a bare `commit` (no `id:` attribute) --
+    Mermaid itself auto-generates one in this case
+    (https://mermaid.js.org/syntax/gitgraph.html); collisions against
+    already-assigned ids (random or explicit) are re-rolled, vanishingly
+    unlikely in practice but cheap to guard against exactly."""
+    while True:
+        candidate = f"{random.randrange(16**4):04x}"  # noqa: S311 -- cosmetic id, not security
+        if candidate not in commit_owner:
+            return candidate
 
 
 def _resolve_pending_parent(graph: GitGraph, branch: GitBranch, column: int) -> None:

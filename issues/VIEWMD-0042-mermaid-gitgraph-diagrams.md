@@ -42,8 +42,12 @@ edge-routing.
 1. MUST recognize a ` ```mermaid ` fence beginning with `gitGraph` (`viewmd/mermaid/gitgraph/parser.py:sniff`,
    following the `sniff`/`parse`/`render` module shape already used by the other diagram
    packages) and wire it into `viewmd/mermaid/__init__.py:render` alongside the existing sniffs.
-2. MUST parse `commit id: "<id>"` (bare `commit` with an auto-generated id is out of scope -- see
-   Non-goals), appending a commit to the current branch at the next timeline column.
+2. MUST parse `commit id: "<id>"`, appending a commit to the current branch at the next timeline
+   column. A bare `commit` with no `id:` attribute MUST also be accepted, auto-generating a random
+   4-hex-digit id (re-rolled on collision against every id already assigned, explicit or
+   generated) -- matching Mermaid's own behavior
+   (https://mermaid.js.org/syntax/gitgraph.html), requested after the initial implementation
+   (maintainer feedback, 2026-08-11).
 3. MUST parse `branch <name>`, creating a new lane that starts at the current branch's current
    column and switches the current branch to `<name>`.
 4. MUST parse `checkout <name>`, switching the current branch to an already-declared lane without
@@ -84,8 +88,6 @@ edge-routing.
 - **`gitGraph TB:` (or `BT:`/`RL:`) orientation.** See "Efficiency review of the supplied
   mockups" below -- a true top-to-bottom layout is a second rendering engine, not a transpose of
   the LR one, and is deferred to a follow-up issue built on top of this one's parser/event model.
-- Bare `commit` with no `id:` (Mermaid auto-generates a short hash) -- every reference example
-  here supplies an explicit id, so auto-id generation isn't exercised or required.
 - `commit type: REVERSE|HIGHLIGHT` and `commit tag:` combined with `type:` styling, branch
   colors/`%%{init}%%` theming -- no reference example uses them.
 - `cherry-pick ... parent: "<id>"` (disambiguating which parent of a merge commit to pick).
@@ -241,9 +243,10 @@ main      develop
 
 ## Acceptance / verification
 
-- Unit tests for the parser: `commit id:`, `branch`, `checkout`, `merge` (with and without an
-  explicit `id:`), `cherry-pick id:`, and `tag:` -- including a `cherry-pick`/`merge` referencing a
-  commit id on a lane other than the current one.
+- Unit tests for the parser: `commit id:`, bare `commit` (auto-generated 4-hex-char id, unique
+  across other explicit/generated ids), `branch`, `checkout`, `merge` (with and without an explicit
+  `id:`), `cherry-pick id:`, and `tag:` -- including a `cherry-pick`/`merge` referencing a commit id
+  on a lane other than the current one.
 - A rendered fixture for each of the four LR reference examples above, hand-verified against the
   maintainer-supplied output (per Non-goals, no oracle to differential-test against).
 - A `gitGraph TB:` (or `BT:`/`RL:`) fence falls back to showing the raw fence rather than crashing
