@@ -10,13 +10,26 @@ hue and every commit id shares one neutral hue across the diagram -- see
 
 ```mermaid
 gitGraph
-    commit id: "1"
-    commit id: "2"
-    branch develop
-    commit id: "3" tag: "v0.1"
-    commit
-    checkout main
-    commit id: "5"
-    merge develop id: "6"
-    cherry-pick id: "3"
+       commit
+       commit
+       branch nice_feature
+       checkout nice_feature
+       commit id: "3" tag: "v0.1"
+       checkout main
+       commit id: "4"
+       checkout nice_feature
+       branch very_nice_feature
+       checkout very_nice_feature
+       commit id: "5"
+       checkout main
+       commit id: "6"
+       checkout nice_feature
+       commit id: "7"
+       checkout main
+       merge nice_feature id: "customID" tag: "customTag" type: REVERSE
+       checkout very_nice_feature
+       commit id: "8"
+       checkout main
+       commit
+       cherry-pick id: "8"
 ```
