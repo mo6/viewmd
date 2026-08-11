@@ -19,6 +19,12 @@ release too (`gh release create vX.Y.Z --title vX.Y.Z --notes-file <path>`), usi
 `CHANGELOG.md` entry verbatim as the release notes — a version bump on `main` without a published
 GitHub release is an incomplete release.
 
+**Always invoke `tools/*` scripts through `./tools.sh <tool> [args...]`, never call a script under
+`tools/` directly (e.g. never `python3 tools/issues.py` or `python tools/issues.py`).** `./tools.sh`
+resolves the repo's own `.venv` regardless of current working directory, so calling a script
+directly risks running against the wrong (or no) interpreter/environment. `./tools.sh` with no
+arguments lists the available tools.
+
 **Issues live in [issues/](issues/README.md)** — one Markdown file per change (front matter plus
 testable prose), stating *what* a change must do, distinct from `docs/` (*why*) and
 `CHANGELOG.md` (*when*). Implemented ones move to `issues/archive/` carrying their commit id(s),
