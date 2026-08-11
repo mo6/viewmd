@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from viewmd.mermaid.er.charset import ASCII, UNICODE
 from viewmd.mermaid.er.parser import parse
 from viewmd.mermaid.er.renderer import render
 
@@ -30,3 +31,12 @@ def _cases():
 def test_matches_reference_implementation(mmd_path, expected_path, use_ascii):
     d = parse(mmd_path.read_text())
     assert render(d, use_ascii=use_ascii) == expected_path.read_text()
+
+
+def test_dashed_relationship_glyphs_are_broadly_renderable():
+    """VIEWMD-0030: UNICODE.hd/vd must not be the box-drawing glyphs
+    (U+2508/U+250A) most monospace terminal fonts lack coverage for."""
+    assert UNICODE.hd == "·"  # MIDDLE DOT
+    assert UNICODE.vd == ":"  # COLON
+    assert ASCII.hd == "."
+    assert ASCII.vd == ":"

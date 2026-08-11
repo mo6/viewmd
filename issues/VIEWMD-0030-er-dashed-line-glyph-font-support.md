@@ -48,4 +48,5 @@ Render an `erDiagram` with a non-identifying relationship (e.g. `A }o..o{ B`) an
 
 ## Peer review
 
-Left blank until implemented and tested; filled in as part of the Definition of Done landing gate.
+- **Claude** (agent), 2026-08-11: Verified `UNICODE.hd`/`UNICODE.vd` changed from `┈`/`┊` to `·`/`:` per spec — both single-width, visually distinct from solid `─`/`│`. Confirmed `ASCII.hd`/`ASCII.vd` and all other glyphs untouched, and via `grep -rlP '[\x{2508}\x{250a}]' tests/fixtures/mermaid_er/` that no fixture still embeds the old glyphs — all four affected `.unicode.out` fixtures were updated, covering both horizontal and vertical dashed runs (including a self-loop trunk). The new `test_dashed_relationship_glyphs_are_broadly_renderable` unit test pins the exact codepoints, complementing (not duplicating) the existing fixture-diff test which already exercises both glyphs end-to-end. Ran `./run-tests.sh`: 536 tests passed, ruff clean, pip-audit clean, issues check green. Pass.
+- **George Moses** (maintainer), 2026-08-11: approved. Commit and close out.
