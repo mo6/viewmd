@@ -268,17 +268,39 @@ A `gantt` block draws one row per task: a status-tagged bar (`done`/`active`/unt
 single `◆` point for a `milestone`, against a scaled timeline axis with full-height gridlines and
 `section`-grouped rows. With color available, each status gets its own hue and `crit` tasks get a
 distinct bracket color layered on top; a longer span switches the axis to week ticks and adds a
-date-anchor line under the chart so `W<n>` labels still say what date they fall on. See
-[docs/mermaid-gantt.md](mermaid-gantt.md) for the full worked mock-ups.
+date-anchor line under the chart so `W<n>` labels still say what date they fall on. This is
+Mermaid's own "full syntax" reference example, exercising `excludes weekends`, `after`/`until`
+chaining, hour-granularity durations, and every status tag at once -- see
+[docs/mermaid-gantt.md](mermaid-gantt.md) for more.
 
 ```mermaid
 gantt
-    title Release checklist
-    dateFormat YYYY-MM-DD
-    section Planning
-        Spec review       :done, 2024-03-01, 3d
-        Design sign-off    :active, 3d
-    section Build
-        Implement feature  :crit, active, 5d
-        Ship release        :milestone, 2024-03-16, 0d
+    dateFormat  YYYY-MM-DD
+    title       Adding GANTT diagram functionality to mermaid
+    excludes    weekends
+
+    section A section
+    Completed task            :done,    des1, 2014-01-06,2014-01-08
+    Active task               :active,  des2, 2014-01-09, 3d
+    Future task               :         des3, after des2, 5d
+    Future task2               :        des4, after des3, 5d
+
+    section Critical tasks
+    Completed task in the critical line :crit, done, 2014-01-06,24h
+    Implement parser and jison          :crit, done, after des1, 2d
+    Create tests for parser             :crit, active, 3d
+    Future task in critical line        :crit, 5d
+    Create tests for renderer           :2d
+    Add to mermaid                      :until isadded
+    Functionality added                 :milestone, isadded, 2014-01-25, 0d
+
+    section Documentation
+    Describe gantt syntax               :active, a1, after des1, 3d
+    Add gantt diagram to demo page      :after a1  , 20h
+    Add another diagram to demo page    :doc1, after a1  , 48h
+
+    section Last section
+    Describe gantt syntax               :after doc1, 3d
+    Add gantt diagram to demo page      :20h
+    Add another diagram to demo page    :48h
 ```
