@@ -69,10 +69,14 @@ issues index (`./tools.sh issues`). Only after that second commit is the issue f
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
 issue it implements, cut from `develop`.
 
-**Working multiple issues in parallel uses a sibling git worktree per issue, not multiple
-sessions in the one working directory.** A single checkout can only have one branch checked out
-at a time, so a second agent or editor session working there would either collide with the
-first's uncommitted changes or force a branch switch out from under it. `./tools.sh worktree add
+**Every issue is implemented in its own sibling git worktree, never a plain branch checkout in
+the primary working directory — even when it's the only issue in flight.** A single checkout can
+only have one branch checked out at a time, so a second agent or editor session working there
+would either collide with the first's uncommitted changes or force a branch switch out from under
+it. The primary directory needs to stay free at all times so the maintainer can start a parallel
+session with any agent the moment they want to, not just when a second issue is already known to
+be needed — so this isn't only a "working multiple issues in parallel" rule, it's the default for
+starting *any* issue's implementation. `./tools.sh worktree add
 VIEWMD-NNNN [bug|feature|story]` (`tools/worktree.sh`) creates `../viewmd-VIEWMD-NNNN` as its own
 `git worktree` on the correctly-named branch cut from `develop`, with its own `.venv` bootstrapped
 (`pip install -e '.[dev]'`) so `./run-tests.sh`/`./tools.sh` work standalone from it — a `.venv`
