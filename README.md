@@ -53,9 +53,9 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, or `kanban` renders as box-drawing
-ASCII art in place of its source. Other Mermaid diagram types, and any block that fails to parse,
-are left as plain source text rather than causing an error. See
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, or `gantt` renders as
+box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
+fails to parse, are left as plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -107,6 +107,17 @@ a uniform width. A card's optional `@{ ticket, assigned, priority }` metadata re
 line under its label — a severity-colored `[H]`/`[VH]`/`[L]`/`[VL]`/`[M]` priority token and an
 underlined ticket ID on the left, the assignee right-aligned. Columns hug their own content
 height rather than padding out to match a taller neighbor.
+
+### Gantt charts
+
+A `gantt` block draws one row per task: a status-tagged bar (`done`/`active`/untagged/`crit`) or a
+single point glyph for a `milestone`, grouped into labelled `section`s, against a scaled timeline
+axis with full-height gridlines. The axis automatically switches from day-level (`MM-DD`) to
+week-level (`W<n>`) ticks for a longer date span, adding a date-anchor line under the chart (every
+4th week tick's absolute date) so week labels still say what date they fall on. With color
+available, each status gets its own hue and a `crit` task's bracket markers get a distinct hue
+layered on top, independent of `--ascii`. See [docs/mermaid-gantt.md](docs/mermaid-gantt.md) for
+more gantt-chart fixtures.
 
 ## Development
 
