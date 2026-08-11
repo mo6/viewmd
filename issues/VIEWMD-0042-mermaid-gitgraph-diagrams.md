@@ -69,6 +69,15 @@ edge-routing.
     (`gitGraph TB:`, `gitGraph BT:`, `gitGraph RL:`) -- treated as unsupported input for this
     issue, not silently re-rendered as LR (see Non-goals).
 11. MUST NOT change behavior for any existing recognized Mermaid diagram type.
+12. MUST tint each branch's name/dashes/markers with its own hue when the caller passes
+    `color=True` (the same `--color` plumbing already read by the pie, quadrant, and gantt
+    renderers), one categorical color per lane cycling past 8, reusing
+    `viewmd/mermaid/kanban/renderer.py`'s `_CATEGORICAL` palette values (maintainer review
+    feedback, 2026-08-11). Every commit's id label (and its `-cherry` suffix) MUST render in one
+    shared neutral hue regardless of which lane it's on, distinct from every branch color, so ids
+    read consistently across the whole diagram. Connectors (`│`/`┼`/`├`/`┤`) and `[tag]` markers
+    stay uncolored -- shared/connecting elements, not owned by one lane, matching the gantt
+    renderer's precedent (VIEWMD-0032 requirement 11) of leaving grid/axis infrastructure neutral.
 
 ## Non-goals
 
@@ -241,6 +250,10 @@ main      develop
   or silently rendering as LR.
 - A malformed `gitGraph` fence (e.g. `merge`/`cherry-pick` referencing an undeclared branch or
   commit id) falls back to showing the raw fence rather than crashing viewmd.
+- Tests for requirement 12: no ANSI when `color=False` (the default); stripping ANSI from a
+  `color=True` render reproduces the `color=False` render exactly; two different branches carry
+  two different hues; every commit id label across every branch shares exactly one hue; a `[tag]`
+  line and a connector line stay uncolored.
 - `./run-tests.sh` green.
 
 ## Peer review

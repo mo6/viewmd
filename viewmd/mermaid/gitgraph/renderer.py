@@ -14,12 +14,24 @@ lanes at a single column, merging into `┼`/`├`/`┤` via
 `viewmd.mermaid.grid.canvas`'s existing junction table wherever it crosses a
 lane's own horizontal content, the same reuse the sequence renderer makes of
 that machinery for its fixed lifelines.
+
+`color=True` (maintainer review feedback, 2026-08-11) tints each branch's
+name/dashes/markers with its own hue (one categorical palette entry per
+lane, cycling past 8, same values as `viewmd/mermaid/kanban/renderer.py`'s
+`_CATEGORICAL`), and every commit's id label with one shared neutral hue
+regardless of which lane it's on -- ids read as "the same kind of thing"
+everywhere, lanes read as visually distinct tracks. Connectors and `[tag]`
+markers stay uncolored, matching the gantt renderer's precedent of leaving
+shared/connecting elements neutral. Coloring happens as a post-hoc pass over
+the already-finished plain grid (`viewmd.mermaid.grid.canvas.apply_color_spans`)
+rather than during placement, so the plain-character-per-cell invariant the
+junction-merging logic above depends on is never disturbed.
 """
 
 from __future__ import annotations
 
 from viewmd.mermaid.gitgraph.parser import GitBranch, GitGraph
-from viewmd.mermaid.grid.canvas import is_junction_char, merge_junctions
+from viewmd.mermaid.grid.canvas import apply_color_spans, is_junction_char, merge_junctions
 
 # Two leading indent columns before the branch-name prefix, one column
 # separating the (possibly padded) name from the lane's dash line, and a
@@ -29,10 +41,28 @@ _INDENT = 2
 _MIN_LEADIN = 2
 _MIN_SPACING = 6
 
+# Same 8-hue categorical set as viewmd/mermaid/kanban/renderer.py's
+# _CATEGORICAL (the dataviz skill's palette.md "dark" variants) -- one lane
+# color, cycling past 8 branches; kept as a local copy rather than a
+# cross-module import since each renderer already owns its own private
+# palette constant (gantt's status colors, quadrant's _QUADRANT_COLORS).
+_BRANCH_COLORS = [
+    "3987e5",  # blue
+    "d95926",  # orange
+    "199e70",  # aqua
+    "c98500",  # yellow
+    "d55181",  # magenta
+    "008300",  # green
+    "9085e9",  # violet
+    "e66767",  # red
+]
+# One shared neutral hue for every commit id label, regardless of lane.
+_COMMIT_ID_COLOR = "b0b0b0"
+
 __all__ = ["render"]
 
 
-def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
+def render(graph: GitGraph, *, use_ascii: bool = False, color: bool = False) -> str:
     if not graph.branches:
         raise ValueError("no branches")
 
@@ -112,13 +142,18 @@ def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
             row.extend(" " * (w - total_width))
         total_width = w
 
-    def place(line: int, col: int, text: str) -> None:
+    def place(line: int, col: int, text: str) -> tuple[int, int]:
+        """Writes `text` (clamped so it never starts left of column 0) and
+        returns the actual `(col, length)` written, so a caller that also
+        needs to color-span this exact placement doesn't have to reimplement
+        the negative-`col` clamping logic here."""
         if col < 0:
             text = text[-col:]
             col = 0
         ensure_width(col + len(text))
         for i, ch in enumerate(text):
             grid[line][col + i] = ch
+        return col, len(text)
 
     # --- per-lane touched columns (own commits + connector passthroughs) ---
     touched: list[set[int]] = [set() for _ in graph.branches]
@@ -131,10 +166,24 @@ def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
             if row != conn.owner_row:
                 touched[row].add(conn.column)
 
+    # --- color spans (requirement: color=True), keyed by grid line ----------
+    # Populated below as each lane's own name/dash/marker span and each
+    # commit's id-label span are placed; applied post-hoc after the whole
+    # plain grid (including connector junction-merging) is final.
+    color_spans: dict[int, list[tuple[int, int, str]]] = {}
+
+    def branch_color(row: int) -> str:
+        return _BRANCH_COLORS[row % len(_BRANCH_COLORS)]
+
+    def add_span(line: int, start: int, end: int, hex_: str) -> None:
+        if end > start:
+            color_spans.setdefault(line, []).append((start, end, hex_))
+
     # --- draw each lane's prefix + dash background --------------------------
     for b in graph.branches:
         dl = dash_line(b.row)
         place(dl, 0, " " * _INDENT + b.name.ljust(max_name_len) + " ")
+        add_span(dl, 0, prefix_width, branch_color(b.row))
         cols = touched[b.row]  # timeline column indices, not grid columns
         if not cols:
             continue
@@ -152,6 +201,7 @@ def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
         ensure_width(max_fill + 1)
         for col in range(min_col, max_fill + 1):
             grid[dl][col] = dash
+        add_span(dl, min_col, max_fill + 1, branch_color(b.row))
 
     # --- draw commit markers, id labels, tags --------------------------------
     for b in graph.branches:
@@ -161,7 +211,8 @@ def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
             ensure_width(grid_col + 1)
             grid[dl][grid_col] = marker
             if c.label:
-                place(il, grid_col - len(c.label) // 2, c.label)
+                placed_col, placed_len = place(il, grid_col - len(c.label) // 2, c.label)
+                add_span(il, placed_col, placed_col + placed_len, _COMMIT_ID_COLOR)
             if c.tag:
                 bracket = f"[{c.tag}]"
                 place(tl, grid_col - len(bracket) // 2, bracket)
@@ -185,5 +236,11 @@ def render(graph: GitGraph, *, use_ascii: bool = False) -> str:
             if cell == " " or (not use_ascii and is_junction_char(cell)) or cell in (dash, vbar):
                 grid[line][col] = merge_v(cell)
 
-    lines = ["".join(row).rstrip(" ") for row in grid]
+    if color:
+        lines = [
+            apply_color_spans(row, color_spans.get(i, [])).rstrip(" ")
+            for i, row in enumerate(grid)
+        ]
+    else:
+        lines = ["".join(row).rstrip(" ") for row in grid]
     return "\n".join(lines) + "\n"
