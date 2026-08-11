@@ -168,8 +168,8 @@ def test_bare_commit_with_no_id_gets_a_random_4char_hex_id():
     ids = [c.id for c in main.commits]
     assert len(ids) == 3
     assert len(set(ids)) == 3  # each commit gets its own random id
-    for id_ in ids:
-        assert re.fullmatch(r"[0-9a-f]{4}", id_)
+    for seq, id_ in enumerate(ids):
+        assert re.fullmatch(rf"{seq}-[0-9a-f]{{4}}", id_)
         assert id_ == main.commits[ids.index(id_)].label
 
 

@@ -137,6 +137,7 @@ def parse(text: str) -> GitGraph:
     main = _add_branch("main")
     current = main
     column = 0
+    random_commit_seq = 0
 
     for i, line in enumerate(lines):
         trimmed = line.strip()
@@ -171,7 +172,8 @@ def parse(text: str) -> GitGraph:
             attrs = dict(_ATTR_RE.findall(m.group(1)))
             id_ = attrs.get("id")
             if not id_:
-                id_ = _random_commit_id(commit_owner)
+                id_ = _random_commit_id(commit_owner, random_commit_seq)
+                random_commit_seq += 1
             if id_ in commit_owner:
                 raise ParseError(f'line {lineno}: duplicate commit id "{id_}"')
             gc = GitCommit(id=id_, column=column, label=id_, tag=attrs.get("tag"))
@@ -230,14 +232,15 @@ def parse(text: str) -> GitGraph:
     return graph
 
 
-def _random_commit_id(commit_owner: dict[str, int]) -> str:
-    """A random 4-hex-char id for a bare `commit` (no `id:` attribute) --
-    Mermaid itself auto-generates one in this case
-    (https://mermaid.js.org/syntax/gitgraph.html); collisions against
-    already-assigned ids (random or explicit) are re-rolled, vanishingly
-    unlikely in practice but cheap to guard against exactly."""
+def _random_commit_id(commit_owner: dict[str, int], seq: int) -> str:
+    """A random 4-hex-char id for a bare `commit` (no `id:` attribute),
+    prefixed with its sequence number among such auto-generated ids
+    (`0-3a5f`, `1-d4b5`, ...) so bare commits stay visually distinguishable
+    in render order; collisions against already-assigned ids (random or
+    explicit) are re-rolled, vanishingly unlikely in practice but cheap to
+    guard against exactly."""
     while True:
-        candidate = f"{random.randrange(16**4):04x}"  # noqa: S311 -- cosmetic id, not security
+        candidate = f"{seq}-{random.randrange(16**4):04x}"  # noqa: S311 -- cosmetic id, not security
         if candidate not in commit_owner:
             return candidate
 
