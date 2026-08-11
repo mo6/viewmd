@@ -69,6 +69,25 @@ issues index (`./tools.sh issues`). Only after that second commit is the issue f
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
 issue it implements, cut from `develop`.
 
+**Working multiple issues in parallel uses a sibling git worktree per issue, not multiple
+sessions in the one working directory.** A single checkout can only have one branch checked out
+at a time, so a second agent or editor session working there would either collide with the
+first's uncommitted changes or force a branch switch out from under it. `./tools.sh worktree add
+VIEWMD-NNNN [bug|feature|story]` (`tools/worktree.sh`) creates `../viewmd-VIEWMD-NNNN` as its own
+`git worktree` on the correctly-named branch cut from `develop`, with its own `.venv` bootstrapped
+(`pip install -e '.[dev]'`) so `./run-tests.sh`/`./tools.sh` work standalone from it — a `.venv`
+is not shareable across worktrees since an editable install is bound to the path it was installed
+from. `./tools.sh worktree list` shows every worktree and the `VIEWMD-NNNN` its branch implies;
+`./tools.sh worktree remove VIEWMD-NNNN` removes the directory (refusing if it has uncommitted
+changes, same as plain `git worktree remove`) but deliberately leaves the branch itself alone —
+delete it yourself with `git branch -d` once the work has actually landed on `develop`, so
+"stop working here" can never be confused with "throw this away." Point a Claude Code session at
+an existing worktree with `EnterWorktree`'s `path:` argument (or just `cd`); point a Cursor window
+at one by opening the sibling directory as its own window. A worktree changes *where* an issue is
+worked, not the process it is worked under — each one still goes through the same Definition of
+Ready/Done gates (`issues/AGILE.md`) independently, and any conflict between two worktrees editing
+the same file surfaces the normal way, at merge time into `develop`.
+
 **Attribute commits and `accepted_by:` from `.gitconfig`, never a guessed or session-supplied
 identity.** Run `git config user.name`/`git config user.email` (or check committed history, e.g.
 `git log -1 --format='%an <%ae>'`) before writing an issue's `accepted_by:` field or any other
