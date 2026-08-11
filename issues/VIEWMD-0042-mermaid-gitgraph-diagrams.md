@@ -42,8 +42,12 @@ edge-routing.
 1. MUST recognize a ` ```mermaid ` fence beginning with `gitGraph` (`viewmd/mermaid/gitgraph/parser.py:sniff`,
    following the `sniff`/`parse`/`render` module shape already used by the other diagram
    packages) and wire it into `viewmd/mermaid/__init__.py:render` alongside the existing sniffs.
-2. MUST parse `commit id: "<id>"` (bare `commit` with an auto-generated id is out of scope -- see
-   Non-goals), appending a commit to the current branch at the next timeline column.
+2. MUST parse `commit id: "<id>"`, appending a commit to the current branch at the next timeline
+   column. A bare `commit` with no `id:` attribute MUST also be accepted, auto-generating a random
+   4-hex-digit id (re-rolled on collision against every id already assigned, explicit or
+   generated) -- matching Mermaid's own behavior
+   (https://mermaid.js.org/syntax/gitgraph.html), requested after the initial implementation
+   (maintainer feedback, 2026-08-11).
 3. MUST parse `branch <name>`, creating a new lane that starts at the current branch's current
    column and switches the current branch to `<name>`.
 4. MUST parse `checkout <name>`, switching the current branch to an already-declared lane without
@@ -69,14 +73,21 @@ edge-routing.
     (`gitGraph TB:`, `gitGraph BT:`, `gitGraph RL:`) -- treated as unsupported input for this
     issue, not silently re-rendered as LR (see Non-goals).
 11. MUST NOT change behavior for any existing recognized Mermaid diagram type.
+12. MUST tint each branch's name/dashes/markers with its own hue when the caller passes
+    `color=True` (the same `--color` plumbing already read by the pie, quadrant, and gantt
+    renderers), one categorical color per lane cycling past 8, reusing
+    `viewmd/mermaid/kanban/renderer.py`'s `_CATEGORICAL` palette values (maintainer review
+    feedback, 2026-08-11). Every commit's id label (and its `-cherry` suffix) MUST render in one
+    shared neutral hue regardless of which lane it's on, distinct from every branch color, so ids
+    read consistently across the whole diagram. Connectors (`│`/`┼`/`├`/`┤`) and `[tag]` markers
+    stay uncolored -- shared/connecting elements, not owned by one lane, matching the gantt
+    renderer's precedent (VIEWMD-0032 requirement 11) of leaving grid/axis infrastructure neutral.
 
 ## Non-goals
 
 - **`gitGraph TB:` (or `BT:`/`RL:`) orientation.** See "Efficiency review of the supplied
   mockups" below -- a true top-to-bottom layout is a second rendering engine, not a transpose of
   the LR one, and is deferred to a follow-up issue built on top of this one's parser/event model.
-- Bare `commit` with no `id:` (Mermaid auto-generates a short hash) -- every reference example
-  here supplies an explicit id, so auto-id generation isn't exercised or required.
 - `commit type: REVERSE|HIGHLIGHT` and `commit tag:` combined with `type:` styling, branch
   colors/`%%{init}%%` theming -- no reference example uses them.
 - `cherry-pick ... parent: "<id>"` (disambiguating which parent of a merge commit to pick).
@@ -232,15 +243,22 @@ main      develop
 
 ## Acceptance / verification
 
-- Unit tests for the parser: `commit id:`, `branch`, `checkout`, `merge` (with and without an
-  explicit `id:`), `cherry-pick id:`, and `tag:` -- including a `cherry-pick`/`merge` referencing a
-  commit id on a lane other than the current one.
+- Unit tests for the parser: `commit id:`, bare `commit` (auto-generated 4-hex-char id, unique
+  across other explicit/generated ids), `branch`, `checkout`, `merge` (with and without an explicit
+  `id:`), `cherry-pick id:`, and `tag:` -- including a `cherry-pick`/`merge` referencing a commit id
+  on a lane other than the current one.
 - A rendered fixture for each of the four LR reference examples above, hand-verified against the
   maintainer-supplied output (per Non-goals, no oracle to differential-test against).
 - A `gitGraph TB:` (or `BT:`/`RL:`) fence falls back to showing the raw fence rather than crashing
   or silently rendering as LR.
 - A malformed `gitGraph` fence (e.g. `merge`/`cherry-pick` referencing an undeclared branch or
   commit id) falls back to showing the raw fence rather than crashing viewmd.
+- Tests for requirement 12: no ANSI when `color=False` (the default); stripping ANSI from a
+  `color=True` render reproduces the `color=False` render exactly; two different branches carry
+  two different hues; every commit id label across every branch shares exactly one hue; a `[tag]`
+  line and a connector line stay uncolored.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- (agent, independent `code-review` pass) Traced the parser/renderer by hand against all four reference examples (all match) and probed edge cases outside the fixture set; found that `merge <name> id: "<id>"` didn't check its id against the same `commit_owner` duplicate table plain `commit` does, so a merge id colliding with an earlier commit id silently overwrote the id -> lane mapping a later cross-lane `cherry-pick` relies on -- fixed in `viewmd/mermaid/gitgraph/parser.py` (now raises `ParseError` on collision, matching `commit`'s existing check) with a regression test added. Also flagged that a `branch` statement immediately superseded by another `branch` before ever receiving a commit leaves its `pending_parent_row` unresolved and draws no connector for that (commit-less) lane; on inspection this isn't a defect against any requirement -- a lane with zero commits has nothing to connect, and rendering confirms it degrades gracefully (no crash, no misleading marks) -- so left as-is.

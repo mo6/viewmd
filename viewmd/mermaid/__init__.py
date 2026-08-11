@@ -23,6 +23,10 @@ from viewmd.mermaid.gantt.parser import ParseError as _GanttParseError
 from viewmd.mermaid.gantt.parser import parse as _parse_gantt
 from viewmd.mermaid.gantt.parser import sniff as _is_gantt_diagram
 from viewmd.mermaid.gantt.renderer import render as _render_gantt
+from viewmd.mermaid.gitgraph.parser import ParseError as _GitgraphParseError
+from viewmd.mermaid.gitgraph.parser import parse as _parse_gitgraph
+from viewmd.mermaid.gitgraph.parser import sniff as _is_gitgraph_diagram
+from viewmd.mermaid.gitgraph.renderer import render as _render_gitgraph
 from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
 from viewmd.mermaid.kanban.parser import parse as _parse_kanban
 from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
@@ -60,9 +64,9 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
     `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
-    and gantt-chart (VIEWMD-0032) renderers -- every other diagram type
-    ignores it, unaffected. `width` is read only by pie/quadrant, and is the
-    caller's resolved render width,
+    gantt-chart (VIEWMD-0032), and gitGraph (VIEWMD-0042) renderers -- every
+    other diagram type ignores it, unaffected. `width` is read only by
+    pie/quadrant, and is the caller's resolved render width,
     not a hard cap (Mermaid diagrams are still allowed to render wider and
     scroll, VIEWMD-0018); it's what the pie chart's and quadrant chart's
     default sizing targets, so neither sizes itself independently of the
@@ -124,4 +128,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _GanttParseError as e:
             raise MermaidError(str(e)) from e
         return _render_gantt(diagram, use_ascii=use_ascii, color=color)
+    if _is_gitgraph_diagram(text):
+        try:
+            graph = _parse_gitgraph(text)
+        except _GitgraphParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_gitgraph(graph, use_ascii=use_ascii, color=color)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")
