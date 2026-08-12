@@ -53,8 +53,8 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, or `gitGraph`
-renders as box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`, or
+`mindmap` renders as box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
 fails to parse, are left as plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
@@ -130,6 +130,15 @@ content. With color available, each branch gets its own hue and every commit id 
 hue across the diagram, independent of `--ascii`; connectors and tags stay uncolored.
 `gitGraph TB:`/`BT:`/`RL:` orientations are not supported. See
 [docs/mermaid-gitgraph.md](docs/mermaid-gitgraph.md) for more gitGraph fixtures.
+
+### Mindmap diagrams
+
+A `mindmap` block draws an indentation-defined tree radiating from a root: children fan out to the
+right via `─╭─`/`─├─`/`─╰─` branch connectors, and once a single-direction fan would grow too tall
+some root children overflow to the left instead. Mermaid shape markers (`(round)`, `[square]`,
+`((circle))`, `{{hexagon}}`, `)cloud(`) are stripped to plain text; `**bold**` and `*italic*` spans
+in a label render as real ANSI styling (independent of `--color`). See
+[docs/mermaid-mindmap.md](docs/mermaid-mindmap.md) for more mindmap fixtures.
 
 ## Development
 
