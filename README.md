@@ -148,7 +148,8 @@ in a label render as real ANSI styling (independent of `--color`). See
   lints without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
-  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook, and
-  [SECURITY.md](SECURITY.md) to report a vulnerability.
+  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook,
+  [SECURITY.md](SECURITY.md) to report a vulnerability, and
+  [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for the project's code of conduct.
 - See [TODO.md](TODO.md) — or directly, [issues/README.md](issues/README.md) — for what's
   proposed, in progress, and implemented.
