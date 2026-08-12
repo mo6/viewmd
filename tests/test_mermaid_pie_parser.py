@@ -26,6 +26,7 @@ def test_parse_errors(source, message):
         ('PIE\n"A" : 1', True),
         ('pie showData\n"A" : 1', True),
         ('pie title Some Title\n"A" : 1', True),
+        ('---\ntitle: T\n---\npie\n"A" : 1', True),
         ("pieFoo\nA-->B", False),
         ("sequenceDiagram\nA->>B: hi", False),
         ("", False),
@@ -34,6 +35,11 @@ def test_parse_errors(source, message):
 )
 def test_sniff(source, expected):
     assert sniff(source) == expected
+
+
+def test_parse_tolerates_leading_front_matter():
+    d = parse('---\ntitle: Ignored\n---\npie\n"A" : 1\n"B" : 1')
+    assert d.slices == [Slice(label="A", value=1.0), Slice(label="B", value=1.0)]
 
 
 def test_empty_pie_has_no_slices():

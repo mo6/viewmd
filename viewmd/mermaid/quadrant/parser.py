@@ -13,6 +13,8 @@ import math
 import re
 from dataclasses import dataclass, field
 
+from viewmd.mermaid.textutil import strip_front_matter
+
 QUADRANT_DIAGRAM_KEYWORD = "quadrantChart"
 
 _TITLE_RE = re.compile(r"^title\s+(?P<text>.+)$")
@@ -54,26 +56,11 @@ class QuadrantChart:
     points: list[Point] = field(default_factory=list)
 
 
-def _strip_front_matter(text: str) -> str:
-    """Skips a leading YAML front-matter block (`---\\n...\\n---`) -- the
-    mechanism Mermaid's own `config`/`themeVariables` overrides use (the
-    issue's "Example on config and theme" mockup). Its contents are parsed
-    away/ignored per the issue's Non-goals, not interpreted, but its mere
-    presence must not prevent the `quadrantChart` keyword after it from
-    being recognized at all."""
-    lines = text.split("\n")
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                return "\n".join(lines[i + 1:])
-    return text
-
-
 def sniff(text: str) -> bool:
     """Whether `text`'s first meaningful line (after an optional YAML
     front-matter block) declares a quadrant chart (case-insensitive,
     matching pie/packet's own sniff convention)."""
-    for line in _strip_front_matter(text).split("\n"):
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "" or t.startswith("%%"):
             continue
@@ -99,7 +86,7 @@ def parse(text: str) -> QuadrantChart:
     if not sniff(text):
         raise ParseError(f'expected "{QUADRANT_DIAGRAM_KEYWORD}" keyword')
 
-    lines = _strip_front_matter(text).split("\n")
+    lines = strip_front_matter(text).split("\n")
     # Mirrors sniff's own comment/blank-line tolerance rather than assuming
     # line 0 is the header.
     header_idx = next(

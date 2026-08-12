@@ -20,6 +20,7 @@ from viewmd.mermaid.gantt.parser import ParseError, parse, sniff
     [
         ("gantt\ntitle x\n", True),
         ("GANTT\ntitle x\n", True),
+        ("---\ntitle: T\n---\ngantt\ntitle x\n", True),
         ("ganttFoo\ntitle x\n", False),  # whole-token match, not a prefix
         ("pie\n\"A\":1", False),
         ("erDiagram\nA\n", False),
@@ -32,6 +33,15 @@ def test_sniff(source, expected):
 
 def test_title_and_date_format():
     d = parse("gantt\ntitle My Chart\ndateFormat YYYY-MM-DD\nsection S\n  A :a1, 2024-01-01, 3d\n")
+    assert d.title == "My Chart"
+    assert d.tasks[0].start == datetime(2024, 1, 1)
+
+
+def test_parse_tolerates_leading_front_matter():
+    d = parse(
+        "---\ntitle: Ignored\n---\ngantt\ntitle My Chart\ndateFormat YYYY-MM-DD\n"
+        "section S\n  A :a1, 2024-01-01, 3d\n"
+    )
     assert d.title == "My Chart"
     assert d.tasks[0].start == datetime(2024, 1, 1)
 

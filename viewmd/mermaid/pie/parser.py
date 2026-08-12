@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from viewmd.mermaid.textutil import strip_front_matter
+
 PIE_DIAGRAM_KEYWORD = "pie"
 
 _SLICE_RE = re.compile(r'^"(?P<label>[^"]*)"\s*:\s*(?P<value>-?\d+(?:\.\d+)?)\s*$')
@@ -33,11 +35,11 @@ class PieChart:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text`'s first meaningful line declares a pie chart
-    (case-insensitive, whole token -- matching er/flowchart's own sniff
-    convention -- `pie`, optionally followed by `showData` and/or `title ...`
-    on the same line)."""
-    for line in text.split("\n"):
+    """Whether `text`'s first meaningful line (after an optional YAML
+    front-matter block) declares a pie chart (case-insensitive, whole token
+    -- matching er/flowchart's own sniff convention -- `pie`, optionally
+    followed by `showData` and/or `title ...` on the same line)."""
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "" or t.startswith("%%"):
             continue
@@ -51,7 +53,7 @@ def parse(text: str) -> PieChart:
     if not sniff(text):
         raise ParseError(f'expected "{PIE_DIAGRAM_KEYWORD}" keyword')
 
-    lines = text.split("\n")
+    lines = strip_front_matter(text).split("\n")
     # Find the first meaningful line (the `pie [showData] [title ...]` header) --
     # mirrors sniff's own comment/blank-line tolerance rather than assuming
     # line 0 is it.

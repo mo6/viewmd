@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
 from viewmd.mermaid.gitgraph.parser import ParseError, parse, sniff
+
+FIXTURES = Path(__file__).parent / "fixtures" / "mermaid_gitgraph"
 
 
 @pytest.mark.parametrize(
@@ -15,6 +18,7 @@ from viewmd.mermaid.gitgraph.parser import ParseError, parse, sniff
         ('gitGraph\n    commit id: "A"\n', True),
         ('GITGRAPH\n    commit id: "A"\n', True),
         ('gitGraph LR:\n    commit id: "A"\n', True),
+        ('---\ntitle: T\n---\ngitGraph\n    commit id: "A"\n', True),
         ('gitGraphFoo\n    commit id: "A"\n', False),
         ("sequenceDiagram\nA->>B: hi", False),
         ("", False),
@@ -171,6 +175,13 @@ def test_bare_commit_with_no_id_gets_a_random_4char_hex_id():
     for seq, id_ in enumerate(ids):
         assert re.fullmatch(rf"{seq}-[0-9a-f]{{4}}", id_)
         assert id_ == main.commits[ids.index(id_)].label
+
+
+def test_sniff_and_parse_tolerate_leading_front_matter():
+    source = (FIXTURES / "front_matter.mmd").read_text()
+    assert sniff(source) is True
+    graph = parse(source)
+    assert [c.id for c in graph.branches[0].commits] == ["A", "B"]
 
 
 def test_empty_input_is_a_parse_error():

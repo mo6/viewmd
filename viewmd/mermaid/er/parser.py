@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from viewmd.mermaid.textutil import split_lines
+from viewmd.mermaid.textutil import split_lines, strip_front_matter
 
 ER_DIAGRAM_KEYWORD = "erDiagram"
 
@@ -136,9 +136,10 @@ class ErDiagram:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text`'s first meaningful line declares an erDiagram
-    (case-insensitive, whole token)."""
-    for line in text.split("\n"):
+    """Whether `text`'s first meaningful line (after an optional YAML
+    front-matter block) declares an erDiagram (case-insensitive, whole
+    token)."""
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "" or t.startswith("%%"):
             continue
@@ -153,7 +154,7 @@ def parse(text: str) -> ErDiagram:
         raise ParseError(f'expected "{ER_DIAGRAM_KEYWORD}" keyword')
     # Comments are stripped in place (not filtered out as whole lines) so error
     # messages report the caller's real line numbers.
-    lines = split_lines(text.strip())
+    lines = split_lines(strip_front_matter(text).strip())
     lines = [_strip_comment(line) for line in lines]
 
     d = ErDiagram()

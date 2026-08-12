@@ -27,6 +27,7 @@ def test_parse_errors(source, message):
         ("flowchart LR\nA-->B", True),
         ("GRAPH TD\nA-->B", True),
         ("graph\nA-->B", True),
+        ("---\ntitle: T\n---\ngraph TD\nA-->B", True),
         ("graphFoo\nA-->B", False),
         ("sequenceDiagram\nA->>B: hi", False),
         ("", False),
@@ -40,6 +41,12 @@ def test_sniff(source, expected):
 def test_bare_graph_defaults_to_td():
     gp = parse("graph\nA-->B")
     assert gp.graph_direction == "TD"
+
+
+def test_parse_tolerates_leading_front_matter():
+    gp = parse("---\ntitle: Ignored\n---\ngraph TD\nA-->B")
+    assert gp.graph_direction == "TD"
+    assert set(gp.data.keys()) == {"A", "B"}
 
 
 @pytest.mark.parametrize(

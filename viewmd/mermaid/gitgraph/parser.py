@@ -23,7 +23,7 @@ import random
 import re
 from dataclasses import dataclass, field
 
-from viewmd.mermaid.textutil import remove_comments, split_lines
+from viewmd.mermaid.textutil import remove_comments, split_lines, strip_front_matter
 
 GITGRAPH_DIAGRAM_KEYWORD = "gitGraph"
 
@@ -93,9 +93,9 @@ def _has_gitgraph_keyword(line: str) -> bool:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text` opens with the gitGraph keyword (ignoring blank lines
-    and %% comments)."""
-    for line in text.split("\n"):
+    """Whether `text` opens with the gitGraph keyword (after an optional YAML
+    front-matter block, ignoring blank lines and %% comments)."""
+    for line in strip_front_matter(text).split("\n"):
         trimmed = line.strip()
         if trimmed == "" or trimmed.startswith("%%"):
             continue
@@ -108,7 +108,7 @@ def parse(text: str) -> GitGraph:
     if not text:
         raise ParseError("empty input")
 
-    raw_lines = split_lines(text)
+    raw_lines = split_lines(strip_front_matter(text))
     lines = remove_comments(raw_lines)
     if not lines:
         raise ParseError("no content found")

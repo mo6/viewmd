@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from viewmd.mermaid.textutil import strip_front_matter
+
 GANTT_DIAGRAM_KEYWORD = "gantt"
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -45,10 +47,10 @@ class GanttDiagram:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text`'s first meaningful line declares a gantt chart
-    (case-insensitive, whole token -- matching er/pie/kanban's own sniff
-    convention)."""
-    for line in text.split("\n"):
+    """Whether `text`'s first meaningful line (after an optional YAML
+    front-matter block) declares a gantt chart (case-insensitive, whole
+    token -- matching er/pie/kanban's own sniff convention)."""
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "":
             continue
@@ -79,7 +81,7 @@ def parse(text: str) -> GanttDiagram:
     if not sniff(text):
         raise ParseError(f'expected "{GANTT_DIAGRAM_KEYWORD}" keyword')
 
-    lines = [_strip_comment(ln) for ln in text.strip().split("\n")]
+    lines = [_strip_comment(ln) for ln in strip_front_matter(text).strip().split("\n")]
 
     diagram = GanttDiagram()
     current_section: str | None = None
