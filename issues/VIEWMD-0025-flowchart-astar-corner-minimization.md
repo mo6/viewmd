@@ -5,7 +5,7 @@ status: proposed
 area: [render, mermaid]
 effort:
 created: 2026-08-05
-updated: 2026-08-05
+updated: 2026-08-12
 accepted_by:
 accepted_at:
 commits: []
@@ -25,6 +25,77 @@ reason:
 
 Confirmed directly against the real `mermaid-ascii` binary (not a viewmd-only artifact) with the VIEWMD-0015 `obstacle_routing` fixture: `A --> D` routes through 3 corners, weaving between `B` and `C`'s columns, even though a plain 1-corner route (right along the row above `B`/`C`, then straight down into `D`) is fully obstacle-free and exactly the same total step count -- verified by walking that alternate path against the same obstacle grid `A*` searches. Every extra corner makes a diagram harder to read for no routing-cost reason; this is a real, avoidable quality problem in nontrivial flowcharts (more nodes and edges only make more equal-length-but-different-shape candidate paths more likely, not less).
 
+### Illustrating the problem
+
+Instrumenting `Graph._determine_path` directly against the `obstacle_routing` fixture (`tests/fixtures/mermaid_flowchart/obstacle_routing.mmd`) gives the exact routed waypoints per edge, confirming the corner counts by construction rather than by eye:
+
+```
+A -> B  0 corners  [(1,2), (1,4)]
+A -> C  1 corner   [(2,1), (5,1), (5,4)]
+A -> D  3 corners  [(2,1), (4,1), (4,2), (9,2), (9,4)]
+B -> D  4 corners  [(2,5), (3,5), (3,3), (7,3), (7,5), (8,5)]
+C -> D  0 corners  [(6,5), (8,5)]
+```
+
+`A -> D` is the clearest case: same Manhattan distance (7 across, 3 down) as a 1-corner route would need, but the router returns a two-step staircase -- right, down, right, down -- instead. Today's actual rendered output (`./viewmd.sh` against the fixture):
+
+```
+┌───┐                
+│ A ├───┬─┐          
+└─┬─┘   └─┼───────┐  
+  │       │       │  
+  ▼   ┌───▼───┐   ▼  
+┌───┐ │ ┌───┐ │ ┌───┐
+│ B ├─┘ │ C ├─┴►│ D │
+└───┘   └───┘   └───┘
+```
+
+Abstracted down to just the `A -> D` shape (obstacles/other edges omitted), current vs. the simpler shape this issue asks for -- same start, same end, same Manhattan length, fewer turns:
+
+```
+--- current (3 corners: right, down, right, down) ---
+A──┐
+   │
+   └─────┐
+         │
+         D
+
+--- target (1 corner: right, down) -- illustrative, not a pinned exact shape ---
+A─────────┐
+          │
+          D
+```
+
+The target shape is illustrative of the *kind* of simplification expected (per requirement 2/Acceptance below, any equal-length route with strictly fewer corners than today's satisfies this issue -- the exact tie-break among multiple fewer-corner candidates is left to whatever `_GoHeap` produces once corner cost is real).
+
+Maintainer-supplied reference (2026-08-12): Mermaid's own live-editor default layout for this exact `A/B/C/D` graph (free-form SVG curves, not a grid-locked router) independently confirms the same target -- every edge takes at most one gentle turn: `A -> B` and `C -> D` run straight, `A -> C` one turn, `A -> D` one turn (curving right around `C` rather than weaving through its column), `B -> D` one turn. viewmd's own router is grid-locked (orthogonal steps only, no free curves), so it cannot always reproduce that exact shape -- in particular `B -> D` shares a row with `C`'s box in viewmd's own node placement, which a free SVG curve can arc around but an orthogonal path must detour around with two turns, not one. Redrawn as a full diagram in viewmd's own box-drawing vocabulary (not upstream's shape/style -- see Non-goals), with every edge independently re-checked for turn count and column alignment:
+
+```
+--- current: 8 corners total (A->B 0, A->C 1, A->D 3, B->D 4, C->D 0) ---
+┌───┐                
+│ A ├───┬─┐          
+└─┬─┘   └─┼───────┐  
+  │       │       │  
+  ▼   ┌───▼───┐   ▼  
+┌───┐ │ ┌───┐ │ ┌───┐
+│ B ├─┘ │ C ├─┴►│ D │
+└───┘   └───┘   └───┘
+
+--- target: 4 corners total (A->B 0, A->C 1, A->D 1, B->D 2, C->D 0) ---
+┌───┐
+│ A ├─────┬───────┐
+└─┬─┘     │       │
+  │       │       │
+  ▼       ▼       ▼
+┌───┐   ┌───┐   ┌───┐
+│ B │   │ C │──►│ D │
+└─┬─┘   └───┘   └─▲─┘
+  │               │
+  └───────────────┘
+```
+
+`A -> D` drops from 3 corners to 1 (right past `C`'s column at the same row `A -> C` already shares, then straight down into `D`'s top border -- matching the abstracted mockup above). `B -> D` drops from 4 corners to 2 (down from `B`, under both boxes, up into `D`'s bottom border) -- not the reference image's single curve (an orthogonal router genuinely cannot match a free-curve arc around an obstacle in the same row with only one turn), but still half today's corner count and no back-and-forth weave. `A -> B` and `C -> D` are already optimal today (0 corners) and stay that way. This full-diagram version is illustrative of the same "no weaving, every turn is load-bearing" target as the abstracted `A -> D`-only version above, not a byte-for-byte pinned fixture -- the exact shape the fixed router actually produces still depends on `_GoHeap`'s tie-breaking once corner cost is real (Acceptance below).
+
 ## Requirements
 
 1. MUST change the cost function in `viewmd/mermaid/grid/astar.py`'s `find_path` (not just the heuristic) so a step that turns a corner costs more than a step continuing straight -- e.g. track the direction that reached each grid cell (threading it through `cost_so_far`/the priority-queue item alongside the coordinate, since a plain `GridCoord` no longer disambiguates "arrived here going straight" from "arrived here via a turn") and add a small penalty when the next step's direction differs from it.
@@ -40,7 +111,7 @@ Confirmed directly against the real `mermaid-ascii` binary (not a viewmd-only ar
 
 ## Design notes / links
 
-VIEWMD-0015 (`issues/archive/VIEWMD-0015-mermaid-flowchart-diagrams.md` once archived) is the byte-for-byte baseline this diverges from, specifically `viewmd/mermaid/grid/astar.py`'s `find_path`/`heuristic`/`_GoHeap`. Note `_GoHeap` was hand-ported from Go's `container/heap` specifically to match upstream's tie-breaking exactly (VIEWMD-0015's peer review documents a real bug found and fixed there); changing the cost function here changes what counts as a "tie" in the first place, so re-verify `_GoHeap`'s behavior still holds once corner cost is part of `newCost`, not just `priority`.
+VIEWMD-0015 (`issues/archive/VIEWMD-0015-mermaid-flowchart-diagrams.md`) is the byte-for-byte baseline this diverges from, specifically `viewmd/mermaid/grid/astar.py`'s `find_path`/`heuristic`/`_GoHeap`. Note `_GoHeap` was hand-ported from Go's `container/heap` specifically to match upstream's tie-breaking exactly (VIEWMD-0015's peer review documents a real bug found and fixed there); changing the cost function here changes what counts as a "tie" in the first place, so re-verify `_GoHeap`'s behavior still holds once corner cost is part of `newCost`, not just `priority`.
 
 ## Acceptance / verification
 
