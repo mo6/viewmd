@@ -6,6 +6,22 @@ rationale in [docs/PLAN.md](docs/PLAN.md) (the *why*), the security gate's runbo
 [docs/SECURITY.md](docs/SECURITY.md). This file is the process: how a change gets from idea to a
 release.
 
+**It's a Python package** (`viewmd/`, `requires-python = ">=3.10"` in `pyproject.toml`), depending
+on `rich` (rendering) and `wcwidth` (display-width math for grid layout — Mermaid diagrams, tables);
+dev-only deps are `pytest`, `ruff`, `pip-audit`. The CLI entry point is `viewmd = "viewmd.__main__:main"`
+(`pyproject.toml` `[project.scripts]`), runnable in dev via `./viewmd.sh`. Package layout:
+`viewmd/render.py` (Markdown → ANSI), `viewmd/mermaid/` (one parser+renderer pair per diagram type —
+flowchart, sequence, gantt, pie, kanban, quadrant, packet, ER, gitGraph), `viewmd/preprocessors.py`
+and `viewmd/frontmatter.py` (pre-render passes), `viewmd/wikilinks.py`, `viewmd/pager.py` (the `less`
+handoff). Maintainer tooling lives in `tools/*.py`/`tools/*.sh`, always invoked via `./tools.sh` (see
+below) — never run directly. **`./run-tests.sh` is the whole dev gate in one command**: `pytest`,
+`ruff check` (including the security-lint rules, `S`-prefixed, per `docs/SECURITY.md`), `pip-audit`,
+and `issues --check`; run it bare before considering any change done, or `./run-tests.sh <pytest args>`
+(e.g. `-k render -x`) for a tight iteration loop that skips straight to pytest. Each worktree needs
+its own `.venv` (`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`) since an editable
+install is bound to the path it was installed from — `./tools.sh worktree add` bootstraps this
+automatically. Fixtures for byte-for-byte-pinned renderer tests live under `tests/fixtures/`.
+
 **`main` is releases only; `develop` is where issues land.** Every `bug|feature|story/VIEWMD-NNNN`
 branch is cut from `develop` and merges back into `develop` (Definition of Done, below) — never
 into `main` directly. `main` only advances by merging `develop` into it as an explicit release
