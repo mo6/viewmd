@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.18.1] — 2026-08-12
+
+- **Fix gitGraph dead-lane dashes overextending past their own last commit, and live-lane passthroughs falsely joining via `┼`** (VIEWMD-0052, render/mermaid): a connector between two lanes no longer stretches intermediate (or already-finished) lanes' dash fill out to its column, and when it crosses a still-live lane's own dash the horizontal `─` stays on top instead of junction-merging into `┼`, so an unrelated `merge`/`branch` reads as running behind that branch rather than joining it. Real endpoint joins still become `┼`/`├`/`┤` as before. See `tests/fixtures/mermaid_gitgraph/sequential_merged_branches.out` and `live_lane_passthrough.out`.
+
 ## [1.18.0] — 2026-08-11
 
 - **Render Mermaid gitGraph diagrams** (VIEWMD-0042, render/mermaid): an eighth Mermaid diagram type, `gitGraph`, in the default left-right orientation -- one horizontal lane per branch, in first-appearance order, drawn as `──●──` segments with commit ids centered beneath each marker. Parses `commit id: "<id>"` (or a bare `commit`, which auto-generates a random 4-hex-char id, matching Mermaid's own behavior), `branch`/`checkout`, `merge <name> id: "<id>"`, `cherry-pick id: "<id>"`, and an optional `tag: "<label>"` rendered in `[brackets]`. Vertical connectors between lanes merge into `┼`/`├`/`┤` via the existing junction-merging machinery already used by the sequence renderer's lifelines. With color available, each branch gets its own hue (the same categorical palette kanban uses) and every commit id shares one neutral hue across the whole diagram, independent of `--ascii`; connectors and tags stay uncolored. No upstream reference implementation to port from (`mermaid-ascii` has no gitGraph support), so this is hand-written and hand-verified against maintainer-supplied reference examples. `gitGraph TB:`/`BT:`/`RL:` orientations are out of scope for this issue. See `docs/mermaid-gitgraph.md`.

@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0052
 title: Stop gitGraph dead-lane dashes extending past their own last commit
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: low
 created: 2026-08-12
 updated: 2026-08-12
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-12
-commits: []
+commits: [538c959]
 related: [VIEWMD-0042]
 supersedes: []
-changelog:
+changelog: "[1.18.1]"
 reason:
 ---
 
