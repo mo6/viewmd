@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0045
 title: Render Mermaid mindmap diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-09
 updated: 2026-08-12
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-12
-commits: []
+commits: [218a589]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.19.0]"
 reason:
 ---
 

@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.19.0] — 2026-08-12
+
+- **Render Mermaid mindmap diagrams** (VIEWMD-0045, render/mermaid): a ninth Mermaid diagram type, `mindmap`, drawing an indentation-defined tree radiating from a root -- children fan out to the right via `─╭─`/`─├─`/`─╰─` branch connectors, overflowing some root children to the left once a single-direction fan would grow too tall. Shape markers (`(round)`, `[square]`, `((circle))`, `{{hexagon}}`, `)cloud(`) strip to plain text; `**bold**` and `*italic*` spans in a label render as real ANSI styling, independent of `--color`. No upstream reference implementation to port from (`mermaid-ascii` has no mindmap support), so this is hand-written and hand-verified. See `docs/example.md` and `docs/mermaid-mindmap.md`.
+
 ## [1.18.1] — 2026-08-12
 
 - **Fix gitGraph dead-lane dashes overextending past their own last commit, and live-lane passthroughs falsely joining via `┼`** (VIEWMD-0052, render/mermaid): a connector between two lanes no longer stretches intermediate (or already-finished) lanes' dash fill out to its column, and when it crosses a still-live lane's own dash the horizontal `─` stays on top instead of junction-merging into `┼`, so an unrelated `merge`/`branch` reads as running behind that branch rather than joining it. Real endpoint joins still become `┼`/`├`/`┤` as before. See `tests/fixtures/mermaid_gitgraph/sequential_merged_branches.out` and `live_lane_passthrough.out`.
