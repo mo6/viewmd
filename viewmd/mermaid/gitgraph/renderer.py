@@ -155,16 +155,21 @@ def render(graph: GitGraph, *, use_ascii: bool = False, color: bool = False) -> 
             grid[line][col + i] = ch
         return col, len(text)
 
-    # --- per-lane touched columns (own commits + connector passthroughs) ---
+    # --- per-lane touched columns (own commits + connector endpoints) ----
+    # A connector only extends the dash of the two lanes it actually joins
+    # (`owner_row` already has the commit at that column; `other_row` needs
+    # the column so its dash reaches the junction). Intermediate lanes the
+    # vertical bar merely crosses stay out of `touched` -- otherwise a dead
+    # lane (merged, no further commits) keeps stretching rightward whenever
+    # a later unrelated merge/cherry-pick between two *other* lanes happens
+    # to cross its row (VIEWMD-0052).
     touched: list[set[int]] = [set() for _ in graph.branches]
     for b in graph.branches:
         for c in b.commits:
             touched[b.row].add(c.column)
     for conn in graph.connectors:
-        lo, hi = sorted((conn.owner_row, conn.other_row))
-        for row in range(lo, hi + 1):
-            if row != conn.owner_row:
-                touched[row].add(conn.column)
+        if conn.other_row != conn.owner_row:
+            touched[conn.other_row].add(conn.column)
 
     # --- color spans (requirement: color=True), keyed by grid line ----------
     # Populated below as each lane's own name/dash/marker span and each
@@ -228,11 +233,17 @@ def render(graph: GitGraph, *, use_ascii: bool = False, color: bool = False) -> 
                 continue  # the owner's own marker already sits here
             ensure_width(col + 1)
             cell = grid[line][col]
+            # Passthrough of a live lane's own dash (not this connector's
+            # endpoint): leave the dash on top so the vertical bar reads as
+            # running *behind* that branch, not joining it via ┼ (VIEWMD-0052).
+            if line != other_dl and cell == dash:
+                continue
             # Only merge into background (blank, or an existing junction/dash
             # from this line's own horizontal content) -- never clobber real
             # text, which happens when this column also happens to be the
             # owner's own tag/id-label column (both centered on the same
-            # column as the marker).
+            # column as the marker). Endpoint dash/junction merge (line ==
+            # other_dl) still happens here so a real join becomes ┼/├/┤.
             if cell == " " or (not use_ascii and is_junction_char(cell)) or cell in (dash, vbar):
                 grid[line][col] = merge_v(cell)
 
