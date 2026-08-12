@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0025
 title: Make flowchart A* routing actually minimize corners, not just bias toward them
-status: proposed
+status: in-progress
 area: [render, mermaid]
-effort:
+effort: medium
 created: 2026-08-05
 updated: 2026-08-12
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-12
 commits: []
 related: [VIEWMD-0015]
 supersedes: []
