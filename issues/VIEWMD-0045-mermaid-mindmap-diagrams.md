@@ -173,3 +173,6 @@ same count) is left open for this issue, not dictated by this reference.
 
 ## Peer review
 
+- 2026-08-12 (agent): PASS — left-fan suffix fix and outer-column alignment test hold; nested-left/overflow/project fixtures and full gate look good against VIEWMD-0045.
+- 2026-08-12 (George Moses): Accepted; commit and close.
+

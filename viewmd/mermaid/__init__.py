@@ -4,9 +4,10 @@ Sequence, flowchart, and entity-relationship diagrams are a from-scratch Python
 port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT licensed; see
 /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to avoid
 bundling a per-platform compiled binary in a pure-Python CLI tool. Pie charts
-(VIEWMD-0043) have no upstream reference to port from and are hand-written
-directly against Mermaid's own syntax. Other Mermaid diagram types raise
-`UnsupportedDiagramError`.
+(VIEWMD-0043) and later diagram types (packet, quadrant, kanban, gantt,
+gitGraph, mindmap) have no upstream reference to port from and are
+hand-written directly against Mermaid's own syntax. Other Mermaid diagram
+types raise `UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
@@ -31,6 +32,10 @@ from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
 from viewmd.mermaid.kanban.parser import parse as _parse_kanban
 from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
 from viewmd.mermaid.kanban.renderer import render as _render_kanban
+from viewmd.mermaid.mindmap.parser import ParseError as _MindmapParseError
+from viewmd.mermaid.mindmap.parser import parse as _parse_mindmap
+from viewmd.mermaid.mindmap.parser import sniff as _is_mindmap_diagram
+from viewmd.mermaid.mindmap.renderer import render as _render_mindmap
 from viewmd.mermaid.packet.parser import ParseError as _PacketParseError
 from viewmd.mermaid.packet.parser import parse as _parse_packet
 from viewmd.mermaid.packet.parser import sniff as _is_packet_diagram
@@ -122,6 +127,12 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _KanbanParseError as e:
             raise MermaidError(str(e)) from e
         return _render_kanban(board, use_ascii=use_ascii)
+    if _is_mindmap_diagram(text):
+        try:
+            diagram = _parse_mindmap(text)
+        except _MindmapParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_mindmap(diagram, use_ascii=use_ascii)
     if _is_gantt_diagram(text):
         try:
             diagram = _parse_gantt(text)
