@@ -1,5 +1,7 @@
 """A* pathfinding over the integer grid, used to route flowchart edges around
-node obstacles. Ported from cmd/arrow.go's `getPath`/`heuristic`.
+node obstacles. Ported from cmd/arrow.go's `getPath`/`heuristic`, then extended
+by VIEWMD-0025 so corner count participates in the real cost (not only the
+heuristic's search-order bias).
 
 When several equal-cost paths exist, which one A* returns depends on the
 priority queue's exact pop order for tied priorities. Go's `priorityQueue`
@@ -17,20 +19,37 @@ from viewmd.mermaid.grid.coords import GridCoord
 
 _NEIGHBOR_OFFSETS = (GridCoord(1, 0), GridCoord(-1, 0), GridCoord(0, 1), GridCoord(0, -1))
 
+# Cost encoding: one grid step costs `_STEP`, a direction change costs
+# `_CORNER` on top. `_STEP` is larger than any plausible corner-count
+# difference on a flowchart grid, so a longer Manhattan path can never beat a
+# shorter one just by taking fewer turns (VIEWMD-0025 req. 2) -- corners only
+# tie-break among equal-length candidates.
+_STEP = 10_000
+_CORNER = 1
+
+# Heap / came_from / cost_so_far carry the inbound step direction alongside the
+# coordinate: arriving at the same cell going straight vs via a turn are
+# different states with different continuation costs. Heap items are
+# `(priority, path_cost, coord, direction)` so stale entries (same state
+# reached later at a worse cost) can be skipped on pop.
+_HeapItem = tuple[int, int, GridCoord, GridCoord | None]
+_State = tuple[GridCoord, GridCoord | None]
+
 
 class _GoHeap:
     """Direct port of Go's `container/heap` push/pop, operating on
-    `(priority, coord)` items and comparing only `priority` (matching the
-    upstream `priorityQueue.Less`, which has no secondary key)."""
+    `(priority, path_cost, coord, direction)` items and comparing only
+    `priority` (matching the upstream `priorityQueue.Less`, which has no
+    secondary key)."""
 
     def __init__(self) -> None:
-        self.items: list[tuple[int, GridCoord]] = []
+        self.items: list[_HeapItem] = []
 
-    def push(self, item: tuple[int, GridCoord]) -> None:
+    def push(self, item: _HeapItem) -> None:
         self.items.append(item)
         self._up(len(self.items) - 1)
 
-    def pop(self) -> tuple[int, GridCoord]:
+    def pop(self) -> _HeapItem:
         n = len(self.items) - 1
         self.items[0], self.items[n] = self.items[n], self.items[0]
         self._down(0, n)
@@ -71,12 +90,10 @@ class _GoHeap:
 
 
 def heuristic(a: GridCoord, b: GridCoord) -> int:
-    abs_x = abs(a.x - b.x)
-    abs_y = abs(a.y - b.y)
-    if abs_x == 0 or abs_y == 0:
-        return abs_x + abs_y
-    # Punish for taking an extra corner; straight lines are preferred.
-    return abs_x + abs_y + 1
+    """Admissible, consistent estimate in the same units as `find_path`'s cost
+    (`_STEP` per grid step). Corner preference lives entirely in the real cost
+    function (VIEWMD-0025); the old +1 off-axis bias is gone."""
+    return (abs(a.x - b.x) + abs(a.y - b.y)) * _STEP
 
 
 def find_path(start: GridCoord, goal: GridCoord, is_free) -> list[GridCoord] | None:
@@ -84,19 +101,23 @@ def find_path(start: GridCoord, goal: GridCoord, is_free) -> list[GridCoord] | N
     through; the goal cell is always treated as reachable even if occupied
     (it's inside the target node's own border)."""
     heap = _GoHeap()
-    heap.push((0, start))
-    cost_so_far: dict[GridCoord, int] = {start: 0}
-    came_from: dict[GridCoord, GridCoord | None] = {start: None}
+    start_state: _State = (start, None)
+    heap.push((0, 0, start, None))
+    cost_so_far: dict[_State, int] = {start_state: 0}
+    came_from: dict[_State, _State | None] = {start_state: None}
 
     while len(heap) > 0:
-        _, current = heap.pop()
+        _, path_cost, current, current_dir = heap.pop()
+        current_state: _State = (current, current_dir)
+        if path_cost > cost_so_far[current_state]:
+            continue
 
         if current == goal:
             path: list[GridCoord] = []
-            c: GridCoord | None = current
-            while c is not None:
-                path.append(c)
-                c = came_from[c]
+            state: _State | None = current_state
+            while state is not None:
+                path.append(state[0])
+                state = came_from[state]
             path.reverse()
             return path
 
@@ -104,12 +125,14 @@ def find_path(start: GridCoord, goal: GridCoord, is_free) -> list[GridCoord] | N
             nxt = GridCoord(current.x + offset.x, current.y + offset.y)
             if not is_free(nxt) and nxt != goal:
                 continue
-            new_cost = cost_so_far[current] + 1
-            if nxt not in cost_so_far or new_cost < cost_so_far[nxt]:
-                cost_so_far[nxt] = new_cost
+            turn = 0 if current_dir is None or current_dir == offset else _CORNER
+            new_cost = path_cost + _STEP + turn
+            nxt_state: _State = (nxt, offset)
+            if nxt_state not in cost_so_far or new_cost < cost_so_far[nxt_state]:
+                cost_so_far[nxt_state] = new_cost
                 priority = new_cost + heuristic(nxt, goal)
-                heap.push((priority, nxt))
-                came_from[nxt] = current
+                heap.push((priority, new_cost, nxt, offset))
+                came_from[nxt_state] = current_state
 
     return None
 
