@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.19.1] — 2026-08-12
+
+- **Make flowchart A* routing actually minimize corners among equal-length paths** (VIEWMD-0025, render/mermaid): `find_path` now charges a turn penalty in the real cost (with inbound direction in the search state), so equal-Manhattan routes prefer fewer corners instead of leaving the choice to heap tie-breaking. `obstacle_routing`'s `A -> D` drops from 3 corners to 1; other fixtures with a unique shortest path are unchanged. Deliberate divergence from the VIEWMD-0015 upstream baseline.
+
 ## [1.19.0] — 2026-08-12
 
 - **Render Mermaid mindmap diagrams** (VIEWMD-0045, render/mermaid): a ninth Mermaid diagram type, `mindmap`, drawing an indentation-defined tree radiating from a root -- children fan out to the right via `─╭─`/`─├─`/`─╰─` branch connectors, overflowing some root children to the left once a single-direction fan would grow too tall. Shape markers (`(round)`, `[square]`, `((circle))`, `{{hexagon}}`, `)cloud(`) strip to plain text; `**bold**` and `*italic*` spans in a label render as real ANSI styling, independent of `--color`. No upstream reference implementation to port from (`mermaid-ascii` has no mindmap support), so this is hand-written and hand-verified. See `docs/example.md` and `docs/mermaid-mindmap.md`.
