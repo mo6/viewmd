@@ -18,4 +18,4 @@ Set Framerate 1
 # `md` (less -F auto-advances since the page fits) with a 5s pause between.
 Type "./tools/demo_pages_loop.sh"
 Enter
-Sleep 60s
+Sleep 65s
