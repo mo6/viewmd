@@ -68,7 +68,14 @@ A─────────┐
 
 The target shape is illustrative of the *kind* of simplification expected (per requirement 2/Acceptance below, any equal-length route with strictly fewer corners than today's satisfies this issue -- the exact tie-break among multiple fewer-corner candidates is left to whatever `_GoHeap` produces once corner cost is real).
 
-Maintainer-supplied reference (2026-08-12): Mermaid's own live-editor default layout for this exact `A/B/C/D` graph (free-form SVG curves, not a grid-locked router) independently confirms the same target -- every edge takes at most one gentle turn: `A -> B` and `C -> D` run straight, `A -> C` one turn, `A -> D` one turn (curving right around `C` rather than weaving through its column), `B -> D` one turn. viewmd's own router is grid-locked (orthogonal steps only, no free curves), so it cannot always reproduce that exact shape -- in particular `B -> D` shares a row with `C`'s box in viewmd's own node placement, which a free SVG curve can arc around but an orthogonal path must detour around with two turns, not one. Redrawn as a full diagram in viewmd's own box-drawing vocabulary (not upstream's shape/style -- see Non-goals), with every edge independently re-checked for turn count and column alignment:
+Maintainer-supplied reference (2026-08-12): Mermaid's own live-editor default layout for this exact `A/B/C/D` graph (free-form SVG curves, not a grid-locked router) independently confirms the same philosophy -- every edge takes at most one gentle turn: `A -> B` and `C -> D` run straight, `A -> C` one turn, `A -> D` one turn (curving right around `C` rather than weaving through its column), `B -> D` one turn. viewmd's own router is grid-locked (orthogonal steps only, no free curves), so it cannot always reproduce that exact shape -- in particular `B -> D` shares a row with `C`'s box in viewmd's own node placement, which a free SVG curve can arc around but an orthogonal path must detour around.
+
+Diagnostic pass against the real obstacle grid at each `_determine_path` call (2026-08-12): of the 30 fixtures under `tests/fixtures/mermaid_flowchart/`, **only `obstacle_routing` changes** -- every other fixture already has a unique shortest path per edge (requirement 3 holds against the rest of the corpus with no extra care). Within `obstacle_routing`, two edges move:
+
+- `A -> D`: **3 corners → 1 corner** (the documented win -- right past `C`'s column on the shared top row, then straight down into `D`).
+- `B -> D`: **stays at 4 corners**. A 2-corner under-route is not available on the real obstacle grid at that routing step (already-reserved cells from `A`'s edges and `B`/`C`'s boxes). Direction-tracked state can still flip the exact 4-corner detour from above `C` (through `y=3`) to below it (through `y=7`) via tie-breaking alone, with no corner-count win -- pin whichever shape the real implementation produces; do not assume it matches the old route or any hand-drawn mockup.
+
+The full-diagram ASCII block below is **illustrative of the target philosophy only** ("no gratuitous weaving" on `A -> D`), **not** a literal shape to hit and **not** a claim that `B -> D` drops to 2 corners:
 
 ```
 --- current: 8 corners total (A->B 0, A->C 1, A->D 3, B->D 4, C->D 0) ---
@@ -81,7 +88,7 @@ Maintainer-supplied reference (2026-08-12): Mermaid's own live-editor default la
 │ B ├─┘ │ C ├─┴►│ D │
 └───┘   └───┘   └───┘
 
---- target: 4 corners total (A->B 0, A->C 1, A->D 1, B->D 2, C->D 0) ---
+--- philosophy sketch (NOT a pinned fixture; B->D at 2 is aspirational, not achievable here) ---
 ┌───┐
 │ A ├─────┬───────┐
 └─┬─┘     │       │
@@ -94,7 +101,7 @@ Maintainer-supplied reference (2026-08-12): Mermaid's own live-editor default la
   └───────────────┘
 ```
 
-`A -> D` drops from 3 corners to 1 (right past `C`'s column at the same row `A -> C` already shares, then straight down into `D`'s top border -- matching the abstracted mockup above). `B -> D` drops from 4 corners to 2 (down from `B`, under both boxes, up into `D`'s bottom border) -- not the reference image's single curve (an orthogonal router genuinely cannot match a free-curve arc around an obstacle in the same row with only one turn), but still half today's corner count and no back-and-forth weave. `A -> B` and `C -> D` are already optimal today (0 corners) and stay that way. This full-diagram version is illustrative of the same "no weaving, every turn is load-bearing" target as the abstracted `A -> D`-only version above, not a byte-for-byte pinned fixture -- the exact shape the fixed router actually produces still depends on `_GoHeap`'s tie-breaking once corner cost is real (Acceptance below).
+Verify the real post-fix output by hand (and pin it in the golden fixture), rather than matching the sketch byte-for-byte. `A -> B` and `C -> D` stay at 0 corners.
 
 ## Requirements
 
@@ -122,4 +129,6 @@ VIEWMD-0015 (`issues/archive/VIEWMD-0015-mermaid-flowchart-diagrams.md`) is the 
 
 ## Peer review
 
-Left blank until implemented and tested; filled in as part of the Definition of Done landing gate.
+- **Cursor Grok** (agent), 2026-08-12: Approve — cost-function corner minimization correct; A→D simplified; B→D’s remaining 4 corners optimal under attachment constraints; no issues.
+- **Maintainer diagnostic** (2026-08-12): Confirmed only `obstacle_routing` of 30 fixtures changes; `B -> D` stays at 4 corners (2-corner under-route unavailable on the real grid) but may flip above/below `C` via direction-state tie-break — pin real output, treat the issue's 2-corner full-diagram sketch as philosophy-only. Issue mockup corrected accordingly.
+- **George Moses** (maintainer), 2026-08-12: Accept — commit and close out.

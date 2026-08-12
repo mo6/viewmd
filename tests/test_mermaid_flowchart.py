@@ -16,6 +16,16 @@ Fixtures that exercise non-rectangle node shapes (`shapes_fallback`,
 `complex_backend`, `shape_*`) are hand-authored VIEWMD-0022 divergences --
 upstream has no reference output for those shapes -- and are visually verified
 rather than differentially tested.
+
+`obstacle_routing` deliberately diverges from the upstream route shape as of
+VIEWMD-0025 (A* corner cost in the real cost function): equal-Manhattan-length
+candidates now prefer fewer corners. Only this fixture's rendered path shape
+changes (confirmed against the full `mermaid_flowchart/` corpus); `A -> D`
+drops from 3 corners to 1, while `B -> D` stays at 4 corners but may flip
+above/below `C` via tie-breaking -- the golden outs pin whatever shape the
+implementation actually produces. The pre-change upstream-matched output is
+kept beside the fixture as `obstacle_routing.pre_VIEWMD-0025.{unicode,ascii}.out`
+for before/after comparison; it is not part of the golden-file parametrize.
 """
 
 from pathlib import Path
