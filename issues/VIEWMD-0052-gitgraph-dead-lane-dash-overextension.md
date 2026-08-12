@@ -58,9 +58,9 @@ Current (wrong) output -- `feat/i18n`'s dash line runs all the way to the `feat/
 
 ## Requirements
 
-1. MUST render a passthrough connector (one whose column is not one of the crossed lane's own commits) as a bare vertical bar over blank background at that row, not as a junction spliced into manufactured dash fill -- i.e. remove the passthrough-column contribution to a lane's dash-extent calculation while still drawing the connector itself at the correct row/column.
+1. MUST render a passthrough connector (one whose column is not an endpoint of that connector on the crossed lane) without manufacturing a join on that lane -- remove the passthrough-column contribution to a lane's dash-extent calculation while still drawing the connector itself at the correct row/column. Concretely: over blank background draw a bare vertical bar; over a live lane's own dash leave the dash character in place (branch line on top, vertical bar reading as running behind it), never splice a `┼` that falsely implies the crossed branch joins that connector.
 2. MUST NOT change the dash extent of any lane whose own last commit's column is at or past every connector that crosses its row (i.e. no behavior change for the four reference examples already fixed in VIEWMD-0042 -- `develop`/`feat/i18n`-style lanes still fully alive when the last connector through them lands).
-3. MUST NOT change how a connector is drawn/junction-merged where it crosses a lane's own dash line or marker (junction-merging behavior for a *live* lane's own content is unchanged; this issue only touches lanes where the crossed row has no dash background of its own at that column).
+3. MUST still junction-merge a connector into `┼`/`├`/`┤` at its actual endpoint lanes (the two rows it connects) and MUST NOT change how a connector interacts with a lane's own commit marker at the owner column.
 4. MUST NOT change behavior for any other Mermaid diagram type.
 
 ## Non-goals
@@ -70,13 +70,19 @@ Current (wrong) output -- `feat/i18n`'s dash line runs all the way to the `feat/
 
 ## Design notes / links
 
-`viewmd/mermaid/gitgraph/renderer.py:158-167` (`touched` bookkeeping) and `renderer.py:182-204` (dash-extent/`max_fill` calculation) are the two sites to change: stop folding connector-passthrough columns into `touched[row]`, and at connector-draw time (`renderer.py:220-237`) fall back to drawing directly over blank background (skipping the "existing dash/junction" merge path) when the crossed row has no dash of its own at that column.
+`viewmd/mermaid/gitgraph/renderer.py`'s `touched` bookkeeping and dash-extent/`max_fill` calculation: stop folding connector-passthrough columns into `touched[row]`. At connector-draw time: draw over blank as a bare vertical bar; when the crossed line is a live lane's dash and is not this connector's `other_row` endpoint, leave the dash untouched (skip the junction-merge path) so the branch reads as on top; still junction-merge at the real `other_row` endpoint.
+
+Maintainer follow-up during implementation (`/tmp/gg2.md`): after `feat/i18n` is merged and later receives more commits (so its dash is still live when `feat/seo`'s branch/merge connectors cross it), those crossings were rendering as `┼` and looking like `feat/seo` joined `feat/i18n`. They must stay `─`.
 
 ## Acceptance / verification
 
-- New fixture: the maintainer's two-sequential-merged-branches example above, hand-verified so `feat/i18n`'s dash line stops at its own last commit (one trailing dash past commit `3-...`) and the `feat/seo` merge's vertical bar crosses `feat/i18n`'s row as a bare `│` over blank space, not spliced into extended dashes.
+- New fixture: the maintainer's two-sequential-merged-branches example above, hand-verified so `feat/i18n`'s dash line stops at its own last commit and the `feat/seo` merge's vertical bar crosses `feat/i18n`'s row as a bare `│` over blank space, not spliced into extended dashes.
+- New fixture: the gg2-style case where `feat/i18n` stays alive across a later `feat/seo` branch+merge (more commits on `feat/i18n` after the first merge), hand-verified so the `feat/seo` connectors cross `feat/i18n`'s dash as `─` (not `┼`), while real joins on `feat/i18n` (its own merges) remain `┼`.
 - Existing gitGraph fixtures (VIEWMD-0042's four reference examples plus its cherry-pick/merge/tag regression tests) byte-for-byte unchanged -- diff against the pre-change commit, not just a green `pytest`.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- (agent, independent review), 2026-08-12: APPROVE — `touched` only extends endpoint lanes and connector draw leaves live-lane dash passthrough as `─` (bare `│` over blank); sequential/live fixtures match acceptance, VIEWMD-0042 `.out` files byte-identical to develop, `./run-tests.sh` green; no other diagram types touched.
+- George Moses (maintainer), 2026-08-12: "commit and close" — approved for landing.
 
