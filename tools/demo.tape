@@ -16,6 +16,8 @@ Set Framerate 1
 # tools/demo-pages/*.md splits docs/example.md into one-topic-per-page files
 # that each fit on one screen; tools/demo_pages_loop.sh shows each in turn via
 # `md` (less -F auto-advances since the page fits) with a 5s pause between.
+# Sleep below must be >= (page count * 5s) or the last page(s) never get
+# recorded -- keep it in sync with the number of files in tools/demo-pages/.
 Type "./tools/demo_pages_loop.sh"
 Enter
-Sleep 65s
+Sleep 70s
