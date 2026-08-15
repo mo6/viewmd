@@ -24,8 +24,12 @@ FIXTURES = Path(__file__).parent / "fixtures" / "mermaid_block"
         ("BLOCK-BETA\nA[\"Hello\"]\n", True),
         ("---\ntitle: T\n---\nblock-beta\nA[\"Hello\"]\n", True),
         ("%% comment\nblock-beta\nA[\"Hello\"]\n", True),
-        ("block\nA[\"Hello\"]\n", False),  # un-suffixed `block` is not this issue
+        # Mermaid's own grammar (block.jison) accepts the bare `block` alias
+        # as the same keyword token as `block-beta`.
+        ("block\nA[\"Hello\"]\n", True),
+        ("BLOCK\nA[\"Hello\"]\n", True),
         ("block-betaFoo\nA[\"Hello\"]\n", False),
+        ("blockFoo\nA[\"Hello\"]\n", False),
         ("sequenceDiagram\nA->>B: hi", False),
         ("", False),
         ("%% just a comment", False),
@@ -120,3 +124,9 @@ def test_parse_tolerates_leading_front_matter_and_comments():
 def test_hello_fixture_parses():
     d = parse((FIXTURES / "hello.mmd").read_text())
     assert [b.id for b in d.blocks] == ["A", "B"]
+
+
+def test_bare_block_keyword_parses_the_same_as_block_beta():
+    d = parse('block\n    A["Hello World"]\n    B["Goodbye"]\n')
+    assert [b.id for b in d.blocks] == ["A", "B"]
+    assert [b.label for b in d.blocks] == ["Hello World", "Goodbye"]

@@ -2,10 +2,13 @@
 
 No upstream reference implementation to port from (mermaid-ascii has no
 block-beta support), so this is hand-written directly against Mermaid's own
-syntax (https://mermaid.js.org/syntax/block.html) and the maintainer-supplied
-reference examples in the issue -- same posture as the pie/quadrant/packet/
-kanban parsers. Only the quoted-label rectangle (`id["label"]`), `columns N`,
-`:N` spans, and unlabeled `A-->B` edges are accepted; every other block-beta
+syntax (https://mermaid.js.org/syntax/block.html, cross-checked against
+block.jison in mermaid-js/mermaid for the exact accepted keyword set) and the
+maintainer-supplied reference examples in the issue -- same posture as the
+pie/quadrant/packet/kanban parsers. Both `block-beta` and the bare `block`
+alias are recognized (`BLOCK_DIAGRAM_KEYWORDS`), matching upstream's own
+grammar. Only the quoted-label rectangle (`id["label"]`), `columns N`, `:N`
+spans, and unlabeled `A-->B` edges are accepted; every other block-beta
 construct is a parse failure (the follow-ups VIEWMD-0053..0057).
 """
 
@@ -16,7 +19,20 @@ from dataclasses import dataclass, field
 
 from viewmd.mermaid.textutil import strip_front_matter
 
-BLOCK_DIAGRAM_KEYWORD = "block-beta"
+# Mermaid's own grammar (block.jison) accepts both spellings as the same
+# BLOCK_DIAGRAM_KEY token -- longest first so "block-beta" wins over the
+# "block" prefix.
+BLOCK_DIAGRAM_KEYWORDS = ("block-beta", "block")
+# `\b` alone isn't strict enough here: for "block-betaFoo", the "block-beta"
+# alternative fails at the boundary check (letter/letter), but the engine
+# then backtracks to the shorter "block" alternative, which *does* sit on a
+# word boundary (the following "-" is non-word) -- silently accepting a
+# non-keyword like "block-betaFoo" as a bare "block" diagram. Requiring the
+# keyword be followed by whitespace or end-of-string (not just a non-word
+# char) closes that.
+_KEYWORD_RE = re.compile(
+    "(?i)^(" + "|".join(re.escape(kw) for kw in BLOCK_DIAGRAM_KEYWORDS) + r")(?!\S)"
+)
 
 # `id["label"]` with an optional `:N` column-span suffix. Ids match the other
 # Mermaid parsers' `[\w.-]+` vocabulary; the quoted label is the only shape
@@ -54,21 +70,22 @@ class BlockDiagram:
 
 def sniff(text: str) -> bool:
     """Whether `text`'s first meaningful line (after an optional YAML
-    front-matter block) declares a `block-beta` diagram (case-insensitive,
-    whole token -- matching gantt/er/pie's own sniff convention)."""
+    front-matter block) declares a block diagram -- `block-beta` or the bare
+    `block` alias, both of which Mermaid's own grammar accepts as the same
+    keyword token (case-insensitive, whole token -- matching gantt/er/pie's
+    own sniff convention)."""
     for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "" or t.startswith("%%"):
             continue
-        low = t.lower()
-        kw = BLOCK_DIAGRAM_KEYWORD
-        return low == kw or low.startswith(kw + " ")
+        return _KEYWORD_RE.match(t) is not None
     return False
 
 
 def parse(text: str) -> BlockDiagram:
     if not sniff(text):
-        raise ParseError(f'expected "{BLOCK_DIAGRAM_KEYWORD}" keyword')
+        expected = " or ".join(f'"{kw}"' for kw in BLOCK_DIAGRAM_KEYWORDS)
+        raise ParseError(f"expected {expected} keyword")
 
     lines = strip_front_matter(text).split("\n")
     header_idx = next(
@@ -79,9 +96,8 @@ def parse(text: str) -> BlockDiagram:
     declared: set[str] = set()
     current_columns: int | None = None
 
-    header_rest = re.sub(
-        rf"(?i)^{re.escape(BLOCK_DIAGRAM_KEYWORD)}\b", "", lines[header_idx]
-    ).strip()
+    m = _KEYWORD_RE.match(lines[header_idx])
+    header_rest = lines[header_idx][m.end() :].strip() if m else lines[header_idx].strip()
     pending = [header_rest] if header_rest else []
     pending.extend(lines[header_idx + 1 :])
 

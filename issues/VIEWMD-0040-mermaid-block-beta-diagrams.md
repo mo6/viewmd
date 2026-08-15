@@ -39,10 +39,12 @@ arrowhead primitives for the individual blocks and the optional connector).
 
 ## Requirements
 
-1. MUST recognize a ` ```mermaid ` fence beginning with `block-beta`
+1. MUST recognize a ` ```mermaid ` fence beginning with `block-beta` or its bare `block` alias
    (`viewmd/mermaid/block/parser.py:sniff`, following the `sniff`/`parse`/`render` module shape
    already used by the other diagram packages) and wire it into
-   `viewmd/mermaid/__init__.py:render` alongside the existing sniffs.
+   `viewmd/mermaid/__init__.py:render` alongside the existing sniffs. Mermaid's own grammar
+   (`block.jison` in `mermaid-js/mermaid`) accepts both spellings as the same keyword token, so
+   both must sniff/parse identically.
 2. MUST parse a block declaration `id["label"]` (quoted string label in brackets, the only shape
    this issue's reference examples use -- see Non-goals for other Mermaid block shapes) in
    declaration order.
@@ -214,3 +216,14 @@ otherwise have been uneven.
   `canvas.draw_box`/`draw_line`/`merge_drawings` and the flowchart arrowhead tables rather than
   reimplementing them, and touches no other diagram module. `./run-tests.sh` green (726 passed,
   43 new). No findings.
+- **Claude (Sonnet 5)** (agent), 2026-08-15: addendum after the pass above -- checked against
+  Mermaid's own grammar (`block.jison`, not just the doc-site examples the issue's reference
+  examples came from) and found `sniff`/`parse` only recognized `block-beta`, rejecting the bare
+  `block` alias upstream accepts as the identical keyword token; requirement 1 didn't call this
+  out either. Fixed: `BLOCK_DIAGRAM_KEYWORDS = ("block-beta", "block")`, requirement 1 updated to
+  match. First regex fix (`\b` boundary) had its own bug -- `block-betaFoo` incorrectly sniffed
+  true because the engine backtracked from the failed `block-beta` alternative to the `block`
+  alternative, which sits on a word boundary at the following `-`; replaced with `(?!\S)` (must be
+  followed by whitespace or end-of-string). Added a `keyword_alias` fixture and
+  `docs/mermaid-block.md` (via `tools/combine_fixtures.sh`) demonstrating both spellings render
+  identically. `./run-tests.sh` green (731 passed, 5 more).
