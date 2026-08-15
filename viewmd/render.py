@@ -150,6 +150,19 @@ class _AdmonitionKind:
     # column wider than `wcswidth` reports, visually crowding the label --
     # this widens the gap to compensate, hand-verified per icon (VIEWMD-0059).
     icon_pad: int = 1
+    # Column width to charge the icon in the header's dash-fill math. Usually
+    # None, meaning "trust wcswidth". `⚠️` (U+26A0+U+FE0F) is the one
+    # exception hand-verified so far: wcswidth reports 2 for the pair
+    # (Unicode's emoji-presentation rule), but `wcwidth` on the bare base
+    # codepoint alone reports 1, and several terminal fonts render the pair
+    # narrow -- unlike the fully-astral-plane NOTE/TIP/CAUTION icons (no
+    # narrow fallback, render wide everywhere) or IMPORTANT's `❗` (both
+    # wcswidth and per-character wcwidth agree it's 2, no override needed).
+    # Trusting wcswidth for ⚠️ undershoots the real terminal's column count,
+    # landing the right border short of the other cards' (VIEWMD-0060,
+    # hand-verified in-terminal -- do not assume other icons need the same
+    # override without independently re-verifying each one).
+    icon_width: int | None = None
 
 
 # GitHub's five canonical alert types. Colors follow Primer's dark-theme
@@ -160,7 +173,7 @@ _CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
     "IMPORTANT": _AdmonitionKind("❗", "#bc8cff"),
     # U+26A0+U+FE0F; wcswidth==2, but renders a column wider than that in
     # several terminals -- icon_pad=2 compensates, hand-verified in-terminal.
-    "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2),
+    "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2, icon_width=1),
     "CAUTION": _AdmonitionKind("🛑", "#f85149"),
 }
 _GENERIC_ADMONITION = _AdmonitionKind("", "default")
@@ -223,9 +236,17 @@ class ViewmdBlockQuote(BlockQuote):
         width = options.max_width
         label = token.upper()
         left = f"{_CALLOUT_TL}{_CALLOUT_H} "
-        mid = f"{kind.icon}{' ' * kind.icon_pad}{label} " if kind.icon else f"{label} "
         right = _CALLOUT_TR
-        fill = max(0, width - _display_width(left) - _display_width(mid) - _display_width(right))
+        if kind.icon:
+            mid = f"{kind.icon}{' ' * kind.icon_pad}{label} "
+            icon_width = (
+                kind.icon_width if kind.icon_width is not None else _display_width(kind.icon)
+            )
+            mid_width = icon_width + kind.icon_pad + _display_width(label) + 1
+        else:
+            mid = f"{label} "
+            mid_width = _display_width(mid)
+        fill = max(0, width - _display_width(left) - mid_width - _display_width(right))
         header = left + mid + (_CALLOUT_H * fill) + right
         footer = f"{_CALLOUT_BL}{_CALLOUT_H * max(0, width - 2)}{_CALLOUT_BR}"
 
