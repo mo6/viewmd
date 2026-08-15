@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0060
 title: Fix admonition card border misalignment for ambiguous-width icons
-status: proposed
+status: in-progress
 area: [render]
-effort: small
+effort: low
 created: 2026-08-15
 updated: 2026-08-15
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-15
 commits: []
 related: [VIEWMD-0059]
 supersedes: []
