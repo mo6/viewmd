@@ -5,13 +5,17 @@ port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT licensed; see
 /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to avoid
 bundling a per-platform compiled binary in a pure-Python CLI tool. Pie charts
 (VIEWMD-0043) and later diagram types (packet, quadrant, kanban, gantt,
-gitGraph, mindmap) have no upstream reference to port from and are
+gitGraph, mindmap, block-beta) have no upstream reference to port from and are
 hand-written directly against Mermaid's own syntax. Other Mermaid diagram
 types raise `UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
 
+from viewmd.mermaid.block.parser import ParseError as _BlockParseError
+from viewmd.mermaid.block.parser import parse as _parse_block
+from viewmd.mermaid.block.parser import sniff as _is_block_diagram
+from viewmd.mermaid.block.renderer import render as _render_block
 from viewmd.mermaid.er.parser import ParseError as _ErParseError
 from viewmd.mermaid.er.parser import parse as _parse_er
 from viewmd.mermaid.er.parser import sniff as _is_er_diagram
@@ -145,4 +149,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _GitgraphParseError as e:
             raise MermaidError(str(e)) from e
         return _render_gitgraph(graph, use_ascii=use_ascii, color=color)
+    if _is_block_diagram(text):
+        try:
+            diagram = _parse_block(text)
+        except _BlockParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_block(diagram, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

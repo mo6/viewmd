@@ -1,15 +1,15 @@
 ---
 id: VIEWMD-0040
 title: Render Mermaid block-beta diagrams
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: medium
 created: 2026-08-08
-updated: 2026-08-08
-accepted_by:
-accepted_at:
+updated: 2026-08-15
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-15
 commits: []
-related: []
+related: [VIEWMD-0053, VIEWMD-0054, VIEWMD-0055, VIEWMD-0056, VIEWMD-0057]
 supersedes: []
 changelog:
 reason:
@@ -61,13 +61,26 @@ arrowhead primitives for the individual blocks and the optional connector).
    inventing a new one, per the fourth reference example below.
 8. MUST render each block as its own box (`┌─┐│└┘`, Unicode by default / ASCII with
    `use_ascii=True` matching the other Mermaid renderers' existing `--ascii` behavior), its label
-   centered inside, sized to its content plus the existing flowchart box padding convention.
-9. MUST render a spanning block's box width as wide as the combined width (plus inter-column gap)
-   of the columns it spans, per the second reference example below.
-10. MUST leave a `block-beta` fence whose content fails to parse untouched (fall back to showing
+   centered inside. A block's inner content width is `max(10, label_width + 2 * box_border_padding)`
+   (`box_border_padding` = 1, the existing flowchart convention) -- i.e. content padded to a
+   minimum inner width of 10 columns, or `label_width + 2` when the label alone already exceeds
+   that. When the centering remainder is odd, the extra column of padding goes on the right (floor
+   split left, ceil split right) -- per the "Goodbye"/"Left"/"Center"/"Right"/"API" boxes in the
+   first three reference examples below.
+9. MUST size every block within the same grid column (the same column position across every row
+   under the currently active `columns N` count) to the same width: the maximum, per requirement
+   8, over every block occupying that column across all rows. A block whose label exceeds the
+   minimum width therefore widens every other block sharing its column, including blocks in other
+   rows.
+10. MUST render a spanning block's box width as exactly the sum of its spanned columns' widths
+    (per requirement 9) plus the inter-column gap between each pair of spanned columns -- per the
+    second reference example's `Header` box, which spans exactly the combined width of the
+    `Left`/`Center`/`Right` columns below it plus the two gaps between them. A spanning block's own
+    label does not influence the width of the columns it spans.
+11. MUST leave a `block-beta` fence whose content fails to parse untouched (fall back to showing
     the raw fence), same fallback discipline as the other Mermaid renderers' MUST-NOT-crash
     requirement.
-11. MUST NOT change behavior for any existing recognized Mermaid diagram type.
+12. MUST NOT change behavior for any existing recognized Mermaid diagram type.
 
 ## Non-goals
 
@@ -162,16 +175,16 @@ block-beta
   └──────────┘    └──────────┘
 ```
 
-Open questions for maintainer sign-off: (a) the exact inter-block horizontal gap and inter-row
-blank-line count implied by the reference examples (4 columns / 1 blank line respectively, by
-inspection) should be treated as the concrete spec unless the maintainer says otherwise; (b)
-whether same-row block widths must always be uniform (as in the "Left"/"Center"/"Right" example,
-all width 10 despite "Center" needing less) or should size independently per label when labels
-differ more than in the reference examples -- the reference examples don't disambiguate this
-since "Left"/"Center"/"Right"/"Frontend"/"API"/etc. happen to be close in length; (c) how a
-spanning block's width should be computed when the columns it spans would naturally have been
-uneven widths (not exercised by the `:3`-spans-the-whole-row case in the second example, where
-this doesn't yet come up).
+Resolved design decisions (maintainer sign-off, 2026-08-15): (a) the inter-block horizontal gap is
+4 columns and the inter-row blank-line count is 1, per requirements 3-4 and 6, as originally
+inferred; (b) block widths are not simply "uniform per row" -- the first reference example's
+`Hello World` (width 15) and `Goodbye` (width 12) boxes sit in the same row at different widths.
+The actual rule is requirements 8-9: a minimum inner width of 10, and width equalized per grid
+*column* (not row) so a block whose label exceeds the minimum widens every other block sharing its
+column, even across rows; (c) a spanning block's width is always exactly the sum of its spanned
+columns' widths (after the requirement 9 equalization) plus the gaps between them, per requirement
+10 -- its own label never grows the columns it spans, regardless of whether those columns would
+otherwise have been uneven.
 
 ## Acceptance / verification
 
@@ -182,9 +195,22 @@ this doesn't yet come up).
   maintainer-supplied output (per Non-goals, no oracle to differential-test against).
 - A fixture covering a diagram with more declared blocks than fit one row under a `columns N`
   directive, confirming correct wrap to a second row.
+- A fixture with two rows under a shared `columns N`, where one row's block in a given column has
+  a label exceeding the minimum width (requirement 8) and the other row's block in that same
+  column does not -- confirming the narrower block widens to match (requirement 9), a case none of
+  the four reference examples above exercises on its own.
 - A malformed `block-beta` fence (e.g. `A-->B` referencing an undeclared id) falls back to showing
   the raw fence rather than crashing viewmd.
 - `./run-tests.sh` green.
 
 ## Peer review
 
+- **Claude (Sonnet 5)** (agent), 2026-08-15: clean pass. All four maintainer reference examples
+  (hello/header/grid/edge) render byte-for-byte identical to the issue text; hand-verified the
+  requirement 8/9 minimum-width and per-column equalization math against the `widen` fixture
+  (`"A much longer label"` forces `"Tiny"` in its column to the same 21-inner-width, floor-8/
+  ceil-9 split); requirement 10's spanning-width formula matches the `header` fixture. ASCII
+  fallback and the undeclared-id fallback-to-raw-fence both correct. Genuinely reuses
+  `canvas.draw_box`/`draw_line`/`merge_drawings` and the flowchart arrowhead tables rather than
+  reimplementing them, and touches no other diagram module. `./run-tests.sh` green (726 passed,
+  43 new). No findings.
