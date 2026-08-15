@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0059
 title: Render Obsidian/GitHub-style admonition callouts
-status: proposed
+status: in-progress
 area: [render]
 effort: medium
 created: 2026-08-15
 updated: 2026-08-15
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-15
 commits: []
 related: []
 supersedes: []
@@ -153,3 +153,12 @@ to keep it short, but in scope per requirement 2.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- Claude (2026-08-15): two findings on Cursor's initial implementation, both fixed. (1) The
+  WARNING header omitted the mockup's hand-adjusted double space before the label (requirement 6)
+  -- `_AdmonitionKind` now carries a per-icon `icon_pad`, WARNING set to 2, with a regression test
+  (`test_warning_header_uses_hand_adjusted_double_space`) and `warning.out` regenerated. (2) The
+  new admonition examples had been added by editing the generated `docs/example.md` directly
+  instead of a `tools/demo-pages/*.md` source page -- moved into new
+  `tools/demo-pages/15-admonitions.md` and `docs/example.md` regenerated via
+  `./tools/build_example_md.sh`. `./run-tests.sh` green after both fixes.

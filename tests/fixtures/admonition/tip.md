@@ -1,0 +1,2 @@
+> [!TIP]
+> Consider caching this if it's expensive to recompute.
