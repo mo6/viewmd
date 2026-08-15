@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0058
 title: Render GFM task list checkboxes
-status: proposed
+status: in-progress
 area: [render]
 effort: low
 created: 2026-08-15
 updated: 2026-08-15
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-15
 commits: []
 related: []
 supersedes: []
@@ -105,3 +105,6 @@ in the renderer, but less visually distinct than the emoji pair, which won out).
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- **Independent review agent** (agent), 2026-08-15: approve-with-nits. Requirements 1–7 met: `ViewmdListItem` elements override, no new dependency, `✅`/`⬜` replace `•`, markers stripped, checked labels are SGR `2;9`, plain-bullet golden matches pre-change `a3fd6db`. The three named acceptance tests exist and check what they claim. Nits (non-blocking): glyph test does not assert `•` is gone; no ordered-list `1. [x]` regression test (`render_number` is untouched); a checked item's later paragraphs in a loose list are not dimmed/struck. Ordered lists and table cells stay literal, matching the non-goals.
+- **George Moses** (maintainer), 2026-08-15: "merge and close issue" — approved for landing.

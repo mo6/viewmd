@@ -44,6 +44,10 @@ render the same as an ordinary Markdown link, brackets gone.
 2. Second step
 3. Third step
 
+- [x] Write the draft
+- [x] Review it
+- [ ] Publish
+
 ## Tables
 
 | Feature          | Status      | Notes                                   | Value |

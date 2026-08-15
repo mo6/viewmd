@@ -23,3 +23,7 @@ render the same as an ordinary Markdown link, brackets gone.
 1. First step
 2. Second step
 3. Third step
+
+- [x] Write the draft
+- [x] Review it
+- [ ] Publish
