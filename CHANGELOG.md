@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.22.1] — 2026-08-15
+
+- **Fix WARNING admonition border misalignment** (VIEWMD-0060, render): the `WARNING` callout card's (VIEWMD-0059) right border landed short of the other cards' in several real terminals, since the header's dash-fill trusted `wcwidth`'s width-2 verdict for the `⚠️` icon even though several terminal fonts render it narrow (1 column). The header now sizes for that hand-verified narrower width instead. See `docs/example.md`.
+
 ## [1.22.0] — 2026-08-15
 
 - **Render Obsidian/GitHub-style admonition callouts** (VIEWMD-0059, render): a blockquote whose first line is a `[!TYPE]` marker (`> [!NOTE]`, `> [!WARNING]`, ...) now renders as a bordered, colored callout card with the type's icon and label in its top border, instead of the marker text leaking into a plain blockquote body. GitHub's five canonical types (NOTE/TIP/IMPORTANT/WARNING/CAUTION) get their own icon and color; any other `[!TYPE]` still renders as a generic card, and a malformed marker falls back to today's plain blockquote. See `docs/example.md`.
