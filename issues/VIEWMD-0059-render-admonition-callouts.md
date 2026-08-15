@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0059
 title: Render Obsidian/GitHub-style admonition callouts
-status: proposed
+status: in-progress
 area: [render]
 effort: medium
 created: 2026-08-15
 updated: 2026-08-15
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-15
 commits: []
 related: []
 supersedes: []
