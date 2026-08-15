@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0058
 title: Render GFM task list checkboxes
-status: in-progress
+status: implemented
 area: [render]
 effort: low
 created: 2026-08-15
 updated: 2026-08-15
 accepted_by: George Moses
 accepted_at: 2026-08-15
-commits: []
+commits: [0c417bd, 1c63262]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.21.0]"
 reason:
 ---
 

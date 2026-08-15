@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.21.0] — 2026-08-15
+
+- **Render GFM task list checkboxes** (VIEWMD-0058, render): a bullet list item starting with `[x]`/`[X]`/`[ ]` now shows ✅ or ⬜ in place of the plain `•`, with the marker stripped from the label and checked items dimmed and struck through, so the raw GFM syntax no longer leaks into the render. See `docs/example.md`.
+
 ## [1.20.0] — 2026-08-15
 
 - **Render Mermaid block-beta diagrams** (VIEWMD-0040, render/mermaid): a tenth Mermaid diagram type, `block-beta` (or its bare `block` alias -- both accepted, per Mermaid's own grammar) -- lays labeled boxes onto an explicit or implicit grid, positioned by declaration order rather than by edges. A `columns N` directive fixes row width; a `:N` suffix lets a block span multiple columns, widening to match their combined width; blocks sharing a grid column equalize to the widest one in that column, even across rows. A block can optionally connect to another same-row block via a plain flowchart-style `-->` arrow, reusing flowchart's box-drawing and arrowhead primitives rather than reimplementing them. No upstream reference implementation to differentially test against (`mermaid-ascii` has no block-beta support), so fixtures are hand-authored against maintainer-supplied reference examples. See `docs/example.md` and `docs/mermaid-block.md`.
