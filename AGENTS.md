@@ -20,6 +20,12 @@ and `issues --check`; run it bare before considering any change done, or `./run-
 (e.g. `-k render -x`) for a tight iteration loop that skips straight to pytest. Each worktree needs
 its own `.venv` (`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`) since an editable
 install is bound to the path it was installed from — `./tools.sh worktree add` bootstraps this
+automatically. **When tracing into a dependency's source (e.g. `rich`, `wcwidth`) to understand
+how it renders or tokenizes something, look inside the project's own `.venv`
+(`.venv/lib/python*/site-packages/<pkg>/`), not a filesystem-wide search** — every dependency
+viewmd actually runs against lives there, already pinned to this project's exact installed
+version; a broad search can turn up an unrelated copy from some other tool's environment on the
+machine and lead to conclusions that don't hold for viewmd's own install.
 automatically. Fixtures for byte-for-byte-pinned renderer tests live under `tests/fixtures/`.
 
 **`main` is releases only; `develop` is where issues land.** Every `bug|feature|story/VIEWMD-NNNN`
