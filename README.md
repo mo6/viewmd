@@ -1,8 +1,9 @@
 # viewmd
 
 View Markdown files from the command line — headers, emphasis, tables, syntax-highlighted code
-blocks, basic Mermaid diagram support, and any ASCII art in fenced code blocks, rendered to your
-terminal with color and auto-paged into `less`.
+blocks, GFM task list checkboxes, Obsidian/GitHub-style admonition callouts, basic Mermaid diagram
+support, and any ASCII art in fenced code blocks, rendered to your terminal with color and
+auto-paged into `less`.
 
 ![viewmd demo](docs/demo.gif)
 
@@ -47,15 +48,26 @@ Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highli
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
 
+A GitHub-flavored-Markdown task list item (`- [x] label` / `- [ ] label`) renders with a ✅/⬜
+checkbox glyph in place of the plain bullet, the marker stripped from the label and a checked
+item's text dimmed and struck through.
+
+A blockquote whose first line is an Obsidian/GitHub-style `[!TYPE]` marker (`> [!NOTE]`,
+`> [!WARNING]`, ...) renders as a bordered, colored callout card with the type's icon and label in
+its top border, instead of a plain quote. GitHub's five canonical types — `NOTE`, `TIP`,
+`IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
+Obsidian-only aliases) still renders as a generic card, using the type token as its label.
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`, or
-`mindmap` renders as box-drawing ASCII art in place of its source. Other Mermaid diagram types, and any block that
-fails to parse, are left as plain source text rather than causing an error. See
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`,
+`mindmap`, or `block-beta`/`block` renders as box-drawing ASCII art in place of its source. Other
+Mermaid diagram types, and any block that fails to parse, are left as plain source text rather
+than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -139,6 +151,15 @@ some root children overflow to the left instead. Mermaid shape markers (`(round)
 `((circle))`, `{{hexagon}}`, `)cloud(`) are stripped to plain text; `**bold**` and `*italic*` spans
 in a label render as real ANSI styling (independent of `--color`). See
 [docs/mermaid-mindmap.md](docs/mermaid-mindmap.md) for more mindmap fixtures.
+
+### Block diagrams
+
+A `block-beta` block (or its bare `block` alias) lays labeled boxes onto an explicit or implicit
+grid, positioned by declaration order rather than by edges. A `columns N` directive fixes row
+width; a `:N` suffix lets a block span multiple columns, widening to match their combined width;
+blocks sharing a grid column equalize to the widest one in that column, even across rows. A block
+can optionally connect to another same-row block via a plain flowchart-style `-->` arrow. See
+[docs/mermaid-block.md](docs/mermaid-block.md) for more block-diagram fixtures.
 
 ## Development
 
