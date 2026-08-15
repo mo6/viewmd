@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/mo6/viewmd/security/policy
+    about: Do not open a public issue for security vulnerabilities — see SECURITY.md for how to report privately.
+  - name: viewmd's own issue tracker (VIEWMD-NNNN)
+    url: https://github.com/mo6/viewmd/blob/main/issues/README.md
+    about: How accepted work is actually tracked and built, once a bug report or feature request here is triaged.
