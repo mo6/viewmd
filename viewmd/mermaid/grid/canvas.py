@@ -260,21 +260,56 @@ def wrap_text_bold(text: str) -> str:
     return f"\x1b[1m{text}\x1b[0m"
 
 
+def wrap_text_italic(text: str) -> str:
+    """Raw ANSI italic wrap (SGR 3), sibling to wrap_text_bold -- a text-style
+    attribute rather than a color (VIEWMD-0045 mindmap markdown labels)."""
+    if not text:
+        return text
+    return f"\x1b[3m{text}\x1b[0m"
+
+
+def apply_color_spans(chars: list[str], spans: list[tuple[int, int, str]]) -> str:
+    """Wrap non-overlapping `(start, end_exclusive, color_hex)` column ranges
+    of a plain single-char-per-index row in true-colour ANSI, post-hoc. For a
+    renderer (gitGraph, VIEWMD-0042) that builds a plain character grid first
+    -- for layout logic (column placement, junction-merging) that needs every
+    cell to stay a single plain character -- then colorizes specific ranges
+    only after that grid is final, rather than embedding escape codes during
+    placement itself. (`viewmd/mermaid/gantt/renderer.py`'s own
+    `_colorize_spans`, VIEWMD-0032, is the same idea, written before this one
+    existed to share -- a candidate to fold together in a later cleanup.)"""
+    if not spans:
+        return "".join(chars)
+    out: list[str] = []
+    pos = 0
+    for start, end, hex_ in sorted(spans):
+        if start > pos:
+            out.append("".join(chars[pos:start]))
+        out.append(wrap_text_in_color("".join(chars[max(start, pos):end]), hex_))
+        pos = max(pos, end)
+    out.append("".join(chars[pos:]))
+    return "".join(out)
+
+
 def wrap_text_styled(text: str, *, fg: str | None = None, bg: str | None = None,
-                      bold: bool = False, underline: bool = False) -> str:
-    """Combined true-colour fg/bg + bold/underline ANSI wrap in a single
-    escape/reset pair (VIEWMD-0047, `underline` added by VIEWMD-0034) --
-    sibling to wrap_text_in_color/wrap_text_bold, for a caller (the quadrant
-    chart's per-quadrant background fill; the kanban board's underlined
-    `ticket` field) that needs more than one SGR attribute on the same span.
-    Nesting the two existing wrappers instead would still work (SGR codes
-    accumulate additively until a `0` reset), just with a redundant extra
-    reset per nesting level."""
+                      bold: bool = False, italic: bool = False,
+                      underline: bool = False) -> str:
+    """Combined true-colour fg/bg + bold/italic/underline ANSI wrap in a single
+    escape/reset pair (VIEWMD-0047, `underline` added by VIEWMD-0034, `italic`
+    by VIEWMD-0045) -- sibling to wrap_text_in_color/wrap_text_bold/
+    wrap_text_italic, for a caller (the quadrant chart's per-quadrant
+    background fill; the kanban board's underlined `ticket` field; mindmap
+    markdown `***bold italic***` spans) that needs more than one SGR attribute
+    on the same span. Nesting the existing wrappers instead would still work
+    (SGR codes accumulate additively until a `0` reset), just with a redundant
+    extra reset per nesting level."""
     if not text:
         return text
     codes = []
     if bold:
         codes.append("1")
+    if italic:
+        codes.append("3")
     if underline:
         codes.append("4")
     if fg:

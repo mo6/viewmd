@@ -135,4 +135,9 @@ def _resolve_color(choice: str) -> bool:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        # Ctrl+C while reading stdin or paging -- exit quietly with the
+        # conventional SIGINT status instead of a raw traceback.
+        sys.exit(130)

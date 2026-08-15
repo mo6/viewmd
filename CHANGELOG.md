@@ -4,6 +4,50 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.22.1] — 2026-08-15
+
+- **Fix WARNING admonition border misalignment** (VIEWMD-0060, render): the `WARNING` callout card's (VIEWMD-0059) right border landed short of the other cards' in several real terminals, since the header's dash-fill trusted `wcwidth`'s width-2 verdict for the `⚠️` icon even though several terminal fonts render it narrow (1 column). The header now sizes for that hand-verified narrower width instead. See `docs/example.md`.
+
+## [1.22.0] — 2026-08-15
+
+- **Render Obsidian/GitHub-style admonition callouts** (VIEWMD-0059, render): a blockquote whose first line is a `[!TYPE]` marker (`> [!NOTE]`, `> [!WARNING]`, ...) now renders as a bordered, colored callout card with the type's icon and label in its top border, instead of the marker text leaking into a plain blockquote body. GitHub's five canonical types (NOTE/TIP/IMPORTANT/WARNING/CAUTION) get their own icon and color; any other `[!TYPE]` still renders as a generic card, and a malformed marker falls back to today's plain blockquote. See `docs/example.md`.
+
+## [1.21.0] — 2026-08-15
+
+- **Render GFM task list checkboxes** (VIEWMD-0058, render): a bullet list item starting with `[x]`/`[X]`/`[ ]` now shows ✅ or ⬜ in place of the plain `•`, with the marker stripped from the label and checked items dimmed and struck through, so the raw GFM syntax no longer leaks into the render. See `docs/example.md`.
+
+## [1.20.0] — 2026-08-15
+
+- **Render Mermaid block-beta diagrams** (VIEWMD-0040, render/mermaid): a tenth Mermaid diagram type, `block-beta` (or its bare `block` alias -- both accepted, per Mermaid's own grammar) -- lays labeled boxes onto an explicit or implicit grid, positioned by declaration order rather than by edges. A `columns N` directive fixes row width; a `:N` suffix lets a block span multiple columns, widening to match their combined width; blocks sharing a grid column equalize to the widest one in that column, even across rows. A block can optionally connect to another same-row block via a plain flowchart-style `-->` arrow, reusing flowchart's box-drawing and arrowhead primitives rather than reimplementing them. No upstream reference implementation to differentially test against (`mermaid-ascii` has no block-beta support), so fixtures are hand-authored against maintainer-supplied reference examples. See `docs/example.md` and `docs/mermaid-block.md`.
+
+## [1.19.1] — 2026-08-12
+
+- **Make flowchart A* routing actually minimize corners among equal-length paths** (VIEWMD-0025, render/mermaid): `find_path` now charges a turn penalty in the real cost (with inbound direction in the search state), so equal-Manhattan routes prefer fewer corners instead of leaving the choice to heap tie-breaking. `obstacle_routing`'s `A -> D` drops from 3 corners to 1; other fixtures with a unique shortest path are unchanged. Deliberate divergence from the VIEWMD-0015 upstream baseline.
+
+## [1.19.0] — 2026-08-12
+
+- **Render Mermaid mindmap diagrams** (VIEWMD-0045, render/mermaid): a ninth Mermaid diagram type, `mindmap`, drawing an indentation-defined tree radiating from a root -- children fan out to the right via `─╭─`/`─├─`/`─╰─` branch connectors, overflowing some root children to the left once a single-direction fan would grow too tall. Shape markers (`(round)`, `[square]`, `((circle))`, `{{hexagon}}`, `)cloud(`) strip to plain text; `**bold**` and `*italic*` spans in a label render as real ANSI styling, independent of `--color`. No upstream reference implementation to port from (`mermaid-ascii` has no mindmap support), so this is hand-written and hand-verified. See `docs/example.md` and `docs/mermaid-mindmap.md`.
+
+## [1.18.1] — 2026-08-12
+
+- **Fix gitGraph dead-lane dashes overextending past their own last commit, and live-lane passthroughs falsely joining via `┼`** (VIEWMD-0052, render/mermaid): a connector between two lanes no longer stretches intermediate (or already-finished) lanes' dash fill out to its column, and when it crosses a still-live lane's own dash the horizontal `─` stays on top instead of junction-merging into `┼`, so an unrelated `merge`/`branch` reads as running behind that branch rather than joining it. Real endpoint joins still become `┼`/`├`/`┤` as before. See `tests/fixtures/mermaid_gitgraph/sequential_merged_branches.out` and `live_lane_passthrough.out`.
+
+## [1.18.0] — 2026-08-11
+
+- **Render Mermaid gitGraph diagrams** (VIEWMD-0042, render/mermaid): an eighth Mermaid diagram type, `gitGraph`, in the default left-right orientation -- one horizontal lane per branch, in first-appearance order, drawn as `──●──` segments with commit ids centered beneath each marker. Parses `commit id: "<id>"` (or a bare `commit`, which auto-generates a random 4-hex-char id, matching Mermaid's own behavior), `branch`/`checkout`, `merge <name> id: "<id>"`, `cherry-pick id: "<id>"`, and an optional `tag: "<label>"` rendered in `[brackets]`. Vertical connectors between lanes merge into `┼`/`├`/`┤` via the existing junction-merging machinery already used by the sequence renderer's lifelines. With color available, each branch gets its own hue (the same categorical palette kanban uses) and every commit id shares one neutral hue across the whole diagram, independent of `--ascii`; connectors and tags stay uncolored. No upstream reference implementation to port from (`mermaid-ascii` has no gitGraph support), so this is hand-written and hand-verified against maintainer-supplied reference examples. `gitGraph TB:`/`BT:`/`RL:` orientations are out of scope for this issue. See `docs/mermaid-gitgraph.md`.
+
+## [1.17.0] — 2026-08-11
+
+- **Render Mermaid Gantt charts** (VIEWMD-0032, render/mermaid): a seventh Mermaid diagram type, `gantt`, drawing one row per task -- a status-tagged bar (`done`/`active`/untagged/`crit`) or a single point glyph for a `milestone` -- against a scaled timeline axis with full-height gridlines and `section`-grouped rows. Parses `section` grouping, `after <id>`/`until <id>` task chaining (including id reuse across sections), `d`/`w`/`h` durations, `excludes weekends` day-skipping, and every status tag including `crit` (rendered with its own `[`/`]` bracket marker layered over the task's other status). The tick axis automatically switches between day-level (`MM-DD`) and week-level (`W<n>`) granularity based on the diagram's total span, adding a date-anchor line under the chart in week mode so `W<n>` labels still say what date they fall on. With color available, each status gets its own hue and `crit`'s brackets get a distinct hue layered on top, independent of `--ascii` -- the third diagram type (after pie, quadrant) where `color` changes the rendering. No upstream reference implementation to port from (`mermaid-ascii` has no gantt support), so this is hand-written and hand-verified against Mermaid's own "basic" and "full syntax" reference examples. See `docs/example.md` and `docs/mermaid-gantt.md`.
+
+## [1.16.1] — 2026-08-11
+
+- **Fix Mermaid ER diagram non-identifying relationships using box-drawing glyphs most terminal fonts do not render** (VIEWMD-0030, render/mermaid): `UNICODE.hd`/`UNICODE.vd` (the dashed connector glyphs for non-identifying relationships) changed from `┈`/`┊` (U+2508/U+250A) to `·`/`:`, since those box-drawing codepoints sit outside the basic box-drawing block most monospace terminal fonts cover and rendered as blank space instead of a visible dashed line -- the same font-coverage problem VIEWMD-0021 fixed for sequence-diagram dotted arrows.
+
+## [1.16.0] — 2026-08-11
+
+- **Add `tools/worktree.sh` for parallel per-issue git worktrees** (VIEWMD-0051, tools/docs): `./tools.sh worktree add|list|remove` creates a sibling `../viewmd-VIEWMD-NNNN` git worktree per issue, branched from `develop` with the correct `bug|feature|story/VIEWMD-NNNN` name, and bootstraps its own standalone `.venv` (`pip install -e '.[dev]'`) so `./run-tests.sh`/`./tools.sh` work from it immediately — letting multiple issues be worked in parallel, each in its own directory with its own Claude Code or Cursor session, without one session's uncommitted changes or branch checkout stepping on another's. `worktree remove` only tears down the directory; branch deletion stays a separate, explicit step. See `AGENTS.md`'s "Working multiple issues in parallel" section.
+
 ## [1.15.0] — 2026-08-10
 
 - **Render Mermaid kanban diagrams** (VIEWMD-0034, render/mermaid): a sixth Mermaid diagram type, `kanban`, drawing ordered columns of stacked task cards -- each column its own box with a categorical-hue header (one hue per column, cycling past 8), each card its own nested box with a word-wrapped label and, where present, an `@{ ticket, assigned, priority }` metadata line rendered as a severity-colored priority token, an underlined ticket ID, and a right-aligned assignee. Card width is uniform across the whole board; a column's box hugs its own content height rather than padding out to match a taller neighbor. No upstream reference implementation to port from, so this is hand-written against Mermaid's own syntax. See `docs/example.md`.

@@ -31,6 +31,7 @@ def test_parse_errors(source, message):
     [
         ("sequenceDiagram\nA->>B: Hello", True),
         ("SEQUENCEDIAGRAM\nA->>B: Hello", True),
+        ("---\ntitle: T\n---\nsequenceDiagram\nA->>B: Hello", True),
         ("sequenceDiagramFoo-->B", False),
         ("graph LR\nA-->B", False),
         ("", False),
@@ -66,6 +67,11 @@ def test_actor_synonym_for_participant(source, expected_ids, expected_labels):
     sd = parse(source)
     assert [p.id for p in sd.participants] == expected_ids
     assert [p.label for p in sd.participants] == expected_labels
+
+
+def test_parse_tolerates_leading_front_matter():
+    sd = parse("---\ntitle: Ignored\n---\nsequenceDiagram\nA->>B: Hello")
+    assert [p.id for p in sd.participants] == ["A", "B"]
 
 
 def test_actor_declaration_matches_participant_declaration():

@@ -28,6 +28,7 @@ def test_parse_errors(source, message):
     [
         ("erDiagram\nA ||--o{ B : places", True),
         ("ERDIAGRAM\nA ||--o{ B : places", True),
+        ("---\ntitle: T\n---\nerDiagram\nA ||--o{ B : places", True),
         ("erDiagramFoo\nA-->B", False),
         ("sequenceDiagram\nA->>B: hi", False),
         ("", False),
@@ -36,6 +37,11 @@ def test_parse_errors(source, message):
 )
 def test_sniff(source, expected):
     assert sniff(source) == expected
+
+
+def test_parse_tolerates_leading_front_matter():
+    d = parse('---\ntitle: Ignored\n---\nerDiagram\nA ||--o{ B : places')
+    assert [e.name for e in d.entities] == ["A", "B"]
 
 
 def test_statement_less_diagram_is_valid():

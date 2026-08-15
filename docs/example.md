@@ -44,6 +44,10 @@ render the same as an ordinary Markdown link, brackets gone.
 2. Second step
 3. Third step
 
+- [x] Write the draft
+- [x] Review it
+- [ ] Publish
+
 ## Tables
 
 | Feature          | Status      | Notes                                   | Value |
@@ -72,6 +76,28 @@ scrolling horizontally in the pager (`less -S`) instead of wrapping or being cut
 ```python
 result = some_function(argument_one, argument_two, argument_three, argument_four, argument_five, argument_six, xxxxxxxx)
 ```
+
+## Admonition callouts
+
+GitHub and Obsidian `> [!TYPE]` callouts render as a bordered card instead of a plain quote:
+
+> [!NOTE]
+> Useful information that users should know, even when skimming.
+
+> [!TIP]
+> Optional information to help a user be more successful.
+
+> [!IMPORTANT]
+> Crucial information necessary for users to succeed.
+
+> [!WARNING]
+> Critical content demanding immediate user attention due to potential risks.
+
+> [!CAUTION]
+> Negative potential consequences of an action.
+
+> [!HINT]
+> An unrecognized type still renders as a generic card, using the type token as its label.
 
 ## Mermaid diagrams
 
@@ -260,4 +286,112 @@ kanban
     id5[define getData]
     id2[Title of diagram is more than 100 chars when user duplicates diagram with 100 char]@{ ticket: MC-2036, priority: 'Very High'}
     id3[Update DB function]@{ ticket: MC-2037, assigned: knsv, priority: 'High' }
+```
+
+### Gantt charts (VIEWMD-0032)
+
+A `gantt` block draws one row per task: a status-tagged bar (`done`/`active`/untagged/`crit`) or a
+single `◆` point for a `milestone`, against a scaled timeline axis with full-height gridlines and
+`section`-grouped rows. With color available, each status gets its own hue and `crit` tasks get a
+distinct bracket color layered on top; a longer span switches the axis to week ticks and adds a
+date-anchor line under the chart so `W<n>` labels still say what date they fall on. This is
+Mermaid's own "full syntax" reference example, exercising `excludes weekends`, `after`/`until`
+chaining, hour-granularity durations, and every status tag at once -- see
+[docs/mermaid-gantt.md](mermaid-gantt.md) for more.
+
+```mermaid
+gantt
+    dateFormat  YYYY-MM-DD
+    title       Adding GANTT diagram functionality to mermaid
+    excludes    weekends
+
+    section A section
+    Completed task            :done,    des1, 2014-01-06,2014-01-08
+    Active task               :active,  des2, 2014-01-09, 3d
+    Future task               :         des3, after des2, 5d
+    Future task2               :        des4, after des3, 5d
+
+    section Critical tasks
+    Completed task in the critical line :crit, done, 2014-01-06,24h
+    Implement parser and jison          :crit, done, after des1, 2d
+    Create tests for parser             :crit, active, 3d
+    Future task in critical line        :crit, 5d
+    Create tests for renderer           :2d
+    Add to mermaid                      :until isadded
+    Functionality added                 :milestone, isadded, 2014-01-25, 0d
+```
+
+### gitGraph diagrams (VIEWMD-0042)
+
+A `gitGraph` block draws one horizontal lane per branch, in first-appearance order, as `──●──`
+segments with commit ids centered beneath each marker. Supports `branch`/`checkout`, `merge`,
+`cherry-pick`, an optional `tag:` in `[brackets]`, and a bare `commit` with no `id:` (auto-generates
+a random 4-hex-char id, matching Mermaid's own behavior). Vertical connectors merge into
+`┼`/`├`/`┤` where they cross a lane's own content. With color available, each branch gets its own
+hue and every commit id shares one neutral hue across the diagram -- see
+[docs/mermaid-gitgraph.md](mermaid-gitgraph.md) for more.
+
+```mermaid
+gitGraph
+       commit
+       commit
+       branch nice_feature
+       checkout nice_feature
+       commit id: "3" tag: "v0.1"
+       checkout main
+       commit id: "4"
+       checkout nice_feature
+       branch very_nice_feature
+       checkout very_nice_feature
+       commit id: "5"
+       checkout main
+       commit id: "6"
+       checkout nice_feature
+       commit id: "7"
+       checkout main
+       merge nice_feature id: "customID" tag: "customTag" type: REVERSE
+       checkout very_nice_feature
+       commit id: "8"
+       checkout main
+       commit
+       cherry-pick id: "8"
+```
+
+### Mindmap diagrams (VIEWMD-0045)
+
+A `mindmap` block draws an indentation-defined tree radiating from a root: children fan out to the
+right via `─╭─`/`─├─`/`─╰─` branch connectors, and once a single-direction fan would grow too tall
+some root children overflow to the left instead. Mermaid shape markers (`(round)`, `[square]`,
+`((circle))`, `{{hexagon}}`, `)cloud(`) are stripped to plain text; `**bold**` and `*italic*` spans
+in a label render as real ANSI styling. See [docs/mermaid-mindmap.md](mermaid-mindmap.md) for more.
+
+```mermaid
+mindmap
+  root((mindmap))
+    Origins
+      Long history
+      Popularisation
+        British popular psychology author Tony Buzan
+    Research
+      On effectiveness
+      On automatic creation
+    Tools
+      Pen and paper
+      Mermaid
+```
+
+### Block diagrams (VIEWMD-0040)
+
+A `block-beta` (or bare `block`) diagram lays labeled boxes onto an explicit or implicit grid,
+positioned by declaration order rather than by edges: a `columns N` directive fixes row width, and
+a `:N` suffix lets a block span multiple columns, widening to match their combined width. Blocks
+sharing a grid column equalize to the widest one in that column, even across rows. A block can
+optionally connect to another same-row block with a plain flowchart-style `-->` arrow. See
+[docs/mermaid-block.md](mermaid-block.md) for more.
+
+```mermaid
+block-beta
+    columns 3
+    A["Header"]:3
+    B["Left"] C["Center"] D["Right"]
 ```

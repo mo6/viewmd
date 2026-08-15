@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from viewmd.mermaid.textutil import strip_front_matter
+
 PACKET_DIAGRAM_KEYWORDS = ("packet-beta", "packet")
 
 # A field line is either `<start>-<end>: "<label>"`, the single-bit shorthand
@@ -40,10 +42,11 @@ class PacketDiagram:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text`'s first meaningful line is exactly the `packet-beta` or
-    `packet` keyword (case-insensitive) -- unlike `pie`, the packet grammar
-    doesn't allow trailing tokens on the keyword's own line."""
-    for line in text.split("\n"):
+    """Whether `text`'s first meaningful line (after an optional YAML
+    front-matter block) is exactly the `packet-beta` or `packet` keyword
+    (case-insensitive) -- unlike `pie`, the packet grammar doesn't allow
+    trailing tokens on the keyword's own line."""
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "" or t.startswith("%%"):
             continue
@@ -55,7 +58,7 @@ def parse(text: str) -> PacketDiagram:
     if not sniff(text):
         raise ParseError('expected "packet-beta" or "packet" keyword')
 
-    lines = text.split("\n")
+    lines = strip_front_matter(text).split("\n")
     header_idx = next(
         i for i, ln in enumerate(lines) if ln.strip() and not ln.strip().startswith("%%")
     )

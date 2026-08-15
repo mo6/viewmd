@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from viewmd.mermaid.textutil import strip_front_matter
+
 KANBAN_DIAGRAM_KEYWORD = "kanban"
 
 # A column or card node: an optional id followed by a `[label]`, e.g.
@@ -47,22 +49,10 @@ class KanbanDiagram:
     columns: list[Column] = field(default_factory=list)
 
 
-def _strip_front_matter(text: str) -> str:
-    """Skips a leading YAML front-matter block (`---\\n...\\n---`), the
-    `config:\\n  kanban: ...` block mermaid.ai's kanban docs open with
-    (Non-goals: parsed away/ignored, not interpreted)."""
-    lines = text.split("\n")
-    if lines and lines[0].strip() == "---":
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                return "\n".join(lines[i + 1:])
-    return text
-
-
 def sniff(text: str) -> bool:
     """Whether `text`'s first meaningful line (after an optional YAML
     front-matter block) declares a kanban board."""
-    for line in _strip_front_matter(text).split("\n"):
+    for line in strip_front_matter(text).split("\n"):
         t = line.strip()
         if t == "":
             continue
@@ -106,7 +96,7 @@ def parse(text: str) -> KanbanDiagram:
     if not sniff(text):
         raise ParseError(f'expected "{KANBAN_DIAGRAM_KEYWORD}" keyword')
 
-    lines = _strip_front_matter(text).split("\n")
+    lines = strip_front_matter(text).split("\n")
     header_idx = next(i for i, ln in enumerate(lines) if ln.strip())
 
     diagram = KanbanDiagram()

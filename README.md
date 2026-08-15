@@ -1,8 +1,9 @@
 # viewmd
 
 View Markdown files from the command line — headers, emphasis, tables, syntax-highlighted code
-blocks, basic Mermaid diagram support, and any ASCII art in fenced code blocks, rendered to your
-terminal with color and auto-paged into `less`.
+blocks, GFM task list checkboxes, Obsidian/GitHub-style admonition callouts, basic Mermaid diagram
+support, and any ASCII art in fenced code blocks, rendered to your terminal with color and
+auto-paged into `less`.
 
 ![viewmd demo](docs/demo.gif)
 
@@ -47,15 +48,26 @@ Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highli
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
 
+A GitHub-flavored-Markdown task list item (`- [x] label` / `- [ ] label`) renders with a ✅/⬜
+checkbox glyph in place of the plain bullet, the marker stripped from the label and a checked
+item's text dimmed and struck through.
+
+A blockquote whose first line is an Obsidian/GitHub-style `[!TYPE]` marker (`> [!NOTE]`,
+`> [!WARNING]`, ...) renders as a bordered, colored callout card with the type's icon and label in
+its top border, instead of a plain quote. GitHub's five canonical types — `NOTE`, `TIP`,
+`IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
+Obsidian-only aliases) still renders as a generic card, using the type token as its label.
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
-`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, or `kanban` renders as box-drawing
-ASCII art in place of its source. Other Mermaid diagram types, and any block that fails to parse,
-are left as plain source text rather than causing an error. See
+`erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`,
+`mindmap`, or `block-beta`/`block` renders as box-drawing ASCII art in place of its source. Other
+Mermaid diagram types, and any block that fails to parse, are left as plain source text rather
+than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -108,6 +120,47 @@ line under its label — a severity-colored `[H]`/`[VH]`/`[L]`/`[VL]`/`[M]` prio
 underlined ticket ID on the left, the assignee right-aligned. Columns hug their own content
 height rather than padding out to match a taller neighbor.
 
+### Gantt charts
+
+A `gantt` block draws one row per task: a status-tagged bar (`done`/`active`/untagged/`crit`) or a
+single point glyph for a `milestone`, grouped into labelled `section`s, against a scaled timeline
+axis with full-height gridlines. The axis automatically switches from day-level (`MM-DD`) to
+week-level (`W<n>`) ticks for a longer date span, adding a date-anchor line under the chart (every
+4th week tick's absolute date) so week labels still say what date they fall on. With color
+available, each status gets its own hue and a `crit` task's bracket markers get a distinct hue
+layered on top, independent of `--ascii`. See [docs/mermaid-gantt.md](docs/mermaid-gantt.md) for
+more gantt-chart fixtures.
+
+### gitGraph diagrams
+
+A `gitGraph` block (default left-right orientation) draws one horizontal lane per branch, in
+first-appearance order, as `──●──` segments with commit ids centered beneath each marker. Supports
+`commit`/`branch`/`checkout`/`merge`/`cherry-pick`, an optional `tag:` rendered in `[brackets]`,
+and a bare `commit` with no `id:` (auto-generates a random 4-hex-char id, matching Mermaid's own
+behavior). Vertical connectors between lanes merge into `┼`/`├`/`┤` where they cross a lane's own
+content. With color available, each branch gets its own hue and every commit id shares one neutral
+hue across the diagram, independent of `--ascii`; connectors and tags stay uncolored.
+`gitGraph TB:`/`BT:`/`RL:` orientations are not supported. See
+[docs/mermaid-gitgraph.md](docs/mermaid-gitgraph.md) for more gitGraph fixtures.
+
+### Mindmap diagrams
+
+A `mindmap` block draws an indentation-defined tree radiating from a root: children fan out to the
+right via `─╭─`/`─├─`/`─╰─` branch connectors, and once a single-direction fan would grow too tall
+some root children overflow to the left instead. Mermaid shape markers (`(round)`, `[square]`,
+`((circle))`, `{{hexagon}}`, `)cloud(`) are stripped to plain text; `**bold**` and `*italic*` spans
+in a label render as real ANSI styling (independent of `--color`). See
+[docs/mermaid-mindmap.md](docs/mermaid-mindmap.md) for more mindmap fixtures.
+
+### Block diagrams
+
+A `block-beta` block (or its bare `block` alias) lays labeled boxes onto an explicit or implicit
+grid, positioned by declaration order rather than by edges. A `columns N` directive fixes row
+width; a `:N` suffix lets a block span multiple columns, widening to match their combined width;
+blocks sharing a grid column equalize to the widest one in that column, even across rows. A block
+can optionally connect to another same-row block via a plain flowchart-style `-->` arrow. See
+[docs/mermaid-block.md](docs/mermaid-block.md) for more block-diagram fixtures.
+
 ## Development
 
 - `./run-tests.sh` — the full check gate (pytest, ruff incl. security rules, `pip-audit`,
@@ -116,7 +169,8 @@ height rather than padding out to match a taller neighbor.
   lints without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
-  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook, and
-  [SECURITY.md](SECURITY.md) to report a vulnerability.
+  [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook,
+  [SECURITY.md](SECURITY.md) to report a vulnerability, and
+  [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for the project's code of conduct.
 - See [TODO.md](TODO.md) — or directly, [issues/README.md](issues/README.md) — for what's
   proposed, in progress, and implemented.

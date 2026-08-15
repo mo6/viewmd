@@ -157,3 +157,17 @@ def test_renders_a_kanban_fence_as_tagged_code():
 def test_invalid_kanban_diagram_with_unterminated_metadata_block_is_left_untouched():
     text = '```mermaid\nkanban\n  Todo\n    id1[A card]@{ ticket: T-1\n```\n'
     assert render_mermaid_blocks(text) == text
+
+
+def test_renders_a_block_beta_fence_as_tagged_code():
+    text = '```mermaid\nblock-beta\n    A["Hello World"]\n    B["Goodbye"]\n```\n'
+    got = render_mermaid_blocks(text)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "Hello World" in got
+    assert "┌" in got
+
+
+def test_invalid_block_beta_diagram_is_left_untouched():
+    text = '```mermaid\nblock-beta\n    A["Source"]\n    A-->B\n```\n'
+    assert render_mermaid_blocks(text) == text

@@ -1,0 +1,7 @@
+
+╭─ 📝 NOTE ────────────────────────────────────────────────╮
+│ First paragraph which is quite a bit longer than the     │
+│ wrap width so it should reflow onto more than one line   │
+│ inside the card.                                         │
+│ Second paragraph stays separate.                         │
+╰──────────────────────────────────────────────────────────╯

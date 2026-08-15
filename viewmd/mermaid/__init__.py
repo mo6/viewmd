@@ -4,13 +4,18 @@ Sequence, flowchart, and entity-relationship diagrams are a from-scratch Python
 port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT licensed; see
 /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to avoid
 bundling a per-platform compiled binary in a pure-Python CLI tool. Pie charts
-(VIEWMD-0043) have no upstream reference to port from and are hand-written
-directly against Mermaid's own syntax. Other Mermaid diagram types raise
-`UnsupportedDiagramError`.
+(VIEWMD-0043) and later diagram types (packet, quadrant, kanban, gantt,
+gitGraph, mindmap, block-beta) have no upstream reference to port from and are
+hand-written directly against Mermaid's own syntax. Other Mermaid diagram
+types raise `UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
 
+from viewmd.mermaid.block.parser import ParseError as _BlockParseError
+from viewmd.mermaid.block.parser import parse as _parse_block
+from viewmd.mermaid.block.parser import sniff as _is_block_diagram
+from viewmd.mermaid.block.renderer import render as _render_block
 from viewmd.mermaid.er.parser import ParseError as _ErParseError
 from viewmd.mermaid.er.parser import parse as _parse_er
 from viewmd.mermaid.er.parser import sniff as _is_er_diagram
@@ -19,10 +24,22 @@ from viewmd.mermaid.flowchart.parser import ParseError as _FlowchartParseError
 from viewmd.mermaid.flowchart.parser import parse as _parse_flowchart
 from viewmd.mermaid.flowchart.parser import sniff as _is_flowchart_diagram
 from viewmd.mermaid.flowchart.renderer import render as _render_flowchart
+from viewmd.mermaid.gantt.parser import ParseError as _GanttParseError
+from viewmd.mermaid.gantt.parser import parse as _parse_gantt
+from viewmd.mermaid.gantt.parser import sniff as _is_gantt_diagram
+from viewmd.mermaid.gantt.renderer import render as _render_gantt
+from viewmd.mermaid.gitgraph.parser import ParseError as _GitgraphParseError
+from viewmd.mermaid.gitgraph.parser import parse as _parse_gitgraph
+from viewmd.mermaid.gitgraph.parser import sniff as _is_gitgraph_diagram
+from viewmd.mermaid.gitgraph.renderer import render as _render_gitgraph
 from viewmd.mermaid.kanban.parser import ParseError as _KanbanParseError
 from viewmd.mermaid.kanban.parser import parse as _parse_kanban
 from viewmd.mermaid.kanban.parser import sniff as _is_kanban_diagram
 from viewmd.mermaid.kanban.renderer import render as _render_kanban
+from viewmd.mermaid.mindmap.parser import ParseError as _MindmapParseError
+from viewmd.mermaid.mindmap.parser import parse as _parse_mindmap
+from viewmd.mermaid.mindmap.parser import sniff as _is_mindmap_diagram
+from viewmd.mermaid.mindmap.renderer import render as _render_mindmap
 from viewmd.mermaid.packet.parser import ParseError as _PacketParseError
 from viewmd.mermaid.packet.parser import parse as _parse_packet
 from viewmd.mermaid.packet.parser import sniff as _is_packet_diagram
@@ -55,9 +72,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
            width: int | None = None) -> str:
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
-    `color` and `width` (VIEWMD-0043) are currently read only by the pie and
-    quadrant-chart renderers (VIEWMD-0047) -- every other diagram type
-    ignores them, unaffected. `width` is the caller's resolved render width,
+    `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
+    gantt-chart (VIEWMD-0032), and gitGraph (VIEWMD-0042) renderers -- every
+    other diagram type ignores it, unaffected. `width` is read only by
+    pie/quadrant, and is the caller's resolved render width,
     not a hard cap (Mermaid diagrams are still allowed to render wider and
     scroll, VIEWMD-0018); it's what the pie chart's and quadrant chart's
     default sizing targets, so neither sizes itself independently of the
@@ -113,4 +131,28 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _KanbanParseError as e:
             raise MermaidError(str(e)) from e
         return _render_kanban(board, use_ascii=use_ascii)
+    if _is_mindmap_diagram(text):
+        try:
+            diagram = _parse_mindmap(text)
+        except _MindmapParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_mindmap(diagram, use_ascii=use_ascii)
+    if _is_gantt_diagram(text):
+        try:
+            diagram = _parse_gantt(text)
+        except _GanttParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_gantt(diagram, use_ascii=use_ascii, color=color)
+    if _is_gitgraph_diagram(text):
+        try:
+            graph = _parse_gitgraph(text)
+        except _GitgraphParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_gitgraph(graph, use_ascii=use_ascii, color=color)
+    if _is_block_diagram(text):
+        try:
+            diagram = _parse_block(text)
+        except _BlockParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_block(diagram, use_ascii=use_ascii)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")

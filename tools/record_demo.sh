@@ -8,19 +8,14 @@
 # the source of truth -- see tools/build_example_md.sh), then runs
 # tools/demo.tape from the repo root (VHS resolves the tape's `Output` path
 # relative to the current directory) and writes docs/demo.gif. Requires
-# `vhs`, `md` (this repo's viewmd.sh, e.g. via ~/.local/bin/md), and
-# `gifsicle` on PATH.
+# `vhs` and `gifsicle` on PATH; tools/demo_pages_loop.sh invokes this repo's
+# own ./viewmd.sh directly, so no PATH alias for it is needed.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if ! command -v vhs >/dev/null 2>&1; then
     echo "record_demo: vhs not found on PATH -- see https://github.com/charmbracelet/vhs" >&2
-    exit 1
-fi
-
-if ! command -v md >/dev/null 2>&1; then
-    echo "record_demo: md not found on PATH -- expected this repo's viewmd.sh on PATH (e.g. ~/.local/bin/md)" >&2
     exit 1
 fi
 

@@ -1,15 +1,22 @@
 """Render Markdown text to an ANSI string using Rich."""
 
 import io
+import re
+from dataclasses import dataclass
 
 from rich import box
+from rich.cells import cell_len
+from rich.color import Color
 from rich.console import Console, ConsoleOptions, RenderResult
-from rich.markdown import CodeBlock, Markdown
+from rich.containers import Renderables
+from rich.markdown import BlockQuote, CodeBlock, ListItem, Markdown, Paragraph
 from rich.markup import escape
 from rich.rule import Rule
 from rich.segment import Segment
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.table import Table
+from wcwidth import wcswidth
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
@@ -50,23 +57,267 @@ class ViewmdCodeBlock(CodeBlock):
             yield from line
 
 
+# GFM task-list prefixes as they appear in the already-parsed list-item text
+# (rich's MarkdownIt build has no task-list rule, so `[x] ` is literal text).
+_TASK_MARKERS = {
+    "[ ] ": False,
+    "[x] ": True,
+    "[X] ": True,
+}
+_TASK_CHECKED_BULLET = " ✅ "
+_TASK_UNCHECKED_BULLET = " ⬜ "
+_TASK_CHECKED_STYLE = Style(dim=True, strike=True)
+
+
+class ViewmdListItem(ListItem):
+    """A bullet-list item that renders GFM task-list checkboxes as glyphs.
+
+    ``rich.markdown.Markdown`` does not enable a task-list rule, so a source
+    line like ``- [x] label`` arrives as an ordinary list item whose text
+    starts with the literal ``[x] ``. Detect that prefix (and ``[ ] `` /
+    ``[X] ``), swap the default ``•`` bullet for ``✅`` / ``⬜``, strip the
+    marker from the label, and dim+strike a checked item's remaining text.
+    Anything else -- including a lookalike like ``[y]`` -- falls through to
+    ``ListItem.render_bullet`` unchanged (VIEWMD-0058).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._task_checked: bool | None = None
+        self._task_inspected = False
+
+    def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        checked = self._apply_task_marker()
+        if checked is None:
+            yield from super().render_bullet(console, options)
+            return
+
+        glyph = _TASK_CHECKED_BULLET if checked else _TASK_UNCHECKED_BULLET
+        glyph_width = cell_len(glyph)
+        render_options = options.update(width=options.max_width - glyph_width)
+        lines = console.render_lines(self.elements, render_options, style=self.style)
+        bullet_style = console.get_style("markdown.item.bullet", default="none")
+        bullet = Segment(glyph, bullet_style)
+        padding = Segment(" " * glyph_width, bullet_style)
+        new_line = Segment("\n")
+        first = True
+        for line in lines:
+            yield bullet if first else padding
+            yield from line
+            yield new_line
+            first = False
+
+    def _apply_task_marker(self) -> bool | None:
+        """Strip a leading GFM task marker from the first paragraph, if present.
+
+        Returns True (checked), False (unchecked), or None (not a task item).
+        Idempotent: a second call returns the same answer without re-stripping.
+        """
+        if self._task_inspected:
+            return self._task_checked
+        self._task_inspected = True
+        child = next(iter(self.elements), None)
+        if not isinstance(child, Paragraph):
+            return None
+        for prefix, checked in _TASK_MARKERS.items():
+            if child.text.plain.startswith(prefix):
+                child.text = child.text[len(prefix) :]
+                if checked:
+                    child.text.stylize(_TASK_CHECKED_STYLE)
+                self._task_checked = checked
+                return checked
+        return None
+
+
+# Obsidian/GitHub admonition marker: `[!TYPE]` at the start of a blockquote's
+# first paragraph. An optional trailing `+`/`-` (Obsidian's fold flag, a no-op
+# in a one-shot terminal render) is consumed so it doesn't leak into the body.
+_ADMONITION_RE = re.compile(r"^\[!([^\]\s]+)\][+-]?[ \t]*")
+
+# Round-box glyphs, the same four corners `viewmd/mermaid/grid/canvas.py`
+# uses for `shape == "round"` -- copied rather than imported, because a
+# Markdown element must not size itself against a Mermaid `Drawing` grid.
+_CALLOUT_TL, _CALLOUT_TR, _CALLOUT_BL, _CALLOUT_BR = "╭", "╮", "╰", "╯"
+_CALLOUT_H, _CALLOUT_V = "─", "│"
+
+
+@dataclass(frozen=True)
+class _AdmonitionKind:
+    icon: str
+    color: str
+    # Spaces between the icon and the label in the header. Normally 1; some
+    # terminals render a base-codepoint+VS16 pair (e.g. WARNING's ⚠️) one
+    # column wider than `wcswidth` reports, visually crowding the label --
+    # this widens the gap to compensate, hand-verified per icon (VIEWMD-0059).
+    icon_pad: int = 1
+    # Column width to charge the icon in the header's dash-fill math. Usually
+    # None, meaning "trust wcswidth". `⚠️` (U+26A0+U+FE0F) is the one
+    # exception hand-verified so far: wcswidth reports 2 for the pair
+    # (Unicode's emoji-presentation rule), but `wcwidth` on the bare base
+    # codepoint alone reports 1, and several terminal fonts render the pair
+    # narrow -- unlike the fully-astral-plane NOTE/TIP/CAUTION icons (no
+    # narrow fallback, render wide everywhere) or IMPORTANT's `❗` (both
+    # wcswidth and per-character wcwidth agree it's 2, no override needed).
+    # Trusting wcswidth for ⚠️ undershoots the real terminal's column count,
+    # landing the right border short of the other cards' (VIEWMD-0060,
+    # hand-verified in-terminal -- do not assume other icons need the same
+    # override without independently re-verifying each one).
+    icon_width: int | None = None
+
+
+# GitHub's five canonical alert types. Colors follow Primer's dark-theme
+# palette so the card stays readable on the dark terminals viewmd pages into.
+_CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
+    "NOTE": _AdmonitionKind("📝", "#58a6ff"),
+    "TIP": _AdmonitionKind("💡", "#3fb950"),
+    "IMPORTANT": _AdmonitionKind("❗", "#bc8cff"),
+    # U+26A0+U+FE0F; wcswidth==2, but renders a column wider than that in
+    # several terminals -- icon_pad=2 compensates, hand-verified in-terminal.
+    "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2, icon_width=1),
+    "CAUTION": _AdmonitionKind("🛑", "#f85149"),
+}
+_GENERIC_ADMONITION = _AdmonitionKind("", "default")
+
+
+def parse_admonition_marker(text: str) -> tuple[str, str] | None:
+    """Return ``(TYPE, remainder)`` if ``text`` starts with a ``[!TYPE]`` marker.
+
+    ``TYPE`` is the literal token (original case). Malformed lookalikes -- an
+    empty ``[!]``, an unterminated ``[!NOTE`` -- return None so the caller can
+    fall through to a plain blockquote (VIEWMD-0059).
+    """
+    match = _ADMONITION_RE.match(text)
+    if match is None:
+        return None
+    return match.group(1), text[match.end() :]
+
+
+def _display_width(s: str) -> int:
+    """Terminal column count via ``wcwidth.wcswidth``, never ``len()``."""
+    width = wcswidth(s)
+    return width if width >= 0 else len(s)
+
+
+def _drop_quote_color(segment: Segment, quote_color: Color | None) -> Segment:
+    """Strip the inherited ``markdown.block_quote`` color, keep emphasis/links."""
+    if quote_color is None:
+        return segment
+    style = segment.style
+    if style is None or style.color != quote_color:
+        return segment
+    return Segment(segment.text, style.without_color, segment.control)
+
+
+class ViewmdBlockQuote(BlockQuote):
+    """A blockquote that renders ``[!TYPE]`` markers as bordered callout cards.
+
+    A first paragraph that begins with a well-formed ``[!TYPE]`` marker is an
+    admonition: the marker is stripped and the quote is redrawn as a round
+    box with the type's icon and label in the top border. Anything else -- a
+    plain quote, ``[!]``, an unterminated bracket -- falls through to
+    ``BlockQuote.__rich_console__`` unchanged (VIEWMD-0059).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._admonition_inspected = False
+        self._admonition_token: str | None = None
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        token = self._apply_admonition_marker()
+        if token is None:
+            yield from super().__rich_console__(console, options)
+            return
+
+        kind = _CANONICAL_ADMONITIONS.get(token.upper(), _GENERIC_ADMONITION)
+        border_style = Style() if kind.color == "default" else Style(color=kind.color)
+        width = options.max_width
+        label = token.upper()
+        left = f"{_CALLOUT_TL}{_CALLOUT_H} "
+        right = _CALLOUT_TR
+        if kind.icon:
+            mid = f"{kind.icon}{' ' * kind.icon_pad}{label} "
+            icon_width = (
+                kind.icon_width if kind.icon_width is not None else _display_width(kind.icon)
+            )
+            mid_width = icon_width + kind.icon_pad + _display_width(label) + 1
+        else:
+            mid = f"{label} "
+            mid_width = _display_width(mid)
+        fill = max(0, width - _display_width(left) - mid_width - _display_width(right))
+        header = left + mid + (_CALLOUT_H * fill) + right
+        footer = f"{_CALLOUT_BL}{_CALLOUT_H * max(0, width - 2)}{_CALLOUT_BR}"
+
+        yield Segment(header, border_style)
+        yield Segment.line()
+
+        inner_width = max(width - 4, 1)
+        body_options = options.update(width=inner_width)
+        quote_color = self.style.color
+        lines = console.render_lines(self.elements, body_options, pad=True)
+        left_seg = Segment(f"{_CALLOUT_V} ", border_style)
+        right_seg = Segment(f" {_CALLOUT_V}", border_style)
+        for line in lines:
+            yield left_seg
+            for segment in line:
+                yield _drop_quote_color(segment, quote_color)
+            yield right_seg
+            yield Segment.line()
+
+        yield Segment(footer, border_style)
+        yield Segment.line()
+
+    def _apply_admonition_marker(self) -> str | None:
+        """Strip a leading ``[!TYPE]`` marker from the first paragraph, if present.
+
+        Returns the TYPE token, or None (not an admonition). Idempotent: a
+        second call returns the same answer without re-stripping.
+        """
+        if self._admonition_inspected:
+            return self._admonition_token
+        self._admonition_inspected = True
+        child = next(iter(self.elements), None)
+        if not isinstance(child, Paragraph):
+            return None
+        parsed = parse_admonition_marker(child.text.plain)
+        if parsed is None:
+            return None
+        token, remainder = parsed
+        # Slice by the number of characters consumed so inline styles on the
+        # remainder (bold, links) stay attached to the surviving text.
+        consumed = len(child.text.plain) - len(remainder)
+        child.text = child.text[consumed:]
+        if not child.text.plain:
+            self.elements = Renderables(list(self.elements)[1:])
+        self._admonition_token = token
+        return token
+
+
 class ViewmdMarkdown(Markdown):
-    """Markdown renderer with viewmd's code-block override wired in."""
+    """Markdown renderer with viewmd's element overrides wired in."""
 
     elements = {
         **Markdown.elements,
         "fence": ViewmdCodeBlock,
         "code_block": ViewmdCodeBlock,
+        "list_item_open": ViewmdListItem,
+        "blockquote_open": ViewmdBlockQuote,
     }
 
 
 def _make_console(buffer: io.StringIO, *, width: int, color: bool) -> Console:
+    # Both width and height must be set: Console.size ignores an explicit width
+    # (and returns 80x25) when force_terminal=True on a dumb/unknown TERM.
+    # Height is otherwise unused -- Markdown clears it on the render options.
     return Console(
         file=buffer,
         force_terminal=color,
         no_color=not color,
         color_system="truecolor" if color else None,
         width=width,
+        height=4096,
         highlight=False,
     )
 

@@ -422,7 +422,8 @@ class Graph:
         return self.grid.get(c) is None
 
     def _get_path(self, from_: GridCoord, to: GridCoord) -> list[GridCoord] | None:
-        return astar.find_path(from_, to, self._is_free_in_grid)
+        backward = GridCoord(-1, 0) if self.graph_direction == "LR" else GridCoord(0, -1)
+        return astar.find_path(from_, to, self._is_free_in_grid, backward=backward)
 
     def _edge_pair(self, a: int, b: int) -> tuple[int, int]:
         return (a, b) if a < b else (b, a)

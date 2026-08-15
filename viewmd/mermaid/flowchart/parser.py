@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from viewmd.mermaid.grid.label import GraphLabel, new_graph_label
+from viewmd.mermaid.textutil import strip_front_matter
 
 BOX_BORDER_PADDING = 1
 # Diverges from the upstream mermaid-ascii reference's own default of 5 for
@@ -128,9 +129,10 @@ def _has_graph_keyword(line: str) -> bool:
 
 
 def sniff(text: str) -> bool:
-    """Whether `text` opens with the `graph`/`flowchart` keyword (ignoring
-    blank lines and %% comments)."""
-    for line in text.split("\n"):
+    """Whether `text` opens with the `graph`/`flowchart` keyword (after an
+    optional YAML front-matter block, ignoring blank lines and %%
+    comments)."""
+    for line in strip_front_matter(text).split("\n"):
         trimmed = line.strip()
         if trimmed == "" or trimmed.startswith("%%"):
             continue
@@ -360,7 +362,7 @@ _END_RE = re.compile(r"^\s*end\s*$")
 
 def parse(text: str) -> GraphProperties:
     """Ported from cmd/parse.go's `mermaidFileToMap`."""
-    raw_lines = split_graph_lines(text)
+    raw_lines = split_graph_lines(strip_front_matter(text))
 
     lines: list[str] = []
     for line in raw_lines:

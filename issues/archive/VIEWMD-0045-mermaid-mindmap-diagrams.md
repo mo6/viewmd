@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0045
 title: Render Mermaid mindmap diagrams
-status: proposed
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-09
-updated: 2026-08-09
-accepted_by:
-accepted_at:
-commits: []
+updated: 2026-08-12
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-12
+commits: [218a589]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.19.0]"
 reason:
 ---
 
@@ -65,7 +65,11 @@ overall direction (`LR`/`RL`/`TD`/`BT`).
    root) untouched (fall back to showing the raw fence, or an explicitly empty render for the
    truly-empty case), same fallback discipline as the other Mermaid renderers'
    MUST-NOT-crash requirement.
-8. MUST NOT change behavior for any existing recognized Mermaid diagram type.
+8. MUST parse Mermaid's markdown-string label formatting -- `**bold**` and `*italic*` spans within
+   a node label (applied after shape-marker stripping, requirement 3) -- rendering them with real
+   ANSI bold/italic (`--color`-independent; this is text styling, not color) rather than leaving
+   the `*`/`**` markers as literal characters in the drawn label.
+9. MUST NOT change behavior for any existing recognized Mermaid diagram type.
 
 ## Non-goals
 
@@ -74,6 +78,9 @@ overall direction (`LR`/`RL`/`TD`/`BT`).
   plain text, matching flowchart/ER's existing posture of using one box style per diagram type
   rather than per-node shape variation within a tree.
 - Icons (`::icon()`) and CSS classes (`:::classname`).
+- The `tidy-tree` layout variant (a `%%{init}%%`-configured alternate global layout algorithm,
+  not a drawing-vocabulary addition) and any other `%%{init}%%` mindmap config -- out of scope for
+  this issue's single fan-out layout.
 - An exact match to termaid's specific left/right balancing heuristic (requirement 6) -- only that
   overflow to a second side happens at some reasonable threshold, not termaid's precise algorithm.
 - Matching any upstream reference implementation byte-for-byte -- the local `mermaid-ascii` Go
@@ -93,6 +100,13 @@ box/edge vocabulary -- termaid's own `renderer/mindmap.py` (~295 lines, the larg
 among its `renderer/` modules after `xychart.py`) computes per-subtree height recursively, then
 assigns each node a row range and draws corner/branch connectors bridging a parent's row to its
 children's row range; that recursive-height-then-connect approach is a reasonable starting point.
+
+For requirement 8 (bold/italic labels), `viewmd/mermaid/grid/canvas.py` already has `wrap_text_bold`
+and the combined `wrap_text_styled(text, *, fg=None, bg=None, bold=False, underline=False)` used by
+other Mermaid renderers for ANSI-wrapping label text -- reuse that pattern rather than inventing a
+new one. There is currently no italic SGR wrapper (`\x1b[3m`) anywhere in the codebase; add one
+alongside the existing bold/underline wrappers in `canvas.py` rather than hand-rolling escape codes
+at the mindmap call site.
 
 ### Reference examples (termaid's actual output)
 
@@ -151,7 +165,14 @@ same count) is left open for this issue, not dictated by this reference.
   all (not confirming an exact split point, which Non-goals leaves open).
 - A malformed `mindmap` fence and a truly-empty `mindmap` block (no root at all) both render
   without crashing viewmd, per requirement 7.
+- A label containing `**bold**`, `*italic*`, and both combined renders with the corresponding ANSI
+  SGR codes and no literal `*`/`**` markers left in the drawn text (requirement 8); a `color=False`
+  render still applies the bold/italic escapes (they're text styling, not color) while carrying no
+  color escapes, matching the other renderers' `color=False` posture.
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- 2026-08-12 (agent): PASS — left-fan suffix fix and outer-column alignment test hold; nested-left/overflow/project fixtures and full gate look good against VIEWMD-0045.
+- 2026-08-12 (George Moses): Accepted; commit and close.
 

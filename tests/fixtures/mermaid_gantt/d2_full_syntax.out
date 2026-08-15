@@ -1,0 +1,27 @@
+Adding GANTT diagram functionality to mermaid
+
+                                            01-06 01-09 01-12 01-15 01-18 01-21 01-24 01-27
+                                            ┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬────
+  A section
+    Completed task                          ████  │     │     │     │     │     │     │
+    Active task                             │     ▓▓▓▓▓▓▓▓▓▓  │     │     │     │     │
+    Future task                             │     │     │   ░░░░░░░░░░░░░░│     │     │
+    Future task2                            │     │     │     │     │     ░░░░░░░░░░░░░░
+  Critical tasks
+    Completed task in the critical line    [██]   │     │     │     │     │     │     │
+    Implement parser and jison              │  [████]   │     │     │     │     │     │
+    Create tests for parser                 │     │[▓▓▓▓▓▓▓▓▓▓]     │     │     │     │
+    Future task in critical line            │     │     │    [░░░░░░░░░░░░░░]   │     │
+    Create tests for renderer               │     │     │     │     │     │ ░░░░│     │
+    Add to mermaid                          │     │     │     │     │     │     ░░    │
+    Functionality added                     │     │     │     │     │     │     │ ◆   │
+  Documentation
+    Describe gantt syntax                   │   ▓▓▓▓▓▓▓▓▓▓    │     │     │     │     │
+    Add gantt diagram to demo page          │     │     │ ░░  │     │     │     │     │
+    Add another diagram to demo page        │     │     │ ░░░░│     │     │     │     │
+  Last section
+    Describe gantt syntax                   │     │     │     ░░░░░░░░░░  │     │     │
+    Add gantt diagram to demo page          │     │     │     │     │   ░░│     │     │
+    Add another diagram to demo page        │     │     │     │     │     ░░░░  │     │
+                                            ┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴────
+                                            01-06 01-09 01-12 01-15 01-18 01-21 01-24 01-27

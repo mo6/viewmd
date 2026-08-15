@@ -43,6 +43,19 @@ def wrap_words(text: str, max_width: int) -> list[str]:
     return lines
 
 
+def strip_front_matter(text: str) -> str:
+    """Skips a leading YAML front-matter block (`---\\n...\\n---`), the
+    mechanism Mermaid's own `title`/`config` overrides use. Its contents are
+    parsed away/ignored, not interpreted, but its mere presence must not
+    prevent the diagram keyword after it from being recognized."""
+    lines = text.split("\n")
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return "\n".join(lines[i + 1:])
+    return text
+
+
 def remove_comments(lines: list[str]) -> list[str]:
     """Drop Mermaid ``%%`` comments: full-line comments are removed outright,
     inline ``%%`` truncates the rest of the line. Lines left empty afterward are

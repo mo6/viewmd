@@ -25,7 +25,14 @@ class Glyphs:
 UNICODE = Glyphs(
     h="─", v="│", tl="┌", tr="┐", bl="└", br="┘",
     tee_d="┬", tee_u="┴", tee_l="┤", tee_r="├", cross="┼",
-    hd="┈", vd="┊",
+    # '·' (U+00B7 MIDDLE DOT) and ':' (U+003A COLON) rather than '┈'
+    # (U+2508) and '┊' (U+250A): those box-drawing dash glyphs sit outside
+    # the basic box-drawing block most monospace terminal fonts actually
+    # cover and render blank, making dashed relationship lines
+    # indistinguishable from empty space. Both replacements have
+    # near-universal monospace coverage and read as a consistent dotted
+    # style, matching VIEWMD-0021's fix for sequence-diagram dotted lines.
+    hd="·", vd=":",
 )
 
 ASCII = Glyphs(

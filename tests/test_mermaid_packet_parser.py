@@ -12,6 +12,7 @@ from viewmd.mermaid.packet.parser import Field, ParseError, parse, sniff
         ('PACKET-BETA\n0-15: "A"', True),
         ('packet\n0-15: "A"', True),
         ('PACKET\n0-15: "A"', True),
+        ('---\ntitle: T\n---\npacket-beta\n0-15: "A"', True),
         ('packet-beta title Foo\n0-15: "A"', False),  # no trailing tokens allowed
         ("packetFoo\nA-->B", False),
         ("sequenceDiagram\nA->>B: hi", False),
@@ -44,6 +45,11 @@ def test_empty_packet_has_no_fields():
     d = parse("packet-beta")
     assert d.fields == []
     assert d.title == ""
+
+
+def test_parse_tolerates_leading_front_matter():
+    d = parse('---\ntitle: Ignored\n---\npacket-beta\n0-15: "Source Port"')
+    assert d.fields == [Field(start=0, end=15, label="Source Port")]
 
 
 def test_multi_bit_field():

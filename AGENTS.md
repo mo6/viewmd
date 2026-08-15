@@ -6,6 +6,28 @@ rationale in [docs/PLAN.md](docs/PLAN.md) (the *why*), the security gate's runbo
 [docs/SECURITY.md](docs/SECURITY.md). This file is the process: how a change gets from idea to a
 release.
 
+**It's a Python package** (`viewmd/`, `requires-python = ">=3.10"` in `pyproject.toml`), depending
+on `rich` (rendering) and `wcwidth` (display-width math for grid layout — Mermaid diagrams, tables);
+dev-only deps are `pytest`, `ruff`, `pip-audit`. The CLI entry point is `viewmd = "viewmd.__main__:main"`
+(`pyproject.toml` `[project.scripts]`), runnable in dev via `./viewmd.sh`. Package layout:
+`viewmd/render.py` (Markdown → ANSI), `viewmd/mermaid/` (one parser+renderer pair per diagram type —
+flowchart, sequence, gantt, pie, kanban, quadrant, packet, ER, gitGraph), `viewmd/preprocessors.py`
+and `viewmd/frontmatter.py` (pre-render passes), `viewmd/wikilinks.py`, `viewmd/pager.py` (the `less`
+handoff). Maintainer tooling lives in `tools/*.py`/`tools/*.sh`, always invoked via `./tools.sh` (see
+below) — never run directly. **`./run-tests.sh` is the whole dev gate in one command**: `pytest`,
+`ruff check` (including the security-lint rules, `S`-prefixed, per `docs/SECURITY.md`), `pip-audit`,
+and `issues --check`; run it bare before considering any change done, or `./run-tests.sh <pytest args>`
+(e.g. `-k render -x`) for a tight iteration loop that skips straight to pytest. Each worktree needs
+its own `.venv` (`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`) since an editable
+install is bound to the path it was installed from — `./tools.sh worktree add` bootstraps this
+automatically. **When tracing into a dependency's source (e.g. `rich`, `wcwidth`) to understand
+how it renders or tokenizes something, look inside the project's own `.venv`
+(`.venv/lib/python*/site-packages/<pkg>/`), not a filesystem-wide search** — every dependency
+viewmd actually runs against lives there, already pinned to this project's exact installed
+version; a broad search can turn up an unrelated copy from some other tool's environment on the
+machine and lead to conclusions that don't hold for viewmd's own install.
+automatically. Fixtures for byte-for-byte-pinned renderer tests live under `tests/fixtures/`.
+
 **`main` is releases only; `develop` is where issues land.** Every `bug|feature|story/VIEWMD-NNNN`
 branch is cut from `develop` and merges back into `develop` (Definition of Done, below) — never
 into `main` directly. `main` only advances by merging `develop` into it as an explicit release
@@ -18,6 +40,12 @@ Once tagged and pushed (`git push origin main develop vX.Y.Z`), publish the matc
 release too (`gh release create vX.Y.Z --title vX.Y.Z --notes-file <path>`), using that version's
 `CHANGELOG.md` entry verbatim as the release notes — a version bump on `main` without a published
 GitHub release is an incomplete release.
+
+**Always invoke `tools/*` scripts through `./tools.sh <tool> [args...]`, never call a script under
+`tools/` directly (e.g. never `python3 tools/issues.py` or `python tools/issues.py`).** `./tools.sh`
+resolves the repo's own `.venv` regardless of current working directory, so calling a script
+directly risks running against the wrong (or no) interpreter/environment. `./tools.sh` with no
+arguments lists the available tools.
 
 **Issues live in [issues/](issues/README.md)** — one Markdown file per change (front matter plus
 testable prose), stating *what* a change must do, distinct from `docs/` (*why*) and
@@ -68,6 +96,29 @@ issues index (`./tools.sh issues`). Only after that second commit is the issue f
 
 **Branch naming**: `bug/VIEWMD-NNNN`, `feature/VIEWMD-NNNN`, or `story/VIEWMD-NNNN`, matching the
 issue it implements, cut from `develop`.
+
+**Every issue is implemented in its own sibling git worktree, never a plain branch checkout in
+the primary working directory — even when it's the only issue in flight.** A single checkout can
+only have one branch checked out at a time, so a second agent or editor session working there
+would either collide with the first's uncommitted changes or force a branch switch out from under
+it. The primary directory needs to stay free at all times so the maintainer can start a parallel
+session with any agent the moment they want to, not just when a second issue is already known to
+be needed — so this isn't only a "working multiple issues in parallel" rule, it's the default for
+starting *any* issue's implementation. `./tools.sh worktree add
+VIEWMD-NNNN [bug|feature|story]` (`tools/worktree.sh`) creates `../viewmd-VIEWMD-NNNN` as its own
+`git worktree` on the correctly-named branch cut from `develop`, with its own `.venv` bootstrapped
+(`pip install -e '.[dev]'`) so `./run-tests.sh`/`./tools.sh` work standalone from it — a `.venv`
+is not shareable across worktrees since an editable install is bound to the path it was installed
+from. `./tools.sh worktree list` shows every worktree and the `VIEWMD-NNNN` its branch implies;
+`./tools.sh worktree remove VIEWMD-NNNN` removes the directory (refusing if it has uncommitted
+changes, same as plain `git worktree remove`) but deliberately leaves the branch itself alone —
+delete it yourself with `git branch -d` once the work has actually landed on `develop`, so
+"stop working here" can never be confused with "throw this away." Point a Claude Code session at
+an existing worktree with `EnterWorktree`'s `path:` argument (or just `cd`); point a Cursor window
+at one by opening the sibling directory as its own window. A worktree changes *where* an issue is
+worked, not the process it is worked under — each one still goes through the same Definition of
+Ready/Done gates (`issues/AGILE.md`) independently, and any conflict between two worktrees editing
+the same file surfaces the normal way, at merge time into `develop`.
 
 **Attribute commits and `accepted_by:` from `.gitconfig`, never a guessed or session-supplied
 identity.** Run `git config user.name`/`git config user.email` (or check committed history, e.g.
