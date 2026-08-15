@@ -99,6 +99,27 @@ def test_callout_matches_fixture(name):
     assert render_markdown(md, width=60, color=False) == expected
 
 
+_CANONICAL_ICONS = {
+    "NOTE": "📝",
+    "TIP": "💡",
+    "IMPORTANT": "❗",
+    "CAUTION": "🛑",
+}
+
+
+def test_warning_header_uses_hand_adjusted_double_space():
+    # ⚠️ (U+26A0+U+FE0F) renders a column wider than wcswidth reports in
+    # several terminals; the issue's mockup hand-adjusts for it with a
+    # second space before the label, unlike every other icon (VIEWMD-0059).
+    header = render_markdown("> [!WARNING]\n> body\n", width=60, color=False).splitlines()[1]
+    assert "⚠️  WARNING" in header
+    for kind in ("NOTE", "TIP", "IMPORTANT", "CAUTION"):
+        md = f"> [!{kind}]\n> body\n"
+        other_header = render_markdown(md, width=60, color=False).splitlines()[1]
+        icon = _CANONICAL_ICONS[kind]
+        assert f"{icon}  " not in other_header
+
+
 @pytest.mark.parametrize("kind", CANONICAL)
 def test_header_and_body_borders_share_display_width(kind):
     md = f"> [!{kind}]\n> body text here\n"

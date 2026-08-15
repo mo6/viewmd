@@ -145,6 +145,11 @@ _CALLOUT_H, _CALLOUT_V = "─", "│"
 class _AdmonitionKind:
     icon: str
     color: str
+    # Spaces between the icon and the label in the header. Normally 1; some
+    # terminals render a base-codepoint+VS16 pair (e.g. WARNING's ⚠️) one
+    # column wider than `wcswidth` reports, visually crowding the label --
+    # this widens the gap to compensate, hand-verified per icon (VIEWMD-0059).
+    icon_pad: int = 1
 
 
 # GitHub's five canonical alert types. Colors follow Primer's dark-theme
@@ -153,7 +158,9 @@ _CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
     "NOTE": _AdmonitionKind("📝", "#58a6ff"),
     "TIP": _AdmonitionKind("💡", "#3fb950"),
     "IMPORTANT": _AdmonitionKind("❗", "#bc8cff"),
-    "WARNING": _AdmonitionKind("⚠️", "#d29922"),  # U+26A0+U+FE0F; wcswidth==2, verified in-terminal
+    # U+26A0+U+FE0F; wcswidth==2, but renders a column wider than that in
+    # several terminals -- icon_pad=2 compensates, hand-verified in-terminal.
+    "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2),
     "CAUTION": _AdmonitionKind("🛑", "#f85149"),
 }
 _GENERIC_ADMONITION = _AdmonitionKind("", "default")
@@ -216,7 +223,7 @@ class ViewmdBlockQuote(BlockQuote):
         width = options.max_width
         label = token.upper()
         left = f"{_CALLOUT_TL}{_CALLOUT_H} "
-        mid = f"{kind.icon} {label} " if kind.icon else f"{label} "
+        mid = f"{kind.icon}{' ' * kind.icon_pad}{label} " if kind.icon else f"{label} "
         right = _CALLOUT_TR
         fill = max(0, width - _display_width(left) - _display_width(mid) - _display_width(right))
         header = left + mid + (_CALLOUT_H * fill) + right
