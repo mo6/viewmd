@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0040
 title: Render Mermaid block-beta diagrams
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-08
 updated: 2026-08-15
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-15
-commits: []
+commits: [009339e, 141af19, 1506bed, cf7809b]
 related: [VIEWMD-0053, VIEWMD-0054, VIEWMD-0055, VIEWMD-0056, VIEWMD-0057]
 supersedes: []
-changelog:
+changelog: "[1.20.0]"
 reason:
 ---
 
