@@ -20,12 +20,16 @@ from viewmd.mermaid.grid.coords import GridCoord
 _NEIGHBOR_OFFSETS = (GridCoord(1, 0), GridCoord(-1, 0), GridCoord(0, 1), GridCoord(0, -1))
 
 # Cost encoding: one grid step costs `_STEP`, a direction change costs
-# `_CORNER` on top. `_STEP` is larger than any plausible corner-count
-# difference on a flowchart grid, so a longer Manhattan path can never beat a
-# shorter one just by taking fewer turns (VIEWMD-0025 req. 2) -- corners only
-# tie-break among equal-length candidates.
-_STEP = 10_000
-_CORNER = 1
+# `_CORNER` on top, and a step running against the graph's forward axis (e.g.
+# north in a TD graph) costs a further `_BACKWARD` on top of that. `_STEP` is
+# larger than any plausible corner-count difference on a flowchart grid, and
+# `_CORNER` is in turn larger than any plausible backward-step-count
+# difference, so neither tie-break can ever make a longer or cornier path win
+# over a shorter/straighter one (VIEWMD-0025 req. 2) -- each only tie-breaks
+# among candidates the tier above it already found equal.
+_STEP = 1_000_000
+_CORNER = 100
+_BACKWARD = 1
 
 # Heap / came_from / cost_so_far carry the inbound step direction alongside the
 # coordinate: arriving at the same cell going straight vs via a turn are
@@ -96,10 +100,20 @@ def heuristic(a: GridCoord, b: GridCoord) -> int:
     return (abs(a.x - b.x) + abs(a.y - b.y)) * _STEP
 
 
-def find_path(start: GridCoord, goal: GridCoord, is_free) -> list[GridCoord] | None:
+def find_path(
+    start: GridCoord, goal: GridCoord, is_free, backward: GridCoord | None = None
+) -> list[GridCoord] | None:
     """`is_free(coord) -> bool` reports whether a grid cell is free to route
     through; the goal cell is always treated as reachable even if occupied
-    (it's inside the target node's own border)."""
+    (it's inside the target node's own border).
+
+    `backward`, if given, is the single-axis unit step (e.g. `GridCoord(0,
+    -1)` for "north") that counts as going against the graph's forward
+    direction; a detour that must backtrack that way costs a small tie-break
+    penalty on top of `_CORNER`, so among equal-length/equal-corner
+    candidates the one that stays forward (e.g. loops around below a TD
+    node's row rather than doubling back above it, past already-drawn
+    content) wins."""
     heap = _GoHeap()
     start_state: _State = (start, None)
     heap.push((0, 0, start, None))
@@ -126,7 +140,8 @@ def find_path(start: GridCoord, goal: GridCoord, is_free) -> list[GridCoord] | N
             if not is_free(nxt) and nxt != goal:
                 continue
             turn = 0 if current_dir is None or current_dir == offset else _CORNER
-            new_cost = path_cost + _STEP + turn
+            back = _BACKWARD if offset == backward else 0
+            new_cost = path_cost + _STEP + turn + back
             nxt_state: _State = (nxt, offset)
             if nxt_state not in cost_so_far or new_cost < cost_so_far[nxt_state]:
                 cost_so_far[nxt_state] = new_cost
