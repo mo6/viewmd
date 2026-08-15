@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.22.0] — 2026-08-15
+
+- **Render Obsidian/GitHub-style admonition callouts** (VIEWMD-0059, render): a blockquote whose first line is a `[!TYPE]` marker (`> [!NOTE]`, `> [!WARNING]`, ...) now renders as a bordered, colored callout card with the type's icon and label in its top border, instead of the marker text leaking into a plain blockquote body. GitHub's five canonical types (NOTE/TIP/IMPORTANT/WARNING/CAUTION) get their own icon and color; any other `[!TYPE]` still renders as a generic card, and a malformed marker falls back to today's plain blockquote. See `docs/example.md`.
+
 ## [1.21.0] — 2026-08-15
 
 - **Render GFM task list checkboxes** (VIEWMD-0058, render): a bullet list item starting with `[x]`/`[X]`/`[ ]` now shows ✅ or ⬜ in place of the plain `•`, with the marker stripped from the label and checked items dimmed and struck through, so the raw GFM syntax no longer leaks into the render. See `docs/example.md`.
