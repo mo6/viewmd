@@ -227,3 +227,5 @@ otherwise have been uneven.
   followed by whitespace or end-of-string). Added a `keyword_alias` fixture and
   `docs/mermaid-block.md` (via `tools/combine_fixtures.sh`) demonstrating both spellings render
   identically. `./run-tests.sh` green (731 passed, 5 more).
+- **George Moses** (maintainer), 2026-08-15: approved -- reviewed the agent's implementation pass,
+  the block/block-beta keyword fix, and the demo page/GIF addition; merge it.
