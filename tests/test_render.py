@@ -319,3 +319,67 @@ def test_quadrant_chart_is_colored_only_when_color_enabled():
     assert ANSI_RE.search(plain) is None
     assert ANSI_RE.search(colored) is not None
     assert strip_ansi(colored) == plain
+
+
+# Rich's Style(dim=True, strike=True) is SGR 2 (dim) + 9 (strikethrough).
+DIM_STRIKE_ANSI = re.compile(r"\x1b\[2;9m")
+
+# Pre-VIEWMD-0058 output of a plain bullet list at width=80, color=False -- the
+# task-list override must not change a non-task item's rendering at all.
+PLAIN_BULLET_LIST_MD = "- item one\n- item two\n"
+PLAIN_BULLET_LIST_NO_COLOR = (
+    "\n • item one                                                                     \n"
+    " • item two                                                                     \n"
+)
+
+
+def test_gfm_task_list_renders_checkbox_glyphs():
+    md = "- [x] Write the draft\n- [x] Review it\n- [ ] Publish\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert out.count("✅") == 2
+    assert out.count("⬜") == 1
+    assert "[x]" not in out
+    assert "[ ]" not in out
+    assert "Write the draft" in out
+    assert "Review it" in out
+    assert "Publish" in out
+    # `[X]` is the same checked marker as `[x]`.
+    upper = strip_ansi(render_markdown("- [X] Upper\n", width=80, color=False))
+    assert "✅" in upper
+    assert "[X]" not in upper
+    assert "Upper" in upper
+
+
+def test_gfm_task_list_checked_items_are_dimmed_and_struck():
+    md = "- [x] Write the draft\n- [x] Review it\n- [ ] Publish\n"
+    plain = render_markdown(md, width=80, color=False)
+    assert ANSI_RE.search(plain) is None
+    out = render_markdown(md, width=80, color=True)
+    checked = [
+        line
+        for line in out.splitlines()
+        if "Write the draft" in strip_ansi(line) or "Review it" in strip_ansi(line)
+    ]
+    unchecked = [line for line in out.splitlines() if "Publish" in strip_ansi(line)]
+    assert len(checked) == 2
+    assert len(unchecked) == 1
+    for line in checked:
+        assert DIM_STRIKE_ANSI.search(line) is not None
+    for line in unchecked:
+        assert DIM_STRIKE_ANSI.search(line) is None
+        assert "\x1b[9m" not in line
+        assert "\x1b[2m" not in line
+
+
+def test_plain_bullet_list_rendering_is_unchanged():
+    out = render_markdown(PLAIN_BULLET_LIST_MD, width=80, color=False)
+    assert out == PLAIN_BULLET_LIST_NO_COLOR
+
+
+def test_gfm_task_list_unknown_marker_renders_as_plain_text():
+    out = strip_ansi(render_markdown("- [y] not a task\n- [x]no-space\n", width=80, color=False))
+    assert "•" in out
+    assert "✅" not in out
+    assert "⬜" not in out
+    assert "[y] not a task" in out
+    assert "[x]no-space" in out

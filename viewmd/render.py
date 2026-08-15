@@ -3,11 +3,13 @@
 import io
 
 from rich import box
+from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderResult
-from rich.markdown import CodeBlock, Markdown
+from rich.markdown import CodeBlock, ListItem, Markdown, Paragraph
 from rich.markup import escape
 from rich.rule import Rule
 from rich.segment import Segment
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.table import Table
 
@@ -50,13 +52,86 @@ class ViewmdCodeBlock(CodeBlock):
             yield from line
 
 
+# GFM task-list prefixes as they appear in the already-parsed list-item text
+# (rich's MarkdownIt build has no task-list rule, so `[x] ` is literal text).
+_TASK_MARKERS = {
+    "[ ] ": False,
+    "[x] ": True,
+    "[X] ": True,
+}
+_TASK_CHECKED_BULLET = " ✅ "
+_TASK_UNCHECKED_BULLET = " ⬜ "
+_TASK_CHECKED_STYLE = Style(dim=True, strike=True)
+
+
+class ViewmdListItem(ListItem):
+    """A bullet-list item that renders GFM task-list checkboxes as glyphs.
+
+    ``rich.markdown.Markdown`` does not enable a task-list rule, so a source
+    line like ``- [x] label`` arrives as an ordinary list item whose text
+    starts with the literal ``[x] ``. Detect that prefix (and ``[ ] `` /
+    ``[X] ``), swap the default ``•`` bullet for ``✅`` / ``⬜``, strip the
+    marker from the label, and dim+strike a checked item's remaining text.
+    Anything else -- including a lookalike like ``[y]`` -- falls through to
+    ``ListItem.render_bullet`` unchanged (VIEWMD-0058).
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._task_checked: bool | None = None
+        self._task_inspected = False
+
+    def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        checked = self._apply_task_marker()
+        if checked is None:
+            yield from super().render_bullet(console, options)
+            return
+
+        glyph = _TASK_CHECKED_BULLET if checked else _TASK_UNCHECKED_BULLET
+        glyph_width = cell_len(glyph)
+        render_options = options.update(width=options.max_width - glyph_width)
+        lines = console.render_lines(self.elements, render_options, style=self.style)
+        bullet_style = console.get_style("markdown.item.bullet", default="none")
+        bullet = Segment(glyph, bullet_style)
+        padding = Segment(" " * glyph_width, bullet_style)
+        new_line = Segment("\n")
+        first = True
+        for line in lines:
+            yield bullet if first else padding
+            yield from line
+            yield new_line
+            first = False
+
+    def _apply_task_marker(self) -> bool | None:
+        """Strip a leading GFM task marker from the first paragraph, if present.
+
+        Returns True (checked), False (unchecked), or None (not a task item).
+        Idempotent: a second call returns the same answer without re-stripping.
+        """
+        if self._task_inspected:
+            return self._task_checked
+        self._task_inspected = True
+        child = next(iter(self.elements), None)
+        if not isinstance(child, Paragraph):
+            return None
+        for prefix, checked in _TASK_MARKERS.items():
+            if child.text.plain.startswith(prefix):
+                child.text = child.text[len(prefix) :]
+                if checked:
+                    child.text.stylize(_TASK_CHECKED_STYLE)
+                self._task_checked = checked
+                return checked
+        return None
+
+
 class ViewmdMarkdown(Markdown):
-    """Markdown renderer with viewmd's code-block override wired in."""
+    """Markdown renderer with viewmd's element overrides wired in."""
 
     elements = {
         **Markdown.elements,
         "fence": ViewmdCodeBlock,
         "code_block": ViewmdCodeBlock,
+        "list_item_open": ViewmdListItem,
     }
 
 
