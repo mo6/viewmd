@@ -1,4 +1,4 @@
-"""Tests for Obsidian/GitHub-style admonition callouts (VIEWMD-0059)."""
+"""Tests for Obsidian/GitHub-style admonition callouts (VIEWMD-0059, VIEWMD-0060)."""
 
 from __future__ import annotations
 
@@ -120,6 +120,19 @@ def test_warning_header_uses_hand_adjusted_double_space():
         assert f"{icon}  " not in other_header
 
 
+# wcwidth reports width 2 for ⚠️ (Unicode's emoji-presentation rule for the
+# U+26A0+U+FE0F pair), but several terminal fonts render it narrow (1
+# column) since, unlike NOTE/TIP/CAUTION's fully-astral-plane icons, it has
+# a legitimate narrow fallback glyph -- and unlike IMPORTANT's ❗, where
+# wcswidth and per-character wcwidth already agree on 2 (no override).
+# WARNING's header is intentionally sized for that narrower, hand-verified
+# real width (VIEWMD-0060) rather than wcswidth's academically-correct-but-
+# empirically-wrong verdict, so wcswidth deliberately measures it as 1
+# column "too wide" -- this locks in that exact, intentional gap instead of
+# asserting flat equality.
+_WCWIDTH_OVERSHOOT = {"WARNING": 1}
+
+
 @pytest.mark.parametrize("kind", CANONICAL)
 def test_header_and_body_borders_share_display_width(kind):
     md = f"> [!{kind}]\n> body text here\n"
@@ -128,8 +141,10 @@ def test_header_and_body_borders_share_display_width(kind):
         for ln in strip_ansi(render_markdown(md, width=60, color=False)).splitlines()
         if ln.strip()
     ]
-    widths = {display_width(ln) for ln in lines}
-    assert widths == {60}
+    header, *body, footer = lines
+    assert display_width(footer) == 60
+    assert all(display_width(ln) == 60 for ln in body)
+    assert display_width(header) == 60 + _WCWIDTH_OVERSHOOT.get(kind, 0)
 
 
 @pytest.mark.parametrize("kind", CANONICAL)
