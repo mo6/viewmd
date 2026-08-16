@@ -12,7 +12,7 @@ Rich's `Console` auto-disables color when its output isn't a tty — which is al
 
 ## Paging: spawn `$PAGER` ourselves, not `rich.console.Console.pager()`
 
-Rich ships a `Console.pager()` context manager, but it pages unconditionally and doesn't give control over the tty-detection policy this tool wants (page only when *our* stdout is a terminal, honor `--no-pager`, honor a user's `$PAGER` override). `pager.py` implements that policy directly: `should_page()` is `sys.stdout.isatty() and not no_pager_flag`, and `display()` spawns `$PAGER` (default `less -R -F -X`) as a subprocess, feeding it the already-rendered ANSI text. This mirrors how `git`'s pager decision works, which is the behavior being copied (auto-page like `git log`/`bat`).
+Rich ships a `Console.pager()` context manager, but it pages unconditionally and doesn't give control over the tty-detection policy this tool wants (page only when *our* stdout is a terminal, honor `--no-pager`, honor a user's `$PAGER` override). `pager.py` implements that policy directly: `should_page()` is `sys.stdout.isatty() and not no_pager_flag`, and `display()` spawns `$PAGER` (default `less -R -F -X --mouse`) as a subprocess, feeding it the already-rendered ANSI text. This mirrors how `git`'s pager decision works, which is the behavior being copied (auto-page like `git log`/`bat`).
 
 ## Front matter: a hand-written flat parser, not a YAML dependency
 
@@ -35,6 +35,14 @@ The `wikilink:` scheme is inert (never expected to be opened). The pass tracks f
 state (tolerant of leading indentation, so a fence nested under a list item still counts) and
 skips single-backtick inline code spans, so wikilink-shaped text inside real code (e.g. a Lua
 long-bracket string literal `[[...]]`) is left untouched.
+
+## Config file: a flat key=value file, not TOML
+
+viewmd reads `$XDG_CONFIG_HOME/viewmd/config` (falling back to `~/.config/viewmd/config`) as a hand-rolled `key = value` file rather than TOML or YAML. `tomllib` is stdlib only from Python 3.11 and this package still supports 3.10, so TOML would mean a new runtime dependency (`tomli`) just to parse a handful of keys; YAML would be the same cost for no benefit over a format whose entire grammar is "one key, one equals, one value." `configparser` INI was the other stdlib option, but it requires a `[section]` header even for a single flat set of keys, which is ceremony a small file doesn't earn. Unknown keys are ignored so a future key (pager preferences, a ToC depth option) can appear in an already-written file without this parser changing. CLI flags override the file; the file overrides built-in defaults; a missing file is the built-in-defaults case, not an error. `VIEWMD_NO_CONFIG` and `--config PATH` exist so tests and CI never pick up a developer's own file.
+
+## Table of contents: the same parse as the body, not a second one
+
+The ToC (VIEWMD-0062) is built from `ViewmdMarkdown.parsed` -- the markdown-it token stream Rich already produced to render the body -- rather than a second `MarkdownIt().parse(body)` just for headings. Two independent parses of the same source can disagree (a preprocessor, a plugin, or a future Rich change that enables extra rules would only affect one of them); walking the tokens the body render will actually consume is what keeps the outline honest. A leading h1 is the document title, not a ToC row: it is sliced out of that same token stream and rendered once above the outline (the rest of the stream continues below), so it is not duplicated as a flush-left ToC line and not repeated below, and so a reference-style link in the title still resolves against a `[label]: url` defined later in the document. h1/h2/h3 only, in document order, with no attempt to "fix" irregular nesting (an `h3` before any `h1` is indented two steps, not promoted). Depth is not a user option: the ToC starts at three levels and steps down to h1–h2, then h1-only, when a deeper outline would exceed 20 entries, so a long document's ToC stays an at-a-glance outline rather than a second copy of the body. Every remaining h1 is kept even past that cap -- dropping the document's top-level titles would make the outline less useful than a slightly-too-long one. Entries reuse Rich's `markdown.h1`/`h2`/`h3` styles so they match the body's heading weight and color, but stay left-aligned with indent -- the body's centered h1 layout would make a ToC unreadable.
 
 ## Out of scope
 

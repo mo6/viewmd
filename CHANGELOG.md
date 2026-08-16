@@ -4,6 +4,42 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.30.1] — 2026-08-16
+
+- **Truncate an overflowing table of contents and render it as a bulleted list** (VIEWMD-0068, render): the 20-entry cap no longer only drops heading depth -- a flat outline (one `#` title plus many `##` sections, like `CHANGELOG.md`) that could not shrink that way is truncated to the first 20 entries with a trailing `... N more` note, instead of listing every heading unbounded. Each entry also gets the same ` • ` marker and nest indent as the body's own Markdown bullet lists, while keeping its heading-level text styling.
+
+## [1.30.0] — 2026-08-16
+
+- **Mouse/trackpad scroll-wheel support in the default `less` pager** (VIEWMD-0067, cli): `--mouse` is now appended to the default pager invocation (`less -R -F -X -S --mouse`), so a reader's mouse wheel or trackpad scroll gesture actually scrolls viewmd's paged output, the way it does in a bare `less somefile` today. Root cause was `-X` (`--no-init`) skipping the terminal's alternate-screen switch, which most terminals rely on to route wheel events to the foreground program; `--mouse` enables wheel scrolling independent of that. Only viewmd's own default changes -- an explicit `$PAGER` override is still used verbatim, unmodified.
+
+## [1.29.0] — 2026-08-16
+
+- **Heading-derived table of contents** (VIEWMD-0062, render): a document with two or more `#` / `##` / `###` headings now gets an indented outline under its leading `#` title (that title is not repeated in the list or again below it). The outline starts at three levels and steps down to h1–h2, then h1-only, if it would otherwise exceed 20 entries; remaining `#` headings are always kept. On by default; `--no-toc` turns it off, `--toc` turns it back on (including to override a config-file `toc` key). See the README.
+
+## [1.28.0] — 2026-08-16
+
+- **Color a combo chart's bar background where its line crosses it** (VIEWMD-0066, render/mermaid): where an XY-chart combo's `line` dataset draws over a cell a `bar` dataset would otherwise have filled, that cell now keeps the bar's own color as a true-color ANSI background underneath the line's glyph, instead of the line erasing all trace of the bar's color. The line's own foreground color and every glyph's placement are unchanged; a cell the line never touches, a line-only chart, and `color=False` output are all unaffected. See `poc/xychart/line_bg_poc.py` for a real-color before/after.
+
+## [1.27.0] — 2026-08-16
+
+- **User-global config file for standing CLI defaults** (VIEWMD-0061, cli): a flat `key = value` file at `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config`) now supplies default values for `--width`, `--color`, and `--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An explicit CLI flag always overrides the file; a missing file changes nothing (today's no-config behavior is unchanged). `--config PATH` reads from an explicit alternate location, and `VIEWMD_NO_CONFIG` skips config-file reading entirely. See the README's "Configuration file" section.
+
+## [1.26.0] — 2026-08-16
+
+- **Per-bar color and inter-bar gap for Mermaid XY-chart bars** (VIEWMD-0064, render/mermaid): the `bar` dataset's bars each get their own hue, cycling a small categorical palette by category index, instead of sharing one fixed color; a one-column gap between adjacent bars keeps their shapes visually distinct with color on or off. The gap sits before each bar rather than after (except the first, which has no left neighbor to share it with), keeping a combo chart's bar fill out of the one column its line dataset can legitimately overwrite — a peer-review finding against the initial implementation, fixed before landing. The line dataset's own hue, positioning, and layering over bars are unchanged. See `docs/mermaid-xychart.md`.
+
+## [1.25.0] — 2026-08-16
+
+- **View a directory: index note lookup, else a listing** (VIEWMD-0065, cli/render): passing a directory `path` argument no longer fails with `IsADirectoryError`. If the directory contains an `_Index.md` note (exact case), it renders exactly as if that file's path had been passed directly; otherwise viewmd renders a one-level table-of-contents listing of the directory's immediate subdirectories and Markdown files, each with a title (front-matter `title`, else the first heading, else the filename) and last-modified time. Applies consistently in both single-path and multi-path CLI modes.
+
+## [1.24.0] — 2026-08-16
+
+- **Color Mermaid XY-chart bar and line datasets** (VIEWMD-0063, render/mermaid): with color available, the `bar` dataset's fill glyphs and the `line` dataset's step/staircase glyphs each get their own fixed hue, so a combo chart's two series are distinguishable at a glance instead of only by glyph shape; axis lines, tick labels, category labels, and the title stay plain. Output is byte-identical to before with color off. See `docs/mermaid-xychart.md`.
+
+## [1.23.0] — 2026-08-16
+
+- **Render Mermaid XY charts** (VIEWMD-0048, render/mermaid): an eleventh Mermaid diagram type, `xychart-beta` (or its bare `xychart` alias) -- plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁`-`█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes. The plot area sizes itself from `--width` (capped at the full viewport, never narrower than half of it), with a monospace-cell-aspect-corrected height so the plot reads ~1:1 at its narrowest and never flatter than 2:1 at its widest, and y-axis ticks snap to a nice 1/2/5 x 10^k spacing rather than an arbitrary fraction of the axis range. No upstream reference implementation to differentially test against, so fixtures are hand-authored/visually verified. See `docs/example.md` and `docs/mermaid-xychart.md`.
+
 ## [1.22.1] — 2026-08-15
 
 - **Fix WARNING admonition border misalignment** (VIEWMD-0060, render): the `WARNING` callout card's (VIEWMD-0059) right border landed short of the other cards' in several real terminals, since the header's dash-fill trusted `wcwidth`'s width-2 verdict for the `⚠️` icon even though several terminal fonts render it narrow (1 column). The header now sizes for that hand-verified narrower width instead. See `docs/example.md`.

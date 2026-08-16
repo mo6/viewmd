@@ -1,8 +1,8 @@
 # Contributing
 
-viewmd is a personal project maintained by a single person (pre-1.0, in initial development), but
-contributions are welcome. This file is the short version; [AGENTS.md](AGENTS.md) is the
-authoritative process doc — read it before opening a PR.
+viewmd is a personal project maintained by a single person (actively developed, no stability
+guarantee yet), but contributions are welcome. This file is the short version;
+[AGENTS.md](AGENTS.md) is the authoritative process doc — read it before opening a PR.
 
 ## Before you write code
 

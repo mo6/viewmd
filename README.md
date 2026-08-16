@@ -17,13 +17,15 @@ python3 -m venv .venv
 ## Usage
 
 ```
-./viewmd.sh README.md              # renders and pages into $PAGER (less -R -F -X) if stdout is a terminal
+./viewmd.sh README.md              # renders and pages into $PAGER (less -R -F -X --mouse) if stdout is a terminal
 ./viewmd.sh README.md --no-pager   # print rendered ANSI straight to stdout, no pager
 cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --color=never  # plain text, no ANSI color
 ./viewmd.sh notes.md --width 80     # render at exactly 80 columns
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
+./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
+./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
@@ -39,10 +41,19 @@ followed by a divider, ahead of the document body. Parsing covers flat `key: val
 with no value are omitted from the table by default; `--full-front-matter` shows every field,
 empty ones included.
 
+A document with two or more `#` / `##` / `###` headings also gets a table of contents: the leading `#` title renders first (as a normal heading), then a bulleted outline of the remaining headings, then the rest of the body. The outline starts at three levels and steps down to h1–h2, then to h1-only, if it would otherwise exceed 20 entries; if that cut still overflows, it is truncated to the first 20 with a trailing `... N more` note. `--no-toc` turns it off; `--toc` turns it back on (for example to override a config file that disabled it). `h4` and deeper headings stay in the body but are left out of the outline.
+
 Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
 preceded by a heading naming its path and separated by a divider, concatenated into a single
 `less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
 scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
+
+Passing a directory renders its `_Index.md` if one exists (exact case match), exactly as if that
+file had been passed directly; otherwise it renders a table-of-contents listing of the
+directory's immediate entries (subdirectories first, then Markdown files, each alphabetically) —
+a file's title (from front matter, its first heading, or its filename) and last-modified time,
+one level deep, no recursion. This applies the same way whether the directory is the only `path`
+argument or one of several.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
@@ -61,13 +72,53 @@ Obsidian-only aliases) still renders as a generic card, using the type token as 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
+## Configuration file
+
+A per-user config file supplies default values for `--width`, `--color`,
+`--full-front-matter`, and `--toc`, so a standing preference doesn't need to be passed on every
+invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
+are the flags that turn those defaults back off if the file sets them on); a missing file is not
+an error — it's the same as viewmd's built-in defaults.
+
+To set one up:
+
+```
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd"
+cat > "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd/config" <<'EOF'
+width = 80
+color = never
+full_front_matter = true
+toc = false
+EOF
+```
+
+viewmd looks for the file at `$XDG_CONFIG_HOME/viewmd/config` if `XDG_CONFIG_HOME` is set and
+non-empty, otherwise `~/.config/viewmd/config`. It's a flat `key = value` file, one setting per
+line; blank lines, `# comment` lines, and an optional `[section]` header are all ignored. Known
+keys:
+
+| Key | Values | Mirrors |
+|---|---|---|
+| `width` | a positive integer, or `full` | `--width` |
+| `color` | `auto`, `always`, or `never` | `--color` |
+| `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
+| `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
+
+An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
+value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
+silently falling back. `--config PATH` reads configuration from `PATH` instead of the default
+location — useful for a one-off alternate profile. Setting `VIEWMD_NO_CONFIG` to any non-empty
+value skips reading a config file entirely, regardless of what's on disk — handy for CI or a
+reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
+even then, since it's explicit).
+
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
 `erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`,
-`mindmap`, or `block-beta`/`block` renders as box-drawing ASCII art in place of its source. Other
-Mermaid diagram types, and any block that fails to parse, are left as plain source text rather
-than causing an error. See
+`mindmap`, `block-beta`/`block`, or `xychart-beta`/`xychart` renders as box-drawing ASCII art in
+place of its source. Other Mermaid diagram types, and any block that fails to parse, are left as
+plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -160,6 +211,10 @@ width; a `:N` suffix lets a block span multiple columns, widening to match their
 blocks sharing a grid column equalize to the widest one in that column, even across rows. A block
 can optionally connect to another same-row block via a plain flowchart-style `-->` arrow. See
 [docs/mermaid-block.md](docs/mermaid-block.md) for more block-diagram fixtures.
+
+### XY charts
+
+An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁` through `█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes, drawn on top of the bars in a combo chart. Like pie and quadrant, the plot sizes itself from `--width` -- capped at the full viewport and never narrower than half of it, with height near-square at that floor and never flatter than 2:1. Horizontal orientation, extra series, and a numeric x-axis are not supported. See [docs/mermaid-xychart.md](docs/mermaid-xychart.md) and [docs/nvidia-stock-xychart.md](docs/nvidia-stock-xychart.md) for more.
 
 ## Development
 

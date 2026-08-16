@@ -1,8 +1,10 @@
 """Render Markdown text to an ANSI string using Rich."""
 
 import io
+import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from rich import box
 from rich.cells import cell_len
@@ -16,11 +18,16 @@ from rich.segment import Segment
 from rich.style import Style
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 from wcwidth import wcswidth
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
+
+# The per-directory landing note viewmd looks for when a `path` argument is a directory
+# (VIEWMD-0065), analogous to Obsidian-style vault index notes.
+INDEX_FILENAME = "_Index.md"
 
 
 class ViewmdCodeBlock(CodeBlock):
@@ -322,7 +329,154 @@ def _make_console(buffer: io.StringIO, *, width: int, color: bool) -> Console:
     )
 
 
-def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bool = False) -> str:
+# Rich's ListItem.render_bullet prefixes each item with " • " (3 columns) and nested
+# lists inherit that indent, so each heading level below h1 steps 3 columns -- matching
+# the body's own Markdown bullet lists (VIEWMD-0068).
+_TOC_BULLET = " • "
+_TOC_NEST_COLUMNS = 3
+_TOC_LEVELS = {"h1": 1, "h2": 2, "h3": 3}
+# Cap on ToC *entries* (one per included heading), not wrapped terminal rows.
+_TOC_MAX_ENTRIES = 20
+
+
+@dataclass(frozen=True)
+class HeadingOutline:
+    """One h1/h2/h3 heading as it appears in the document, for the table of contents."""
+
+    text: str
+    level: int  # 1, 2, or 3
+
+
+def _inline_plain_text(token) -> str:
+    """Collect visible text from a markdown-it inline token, dropping markup tokens.
+
+    A heading's following ``inline`` token still carries the raw markup in ``content``
+    (``**bold**``, ``[link](url)``); the parsed children hold the readable text.
+    """
+    if token.children:
+        return "".join(_inline_plain_text(child) for child in token.children)
+    if token.type in {"text", "code_inline"}:
+        return token.content
+    return ""
+
+
+def heading_outline(markdown: Markdown) -> list[HeadingOutline]:
+    """h1/h2/h3 headings in document order, taken from ``markdown.parsed``.
+
+    Walks Rich's already-parsed markdown-it token stream (the same one the body
+    render uses) so the ToC cannot disagree with what the body itself treats as a
+    heading (VIEWMD-0062). h4+ tokens are skipped. Headings inside fenced code are
+    not in this stream as ``heading_open`` (they stay fence content).
+    """
+    outline: list[HeadingOutline] = []
+    tokens = markdown.parsed
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token.type == "heading_open":
+            level = _TOC_LEVELS.get(token.tag)
+            if level is not None:
+                text = ""
+                if i + 1 < len(tokens) and tokens[i + 1].type == "inline":
+                    text = _inline_plain_text(tokens[i + 1])
+                outline.append(HeadingOutline(text=text, level=level))
+        i += 1
+    return outline
+
+
+def _fit_toc_outline(outline: list[HeadingOutline]) -> tuple[list[HeadingOutline], int]:
+    """Pick the deepest heading level whose ToC still fits in ``_TOC_MAX_ENTRIES``.
+
+    Tries h1–h3, then h1–h2, then h1-only. If the chosen cut still overflows,
+    truncate to the first ``_TOC_MAX_ENTRIES`` entries in document order and
+    report how many were omitted (VIEWMD-0068). If a shallower cut would be
+    empty (no headings at that depth -- an irregular document of only h3s, for
+    example), keep the deeper outline and truncate that, rather than rendering
+    nothing.
+    """
+    selected = list(outline)
+    for max_level in (3, 2):
+        if len(selected) <= _TOC_MAX_ENTRIES:
+            return selected, 0
+        shallower = [h for h in outline if h.level <= max_level - 1]
+        if not shallower:
+            break
+        selected = shallower
+    if len(selected) <= _TOC_MAX_ENTRIES:
+        return selected, 0
+    omitted = len(selected) - _TOC_MAX_ENTRIES
+    return selected[:_TOC_MAX_ENTRIES], omitted
+
+
+def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
+    """One bulleted, heading-styled line per outline entry, nested by level."""
+    lines: list[Text] = []
+    for heading in outline:
+        indent = " " * (_TOC_NEST_COLUMNS * (heading.level - 1))
+        # Marker uses the same style as the body's Markdown bullet lists; the
+        # entry text keeps markdown.h1 / h2 / h3 so weight and color still match
+        # the body heading (VIEWMD-0068). The Text itself has no base style, so
+        # the heading span does not inherit the bullet's bold. Alignment is
+        # flush-left with nest indent, not the body's centered h1.
+        line = Text()
+        line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
+        line.append(heading.text, style=f"markdown.h{heading.level}")
+        lines.append(line)
+    return lines
+
+
+def _split_parsed_at_leading_h1(tokens: list) -> tuple[list, list] | None:
+    """Split a parsed token stream after the first h1, or None if that heading is not an h1.
+
+    Title and rest keep the *same* token objects as the full-document parse (VIEWMD-0062), so
+    inline links in the title still resolve against reference definitions that appear later.
+    """
+    for i, token in enumerate(tokens):
+        if token.type != "heading_open":
+            continue
+        if token.tag == "h1":
+            for j in range(i + 1, len(tokens)):
+                if tokens[j].type == "heading_close":
+                    return list(tokens[: j + 1]), list(tokens[j + 1 :])
+            return None
+        if token.tag in _TOC_LEVELS:
+            return None
+    return None
+
+
+def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
+    """A Markdown renderable that draws ``tokens`` from an already-parsed document."""
+    view = ViewmdMarkdown("", code_theme=source.code_theme)
+    view.markup = source.markup
+    view.parsed = tokens
+    view.justify = source.justify
+    view.style = source.style
+    view.hyperlinks = source.hyperlinks
+    view.inline_code_lexer = source.inline_code_lexer
+    view.inline_code_theme = source.inline_code_theme
+    return view
+
+
+def _print_toc(
+    console: Console, outline: list[HeadingOutline], omitted: int = 0
+) -> None:
+    if not outline:
+        return
+    for line in _toc_lines(outline):
+        console.print(line)
+    if omitted:
+        console.print(f"... {omitted} more")
+    console.print()
+
+
+def render_markdown(
+    text: str,
+    *,
+    width: int,
+    color: bool,
+    full_front_matter: bool = False,
+    toc: bool = True,
+) -> str:
     """Render `text` to an ANSI string, `width` columns wide.
 
     Rendering is pure (writes to an in-memory buffer, never real stdout) so callers decide
@@ -332,7 +486,13 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
-    (VIEWMD-0005). The body is run through viewmd's preprocessor pipeline (see preprocessors.py)
+    (VIEWMD-0005). When `toc` is True (the default), a document with two or more h1/h2/h3 headings
+    gets a bulleted outline: after the front-matter divider (if any) the leading h1 renders as
+    the document title, then the ToC (that title omitted from the list), then the rest of the
+    body. Depth is chosen dynamically so the ToC stays at most 20 entries: h1–h3, then h1–h2,
+    then h1-only; if the chosen cut still overflows, it is truncated to the first 20 entries
+    in document order with a trailing ``... N more`` note (VIEWMD-0068). The body is run through
+    viewmd's preprocessor pipeline (see preprocessors.py)
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
     (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014). `color`
     and `width` are passed into that preprocessing pass too (VIEWMD-0043) -- Mermaid diagrams are
@@ -360,7 +520,29 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
-    console.print(ViewmdMarkdown(body, code_theme="monokai"), crop=False)
+    # One parse for the ToC outline and the title/rest split: ViewmdMarkdown.__init__
+    # is what produces markdown.parsed (Rich's markdown-it token stream). A leading
+    # h1 is sliced out of that stream and rendered from the same tokens so it is
+    # not duplicated in the ToC or again below it, and so later link-reference
+    # definitions still resolve in the title (VIEWMD-0062).
+    markdown = ViewmdMarkdown(body, code_theme="monokai")
+    if toc:
+        outline = heading_outline(markdown)
+        if len(outline) >= 2:
+            split = _split_parsed_at_leading_h1(markdown.parsed)
+            if split is not None and outline[0].level == 1:
+                title_tokens, rest_tokens = split
+                console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
+                console.print()
+                fitted, omitted = _fit_toc_outline(outline[1:])
+                _print_toc(console, fitted, omitted)
+                console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
+            else:
+                fitted, omitted = _fit_toc_outline(outline)
+                _print_toc(console, fitted, omitted)
+                console.print(markdown, crop=False)
+            return buffer.getvalue()
+    console.print(markdown, crop=False)
     return buffer.getvalue()
 
 
@@ -379,6 +561,72 @@ def render_divider(*, width: int, color: bool) -> str:
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
     console.print(Rule(characters="═", style="dim"))
+    return buffer.getvalue()
+
+
+def _markdown_title(path: str) -> str:
+    """Best-effort display title for a Markdown file at `path`: front-matter `title`, else the
+    first heading, else the filename -- used by `render_directory_listing`'s per-entry metadata.
+    A file that can't be read or decoded falls back to its filename rather than raising, since a
+    directory listing must still show every entry even if one is unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, UnicodeDecodeError):
+        return os.path.basename(path)
+
+    raw_front_matter, body = split_front_matter(text)
+    if raw_front_matter is not None:
+        title = parse_front_matter(raw_front_matter).get("title")
+        if title:
+            return str(title)
+
+    in_fence = False
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if not in_fence and stripped.startswith("#"):
+            return stripped.lstrip("#").strip() or os.path.basename(path)
+
+    return os.path.basename(path)
+
+
+def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
+    """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
+    directory with no `INDEX_FILENAME` note inside it (VIEWMD-0065). Lists immediate
+    subdirectories and Markdown files only (no recursion), subdirectories first then files, each
+    alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
+    to propagate, matching how an unreadable file is handled elsewhere in this module.
+    """
+    entry_names = os.listdir(dir_path)
+    dirs = sorted(
+        name for name in entry_names if os.path.isdir(os.path.join(dir_path, name))
+    )
+    files = sorted(
+        name for name in entry_names
+        if name.lower().endswith(".md") and os.path.isfile(os.path.join(dir_path, name))
+    )
+
+    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Modified", no_wrap=True)
+
+    for name in dirs:
+        table.add_row(escape(name) + "/", "dir", "", "")
+    for name in files:
+        full_path = os.path.join(dir_path, name)
+        title = _markdown_title(full_path)
+        modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
+        table.add_row(escape(name), "file", escape(title), modified)
+
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(f"[bold]{escape(dir_path)}/[/bold]")
+    console.print(table)
     return buffer.getvalue()
 
 
