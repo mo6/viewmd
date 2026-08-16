@@ -7,8 +7,10 @@ import sys
 
 # -S (chop long lines) so mermaid diagrams wider than the terminal stay on one
 # row inside less instead of soft-wrapping and destroying the 2D art
-# (VIEWMD-0018). Override via $PAGER if soft-wrap is preferred.
-DEFAULT_PAGER = ["less", "-R", "-F", "-X", "-S"]
+# (VIEWMD-0018). --mouse enables wheel/trackpad scrolling despite -X disabling
+# the alternate screen buffer that terminals otherwise rely on for that
+# (VIEWMD-0067). Override via $PAGER if soft-wrap or mouse scroll is unwanted.
+DEFAULT_PAGER = ["less", "-R", "-F", "-X", "-S", "--mouse"]
 
 
 def should_page(no_pager_flag: bool) -> bool:

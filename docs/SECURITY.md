@@ -32,7 +32,7 @@ executed -- Rich renders Markdown as text, never as code (docs/PLAN.md's "HTML r
 
 | Surface | Where | Notes |
 |---|---|---|
-| Pager subprocess | `viewmd/pager.py` | Spawns `$PAGER` (default `less -R -F -X`) via `subprocess.run`, argv list, no shell. The command comes from the `$PAGER` environment variable or the fixed default, never from parsed Markdown content. |
+| Pager subprocess | `viewmd/pager.py` | Spawns `$PAGER` (default `less -R -F -X --mouse`) via `subprocess.run`, argv list, no shell. The command comes from the `$PAGER` environment variable or the fixed default, never from parsed Markdown content. |
 | File / stdin reading | `viewmd/__main__.py` | Reads the path given on the command line, or stdin, as UTF-8 text. No execution, no templating. |
 | Config-file reading | `viewmd/config.py` | Reads a UTF-8 `key = value` file from an XDG path, `--config PATH`, or not at all (`VIEWMD_NO_CONFIG`). No execution, no interpolation, no includes. |
 | Front-matter / wikilink parsing | `viewmd/frontmatter.py`, `viewmd/wikilinks.py` | Regex- and string-based text parsing only; no `eval`, no dynamic import, no YAML deserialization (deliberately not a full YAML parser -- docs/PLAN.md). |
@@ -84,7 +84,7 @@ config stays short.
 |---|---|---|
 | `tests/**` | `S101` | pytest uses `assert`; not a production assert-as-control-flow smell. |
 | `tools/**` | `S101`, `S603`, `S607` | Maintainer tooling (`tools/issues.py`): fixed argv lists, no shell, no attacker-controlled executable name. Its own `assert`-based checks use the same idiom as tests. |
-| `viewmd/pager.py` | `S603` | Deliberate `subprocess.run` for the pager. Command comes from `$PAGER` or a fixed default (`less -R -F -X`), never built from unsanitized Markdown content. |
+| `viewmd/pager.py` | `S603` | Deliberate `subprocess.run` for the pager. Command comes from `$PAGER` or a fixed default (`less -R -F -X --mouse`), never built from unsanitized Markdown content. |
 
 No `pip-audit` ignores at 1.1.0. When one is needed, add a row here (package, advisory id,
 reason) and the matching ignore flag/config beside the `pip-audit` step.

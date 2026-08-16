@@ -17,7 +17,7 @@ python3 -m venv .venv
 ## Usage
 
 ```
-./viewmd.sh README.md              # renders and pages into $PAGER (less -R -F -X) if stdout is a terminal
+./viewmd.sh README.md              # renders and pages into $PAGER (less -R -F -X --mouse) if stdout is a terminal
 ./viewmd.sh README.md --no-pager   # print rendered ANSI straight to stdout, no pager
 cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --color=never  # plain text, no ANSI color
