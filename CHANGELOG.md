@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.23.0] — 2026-08-16
+
+- **Render Mermaid XY charts** (VIEWMD-0048, render/mermaid): an eleventh Mermaid diagram type, `xychart-beta` (or its bare `xychart` alias) -- plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁`-`█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes. The plot area sizes itself from `--width` (capped at the full viewport, never narrower than half of it), with a monospace-cell-aspect-corrected height so the plot reads ~1:1 at its narrowest and never flatter than 2:1 at its widest, and y-axis ticks snap to a nice 1/2/5 x 10^k spacing rather than an arbitrary fraction of the axis range. No upstream reference implementation to differentially test against, so fixtures are hand-authored/visually verified. See `docs/example.md` and `docs/mermaid-xychart.md`.
+
 ## [1.22.1] — 2026-08-15
 
 - **Fix WARNING admonition border misalignment** (VIEWMD-0060, render): the `WARNING` callout card's (VIEWMD-0059) right border landed short of the other cards' in several real terminals, since the header's dash-fill trusted `wcwidth`'s width-2 verdict for the `⚠️` icon even though several terminal fonts render it narrow (1 column). The header now sizes for that hand-verified narrower width instead. See `docs/example.md`.

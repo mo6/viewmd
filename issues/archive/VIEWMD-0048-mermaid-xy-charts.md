@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0048
 title: Render Mermaid XY charts
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: high
 created: 2026-08-09
 updated: 2026-08-16
 accepted_by: George Moses
 accepted_at: 2026-08-16
-commits: []
+commits: [23c0116, 266d7cb, 4fb3389]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.23.0]"
 reason:
 ---
 
