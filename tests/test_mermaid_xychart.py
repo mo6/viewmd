@@ -209,7 +209,8 @@ def _golden_cases():
 def test_matches_fixture(mmd_path, expected_path):
     chart = parse(mmd_path.read_text())
     width = 100 if mmd_path.stem == "nvda" else 80
-    assert render(chart, use_ascii=False, color=False, width=width) == expected_path.read_text()
+    # color=True coverage lives in test_color_true_strips_to_the_same_plain_text_as_fixtures --
+    # asserting it here too against the same fixtures would just re-run the identical comparison.
     assert render(chart, use_ascii=False, width=width) == expected_path.read_text()
 
 

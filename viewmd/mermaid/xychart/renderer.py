@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 import shutil
 from dataclasses import dataclass
+from functools import lru_cache
 
 from viewmd.mermaid.grid.canvas import apply_color_spans
 from viewmd.mermaid.textutil import width as string_width
@@ -295,42 +296,56 @@ def _dataset_color(kind: str) -> str:
     """Map a dataset kind (`"bar"` / `"line"`) to its fixed hex (VIEWMD-0063)."""
     if kind == "bar":
         return _BAR_COLOR
-    return _LINE_COLOR
+    if kind == "line":
+        return _LINE_COLOR
+    raise ValueError(f"unknown xychart dataset kind {kind!r}")
 
 
+@lru_cache(maxsize=2)  # g is always one of the two module-level _ASCII/_UNICODE singletons
 def _bar_chars(g: _Glyphs) -> frozenset[str]:
     if g.bar_full == "#":
         return frozenset("#")
     return frozenset(_EIGHTHS[1:])  # skip the leading space
 
 
+@lru_cache(maxsize=2)
 def _line_chars(g: _Glyphs) -> frozenset[str]:
     return frozenset({g.h, g.v, g.line_tl, g.line_tr, g.line_bl, g.line_br})
+
+
+def _color_runs(chars: list[str], classify) -> list[tuple[int, int, str]]:
+    """Consecutive runs of chars mapping to the same non-None `classify(ch)` label, as
+    `(start, end, label)` triples. Shared scan shape for both `_plot_color_spans` (bar vs. line
+    glyphs in a plot row) and `_colorize_axis` (line glyphs stitched onto the axis row), so a
+    future change to run-detection can't drift between the two."""
+    runs: list[tuple[int, int, str]] = []
+    i = 0
+    n = len(chars)
+    while i < n:
+        label = classify(chars[i])
+        if label is None:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and classify(chars[j]) == label:
+            j += 1
+        runs.append((i, j, label))
+        i = j
+    return runs
 
 
 def _plot_color_spans(chars: list[str], g: _Glyphs) -> list[tuple[int, int, str]]:
     """Consecutive same-dataset glyph runs in a plot row, as color spans."""
     bar, line = _bar_chars(g), _line_chars(g)
-    spans: list[tuple[int, int, str]] = []
-    i = 0
-    n = len(chars)
-    while i < n:
-        ch = chars[i]
+
+    def classify(ch: str) -> str | None:
         if ch in bar:
-            hex_ = _dataset_color("bar")
-            belong = bar
-        elif ch in line:
-            hex_ = _dataset_color("line")
-            belong = line
-        else:
-            i += 1
-            continue
-        j = i + 1
-        while j < n and chars[j] in belong:
-            j += 1
-        spans.append((i, j, hex_))
-        i = j
-    return spans
+            return "bar"
+        if ch in line:
+            return "line"
+        return None
+
+    return [(s, e, _dataset_color(kind)) for s, e, kind in _color_runs(chars, classify)]
 
 
 def _colorize_row(chars: list[str], g: _Glyphs, *, color: bool) -> str:
@@ -349,18 +364,10 @@ def _colorize_axis(
     if not color or line_baseline is None:
         return "".join(axis_chars)
     hex_ = _dataset_color("line")
-    spans: list[tuple[int, int, str]] = []
-    i = 0
-    n = len(line_baseline)
-    while i < n:
-        if line_baseline[i] != " ":
-            j = i + 1
-            while j < n and line_baseline[j] != " ":
-                j += 1
-            spans.append((i + 1, j + 1, hex_))  # +1: axis_chars[0] is the bl corner
-            i = j
-        else:
-            i += 1
+    runs = _color_runs(line_baseline, lambda ch: "line" if ch != " " else None)
+    # +1 on both ends: axis_chars[0] is the bl corner, one column left of the plot columns
+    # line_baseline (and every plot row) is indexed from.
+    spans = [(s + 1, e + 1, hex_) for s, e, _kind in runs]
     return apply_color_spans(axis_chars, spans)
 
 
