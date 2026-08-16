@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0065
 title: Viewing a directory looks up an index file, else shows a directory listing
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-16
-commits: []
+commits: [083ba54]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.25.0]"
 reason:
 ---
 
@@ -59,3 +59,4 @@ Today, passing a directory path fails: `open()` raises `IsADirectoryError` (a su
 ## Peer review
 
 - **code-review agent** (agent), 2026-08-16: 3 findings at medium effort, all confirmed and fixed inline -- missing `escape()` on directory-listing table cells (Rich markup injection via a filename/title), `os.path.isfile()`-based index lookup matching case-insensitively on macOS/Windows filesystems instead of the required exact-case match, and `_markdown_title`'s heading fallback misreading a `#`-prefixed line inside a fenced code block as the document title. Regression tests added for all three.
+- **George Moses** (maintainer), 2026-08-16: "commit and close" -- approved to land.
