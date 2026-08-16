@@ -48,6 +48,11 @@ def _sgr(hex_: str) -> str:
     return f"38;2;{r};{g};{b}"
 
 
+def _bg_sgr(hex_: str) -> str:
+    r, g, b = int(hex_[0:2], 16), int(hex_[2:4], 16), int(hex_[4:6], 16)
+    return f"48;2;{r};{g};{b}"
+
+
 def _inner_plot_width(out: str) -> int:
     widths = []
     for line in out.splitlines():
@@ -591,8 +596,8 @@ def test_adjacent_bars_never_share_a_color_when_palette_wraps():
     for _i in range(n):
         chars.extend(["█"] * (col_width - _BAR_GAP))
         chars.extend([" "] * _BAR_GAP)
-    spans = _plot_color_spans(chars, _UNICODE, col_width)
-    assert [hex_ for _s, _e, hex_ in spans] == expected
+    spans = _plot_color_spans(chars, None, _UNICODE, col_width)
+    assert [fg for _s, _e, fg, _bg in spans] == expected
 
     cats = ",".join(str(i) for i in range(n))
     vals = ",".join("10" for _ in range(n))
@@ -693,3 +698,62 @@ def test_line_only_output_matches_pre_gap_fixtures():
         mmd = FIXTURES / f"{stem}.mmd"
         expected = FIXTURES / f"{stem}.out"
         assert render(parse(mmd.read_text()), width=width) == expected.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Line-over-bar background fill (VIEWMD-0066)
+# ---------------------------------------------------------------------------
+
+# tools/demo-pages/16-xychart.md's own chart: Q3's line value (60) sits inside
+# Q3's bar (80), so the line's horizontal run at row 60 rides across the
+# bottom of Q3's bar for its full leading span (the motivating report).
+_LINE_OVER_BAR = (
+    "xychart-beta\n"
+    '    title "Sales vs Target"\n'
+    "    x-axis [Q1, Q2, Q3, Q4]\n"
+    "    y-axis 0 --> 120\n"
+    "    bar  [40, 60, 80, 100]\n"
+    "    line [60, 80, 60, 120]\n"
+)
+
+
+def test_line_crossing_a_bar_gets_that_bars_color_as_background():
+    out = render(parse(_LINE_OVER_BAR), color=True, width=100)
+    combined = f"\x1b[{_sgr(_LINE_COLOR)};{_bg_sgr(_bar_color(2))}m"
+    assert combined in out
+
+
+def test_line_not_crossing_a_bar_keeps_foreground_only_no_background():
+    # The riser between Q1 and Q2 (gap column, VIEWMD-0064) has no bar fill
+    # under it at any row -- must stay exactly as VIEWMD-0063 shipped it.
+    out = render(parse(_LINE_OVER_BAR), color=True, width=100)
+    plain_line = re.compile(rf"\x1b\[{re.escape(_sgr(_LINE_COLOR))}m")
+    assert plain_line.search(out)
+    combined = re.compile(rf"\x1b\[{re.escape(_sgr(_LINE_COLOR))};48;2;\d+;\d+;\d+m")
+    assert combined.search(out)  # the Q3 crossing is still present elsewhere in this chart
+
+
+def test_line_only_chart_never_gets_a_background():
+    out = render(parse(_LINE_ONLY), color=True, width=80)
+    assert "48;2;" not in out
+
+
+def test_bar_cell_the_line_never_touches_keeps_foreground_only():
+    # Q1's bar (height 40) never has the line over it in _LINE_OVER_BAR (the
+    # line stays at or above 60 throughout) -- its color must stay exactly
+    # as VIEWMD-0064 shipped it, no background added.
+    out = render(parse(_LINE_OVER_BAR), color=True, width=100)
+    q1_only = re.compile(rf"\x1b\[{re.escape(_sgr(_bar_color(0)))}m[█▁▂▃▄▅▆▇]+\x1b\[0m")
+    assert q1_only.search(out)
+    combined_q1 = re.compile(rf"\x1b\[{re.escape(_sgr(_bar_color(0)))};48;2;")
+    assert not combined_q1.search(out)
+
+
+def test_color_off_output_unaffected_by_line_over_bar():
+    out = render(parse(_LINE_OVER_BAR), color=False, width=100)
+    assert "\x1b[" not in out
+
+
+def test_bar_only_chart_unaffected_by_line_over_bar_change():
+    out = render(parse(_SALES), color=True, width=80)
+    assert "48;2;" not in out
