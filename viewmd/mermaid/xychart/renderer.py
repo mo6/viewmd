@@ -23,7 +23,7 @@ import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 
-from viewmd.mermaid.grid.canvas import apply_color_spans
+from viewmd.mermaid.grid.canvas import apply_color_spans, wrap_text_styled
 from viewmd.mermaid.textutil import width as string_width
 from viewmd.mermaid.xychart.parser import XYChart
 
@@ -361,29 +361,64 @@ def _color_runs(chars: list[str], classify) -> list[tuple[int, int, str]]:
     return runs
 
 
-def _plot_color_spans(chars: list[str], g: _Glyphs, col_width: int) -> list[tuple[int, int, str]]:
-    """Consecutive same-color glyph runs in a plot row, as color spans.
+def _plot_color_spans(
+    chars: list[str], bar_row: list[str] | None, g: _Glyphs, col_width: int,
+) -> list[tuple[int, int, str, str | None]]:
+    """Consecutive same-styled glyph runs in a plot row, as `(start, end, fg, bg)` spans.
 
-    Bar glyphs take category `i`'s palette entry (`col_width` columns each,
-    VIEWMD-0064); line glyphs stay VIEWMD-0063's one fixed hue.
+    Bar glyphs take category `i`'s palette entry (`col_width` columns each, VIEWMD-0064) as
+    `fg`, no `bg`. Line glyphs take VIEWMD-0063's one fixed hue as `fg`; a line glyph that has
+    replaced a bar-fill glyph at this cell (`bar_row`, the pre-`_merge` bar grid row for this
+    level -- `None` for a line-only chart) additionally takes that category's own bar color as
+    `bg`, so the bar's color survives underneath the line instead of `_merge` erasing it
+    outright (VIEWMD-0066).
     """
     bar, line = _bar_chars(g), _line_chars(g)
     col_width = max(1, col_width)
 
-    def classify(i: int, ch: str) -> str | None:
-        if ch in bar:
-            return _bar_color(i // col_width)
+    def classify(i: int, ch: str) -> tuple[str, int | None] | None:
         if ch in line:
-            return _LINE_COLOR
+            if bar_row is not None and bar_row[i] in bar:
+                return ("line_over_bar", i // col_width)
+            return ("line", None)
+        if ch in bar:
+            return ("bar", i // col_width)
         return None
 
-    return _color_runs(chars, classify)
+    spans: list[tuple[int, int, str, str | None]] = []
+    for start, end, (kind, cat) in _color_runs(chars, classify):
+        if kind == "line_over_bar":
+            spans.append((start, end, _LINE_COLOR, _bar_color(cat)))
+        elif kind == "line":
+            spans.append((start, end, _LINE_COLOR, None))
+        else:
+            spans.append((start, end, _bar_color(cat), None))
+    return spans
 
 
-def _colorize_row(chars: list[str], g: _Glyphs, col_width: int, *, color: bool) -> str:
+def _apply_plot_styles(chars: list[str], spans: list[tuple[int, int, str, str | None]]) -> str:
+    """`apply_color_spans`-style post-hoc wrap, but each span carries its own optional `bg`
+    alongside `fg` (`wrap_text_styled`, VIEWMD-0066) -- an `fg`-only span still produces the
+    exact same escape bytes `apply_color_spans`/`wrap_text_in_color` would have."""
+    if not spans:
+        return "".join(chars)
+    out: list[str] = []
+    pos = 0
+    for start, end, fg, bg in sorted(spans):
+        if start > pos:
+            out.append("".join(chars[pos:start]))
+        out.append(wrap_text_styled("".join(chars[max(start, pos):end]), fg=fg, bg=bg))
+        pos = max(pos, end)
+    out.append("".join(chars[pos:]))
+    return "".join(out)
+
+
+def _colorize_row(
+    chars: list[str], bar_row: list[str] | None, g: _Glyphs, col_width: int, *, color: bool,
+) -> str:
     if not color:
         return "".join(chars)
-    return apply_color_spans(chars, _plot_color_spans(chars, g, col_width))
+    return _apply_plot_styles(chars, _plot_color_spans(chars, bar_row, g, col_width))
 
 
 def _colorize_axis(
@@ -467,7 +502,8 @@ def render(chart: XYChart, *, use_ascii: bool = False, color: bool = False,
 
     for lv, tick in zip(levels, tick_labels, strict=True):
         pad = " " * (label_w - string_width(tick))
-        plot = _colorize_row(grid[lv], g, col_width, color=color)
+        bar_row = bar_grid[lv] if bar_grid is not None else None
+        plot = _colorize_row(grid[lv], bar_row, g, col_width, color=color)
         lines.append(f"{pad}{tick} {g.v}{plot}")
 
     axis_chars = list(g.bl + (g.tee_d + g.h * (col_width - 1)) * n)
