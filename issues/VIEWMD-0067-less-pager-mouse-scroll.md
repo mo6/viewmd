@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0067
 title: Enable mouse/trackpad scroll-wheel support in the default less pager
-status: proposed
+status: in-progress
 area: [cli]
 effort: low
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-16
 commits: []
 related: [VIEWMD-0007]
 supersedes: []
@@ -50,4 +50,4 @@ Reported by the maintainer: scrolling with the mouse/trackpad does nothing while
 
 ## Peer review
 
-Not applicable; not yet built.
+- (agent, code-review skill, independent) Reviewed the diff against the issue's requirements. Only local `less` available for testing is 668 (well past the 582 `--mouse` threshold); confirmed `less --bogus-flag -F -X` and `less --mouse -F -X` both exit 0 on this build, matching requirement 3's cited behavior. Flagged as a residual risk that `display()`'s exception handling (`viewmd/pager.py`) only falls back to plain `print` on `BrokenPipeError`/`FileNotFoundError`, not on a nonzero exit from `less` itself, so if some older or nonstandard `less` build ever treated an unrecognized long option as fatal (unverified against any actual pre-582 build here, none reasonably available -- no Docker, no alternate Homebrew version installed), paging would break rather than degrade gracefully. Requirement 3 already accepts this as a known, not-fully-testable-here tradeoff rather than adding version-probing; no code change made in response, flagging for the maintainer's manual check per Acceptance instead.

@@ -30,6 +30,11 @@ def test_default_pager_chops_long_lines():
     assert "-S" in pager.DEFAULT_PAGER
 
 
+def test_default_pager_enables_mouse_scroll():
+    # VIEWMD-0067: --mouse so wheel/trackpad scroll reaches less despite -X.
+    assert "--mouse" in pager.DEFAULT_PAGER
+
+
 def test_display_invokes_pager_when_paging(monkeypatch):
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     calls = []
