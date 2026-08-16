@@ -18,7 +18,7 @@ Set Framerate 1
 # ./viewmd.sh (less -F auto-advances since the page fits) with a 5s pause
 # between. Sleep below must be >= (page count * 5s) or the last page(s) never
 # get recorded -- keep it in sync with the number of files in
-# tools/demo-pages/ (15 pages * 5s = 75s as of VIEWMD-0059/-0060).
+# tools/demo-pages/ (16 pages * 5s = 80s as of VIEWMD-0048).
 Type "./tools/demo_pages_loop.sh"
 Enter
-Sleep 80s
+Sleep 85s

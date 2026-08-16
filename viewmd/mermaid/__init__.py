@@ -5,9 +5,9 @@ port of github.com/AlexanderGrooff/mermaid-ascii (Go, MIT licensed; see
 /THIRD_PARTY_NOTICES.md) -- ported rather than shelled out to, to avoid
 bundling a per-platform compiled binary in a pure-Python CLI tool. Pie charts
 (VIEWMD-0043) and later diagram types (packet, quadrant, kanban, gantt,
-gitGraph, mindmap, block-beta) have no upstream reference to port from and are
-hand-written directly against Mermaid's own syntax. Other Mermaid diagram
-types raise `UnsupportedDiagramError`.
+gitGraph, mindmap, block-beta, xychart) have no upstream reference to port
+from and are hand-written directly against Mermaid's own syntax. Other Mermaid
+diagram types raise `UnsupportedDiagramError`.
 """
 
 from __future__ import annotations
@@ -56,6 +56,10 @@ from viewmd.mermaid.sequence.parser import ParseError as _SequenceParseError
 from viewmd.mermaid.sequence.parser import parse as _parse_sequence
 from viewmd.mermaid.sequence.parser import sniff as _is_sequence_diagram
 from viewmd.mermaid.sequence.renderer import render as _render_sequence
+from viewmd.mermaid.xychart.parser import ParseError as _XychartParseError
+from viewmd.mermaid.xychart.parser import parse as _parse_xychart
+from viewmd.mermaid.xychart.parser import sniff as _is_xychart_diagram
+from viewmd.mermaid.xychart.renderer import render as _render_xychart
 
 __all__ = ["UnsupportedDiagramError", "MermaidError", "render"]
 
@@ -74,13 +78,14 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
 
     `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
     gantt-chart (VIEWMD-0032), and gitGraph (VIEWMD-0042) renderers -- every
-    other diagram type ignores it, unaffected. `width` is read only by
-    pie/quadrant, and is the caller's resolved render width,
-    not a hard cap (Mermaid diagrams are still allowed to render wider and
-    scroll, VIEWMD-0018); it's what the pie chart's and quadrant chart's
-    default sizing targets, so neither sizes itself independently of the
-    document it's embedded in. Raises
-    `UnsupportedDiagramError` if `text` isn't a diagram type this module
+    other diagram type ignores it, unaffected. `width` is read by pie,
+    quadrant, and xychart (VIEWMD-0048), and is the caller's resolved render
+    width, not a hard cap (Mermaid diagrams are still allowed to render wider
+    and scroll, VIEWMD-0018); it's what those charts' default sizing targets,
+    so none sizes itself independently of the document it's embedded in.
+    xychart additionally caps its plot area at 100% of `width` (and will not
+    shrink it below 50%) rather than treating `width` as a soft target.
+    Raises `UnsupportedDiagramError` if `text` isn't a diagram type this module
     supports, or `MermaidError` if it looks like a supported type but fails to
     parse.
     """
@@ -155,4 +160,10 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
         except _BlockParseError as e:
             raise MermaidError(str(e)) from e
         return _render_block(diagram, use_ascii=use_ascii)
+    if _is_xychart_diagram(text):
+        try:
+            chart = _parse_xychart(text)
+        except _XychartParseError as e:
+            raise MermaidError(str(e)) from e
+        return _render_xychart(chart, use_ascii=use_ascii, width=width)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")
