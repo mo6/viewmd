@@ -1,8 +1,10 @@
 """Render Markdown text to an ANSI string using Rich."""
 
 import io
+import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from rich import box
 from rich.cells import cell_len
@@ -21,6 +23,10 @@ from wcwidth import wcswidth
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
+
+# The per-directory landing note viewmd looks for when a `path` argument is a directory
+# (VIEWMD-0065), analogous to Obsidian-style vault index notes.
+INDEX_FILENAME = "_Index.md"
 
 
 class ViewmdCodeBlock(CodeBlock):
@@ -379,6 +385,72 @@ def render_divider(*, width: int, color: bool) -> str:
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
     console.print(Rule(characters="═", style="dim"))
+    return buffer.getvalue()
+
+
+def _markdown_title(path: str) -> str:
+    """Best-effort display title for a Markdown file at `path`: front-matter `title`, else the
+    first heading, else the filename -- used by `render_directory_listing`'s per-entry metadata.
+    A file that can't be read or decoded falls back to its filename rather than raising, since a
+    directory listing must still show every entry even if one is unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, UnicodeDecodeError):
+        return os.path.basename(path)
+
+    raw_front_matter, body = split_front_matter(text)
+    if raw_front_matter is not None:
+        title = parse_front_matter(raw_front_matter).get("title")
+        if title:
+            return str(title)
+
+    in_fence = False
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if not in_fence and stripped.startswith("#"):
+            return stripped.lstrip("#").strip() or os.path.basename(path)
+
+    return os.path.basename(path)
+
+
+def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
+    """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
+    directory with no `INDEX_FILENAME` note inside it (VIEWMD-0065). Lists immediate
+    subdirectories and Markdown files only (no recursion), subdirectories first then files, each
+    alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
+    to propagate, matching how an unreadable file is handled elsewhere in this module.
+    """
+    entry_names = os.listdir(dir_path)
+    dirs = sorted(
+        name for name in entry_names if os.path.isdir(os.path.join(dir_path, name))
+    )
+    files = sorted(
+        name for name in entry_names
+        if name.lower().endswith(".md") and os.path.isfile(os.path.join(dir_path, name))
+    )
+
+    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
+    table.add_column("Name", style="cyan", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Modified", no_wrap=True)
+
+    for name in dirs:
+        table.add_row(escape(name) + "/", "dir", "", "")
+    for name in files:
+        full_path = os.path.join(dir_path, name)
+        title = _markdown_title(full_path)
+        modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
+        table.add_row(escape(name), "file", escape(title), modified)
+
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(f"[bold]{escape(dir_path)}/[/bold]")
+    console.print(table)
     return buffer.getvalue()
 
 

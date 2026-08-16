@@ -126,3 +126,91 @@ def test_one_bad_file_among_several_still_renders_the_rest(tmp_path, capsys, mon
     assert rc == 1
     assert "Good" in captured.out
     assert "viewmd: cannot read missing.md" in captured.err
+
+
+def test_directory_with_index_file_renders_the_index(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    (tmp_path / "_Index.md").write_text("# Landing\n\nbody text\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown("# Landing\n\nbody text\n", width=80, color=False)
+
+
+def test_directory_without_index_file_renders_a_listing(tmp_path, capsys):
+    (tmp_path / "b.md").write_text("# Second\n\nbody\n")
+    (tmp_path / "a.md").write_text("---\ntitle: First Note\n---\n\nbody\n")
+    (tmp_path / "notes.txt").write_text("not markdown\n")
+    (tmp_path / "sub").mkdir()
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "a.md" in out
+    assert "First Note" in out
+    assert "b.md" in out
+    assert "Second" in out
+    assert "sub" in out
+    assert "notes.txt" not in out
+    # subdirectories listed before files
+    assert out.index("sub") < out.index("a.md")
+
+
+def test_directory_listing_does_not_recurse_into_subdirectories(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" not in out
+
+
+def test_unreadable_directory_errors_gracefully(tmp_path, capsys, monkeypatch):
+    def _boom(path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("os.listdir", _boom)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert f"viewmd: cannot read {tmp_path}" in captured.err
+
+
+def test_lowercase_index_filename_does_not_match_the_exact_case_index(tmp_path, capsys):
+    # A same-named-but-wrong-case file must not be treated as the index note, even on a
+    # case-insensitive filesystem (macOS default) where os.path.isfile() alone can't tell them
+    # apart -- it must fall through to the directory listing instead.
+    (tmp_path / "_index.md").write_text("# Wrong Case\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    # Falls through to the directory listing (a table row naming the file), rather than being
+    # rendered as the index note's own page content.
+    assert "_index.md" in out
+    assert "╭" in out
+
+
+def test_multi_path_mode_handles_a_directory_among_files(tmp_path, capsys):
+    (tmp_path / "one.md").write_text("# One\n\nbody\n")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "_Index.md").write_text("# Sub Landing\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80",
+               str(tmp_path / "one.md"), str(sub)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "One" in out
+    assert "Sub Landing" in out

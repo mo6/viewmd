@@ -1,7 +1,12 @@
 import re
 
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
-from viewmd.render import render_divider, render_file_heading, render_markdown
+from viewmd.render import (
+    render_directory_listing,
+    render_divider,
+    render_file_heading,
+    render_markdown,
+)
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -174,6 +179,77 @@ def test_render_file_heading_shows_the_path():
 def test_render_file_heading_escapes_rich_markup_in_the_path():
     out = strip_ansi(render_file_heading("[weird].md", width=80, color=False))
     assert "[weird].md" in out
+
+
+def test_render_directory_listing_shows_title_and_type(tmp_path):
+    (tmp_path / "a.md").write_text("---\ntitle: My Note\n---\n\nbody\n")
+    (tmp_path / "sub").mkdir()
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "a.md" in out
+    assert "My Note" in out
+    assert "sub" in out
+
+
+def test_render_directory_listing_falls_back_to_heading_then_filename(tmp_path):
+    (tmp_path / "heading-only.md").write_text("# Heading Title\n\nbody\n")
+    (tmp_path / "plain.md").write_text("just a paragraph, no heading\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "Heading Title" in out
+    assert "plain.md" in out
+
+
+def test_render_directory_listing_excludes_non_markdown_files(tmp_path):
+    (tmp_path / "notes.txt").write_text("not markdown\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "notes.txt" not in out
+
+
+def test_render_directory_listing_escapes_rich_markup_in_names_and_titles(tmp_path, monkeypatch):
+    import viewmd.render as render_module
+
+    # Faked entries rather than real files/dirs on disk bearing "[...]" in their names: some
+    # sandboxes deny filesystem writes whose path contains a literal "[...]" (glob-class
+    # interposition on the allow-list), which is an artifact of the test's own execution
+    # environment, unrelated to the escaping behavior under test.
+    monkeypatch.setattr(render_module.os, "listdir",
+                        lambda d: ["[red]evil[/red].md", "[bold]dir[/bold]"])
+    monkeypatch.setattr(render_module.os.path, "isdir",
+                        lambda p: p.endswith("[bold]dir[/bold]"))
+    monkeypatch.setattr(render_module.os.path, "isfile",
+                        lambda p: p.endswith("[red]evil[/red].md"))
+    monkeypatch.setattr(render_module, "_markdown_title", lambda p: "[link=x]y[/link]")
+    monkeypatch.setattr(render_module.os.path, "getmtime", lambda p: 0)
+
+    out = render_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert "[red]evil[/red].md" in out
+    assert "[link=x]y[/link]" in out
+    assert "[bold]dir[/bold]" in out
+
+
+def test_markdown_title_ignores_hash_comment_inside_a_code_fence(tmp_path):
+    from viewmd.render import _markdown_title
+
+    path = tmp_path / "note.md"
+    path.write_text("```python\n# comment not a heading\n```\n\n# Real Heading\n")
+
+    assert _markdown_title(str(path)) == "Real Heading"
+
+
+def test_render_directory_listing_does_not_recurse(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "nested.md" not in out
 
 
 def test_render_divider_matches_the_front_matter_divider_style():
