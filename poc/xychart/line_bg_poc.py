@@ -49,7 +49,12 @@ def _load_chart_src() -> str:
 
 def render_after(chart) -> str:
     """Same layout math as `renderer.render`, but a line-glyph cell that has a bar fill
-    underneath gets `bg=` that bar's color instead of losing the bar's color outright."""
+    underneath gets `bg=` that bar's color instead of losing the bar's color outright.
+
+    Only meaningful for a combo chart -- unlike `renderer.render`, this scratch script doesn't
+    handle a bar-only or line-only `chart` (nothing to demonstrate there)."""
+    if chart.bar is None or chart.line is None:
+        raise SystemExit("line_bg_poc: only demonstrates a combo (bar + line) chart")
     g = R._UNICODE
     values = [*chart.bar, *chart.line]
     y_min, y_max = R._auto_range(values) if chart.y_min is None else (chart.y_min, chart.y_max)
