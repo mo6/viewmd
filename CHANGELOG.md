@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.25.0] — 2026-08-16
+
+- **View a directory: index note lookup, else a listing** (VIEWMD-0065, cli/render): passing a directory `path` argument no longer fails with `IsADirectoryError`. If the directory contains an `_Index.md` note (exact case), it renders exactly as if that file's path had been passed directly; otherwise viewmd renders a one-level table-of-contents listing of the directory's immediate subdirectories and Markdown files, each with a title (front-matter `title`, else the first heading, else the filename) and last-modified time. Applies consistently in both single-path and multi-path CLI modes.
+
 ## [1.24.0] — 2026-08-16
 
 - **Color Mermaid XY-chart bar and line datasets** (VIEWMD-0063, render/mermaid): with color available, the `bar` dataset's fill glyphs and the `line` dataset's step/staircase glyphs each get their own fixed hue, so a combo chart's two series are distinguishable at a glance instead of only by glyph shape; axis lines, tick labels, category labels, and the title stay plain. Output is byte-identical to before with color off. See `docs/mermaid-xychart.md`.
