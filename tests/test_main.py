@@ -432,3 +432,89 @@ def test_missing_explicit_config_path_is_an_error(tmp_path, capsys):
     assert rc == 1
     assert captured.err.startswith("viewmd: cannot read")
     assert "Traceback" not in captured.err
+
+
+_TOC_DOC = "# Alpha\n\n## Beta\n\nbody\n"
+
+
+def test_toc_is_on_by_default_for_a_multi_heading_document(tmp_path, capsys):
+    path, _ = _write_md(tmp_path, _TOC_DOC)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(path)])
+    out = capsys.readouterr().out
+    lines = [line.rstrip() for line in out.splitlines()]
+
+    assert rc == 0
+    assert lines[0] == "Alpha"
+    assert lines[1] == "  Beta"
+
+
+def test_no_toc_flag_omits_the_toc(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    path, text = _write_md(tmp_path, _TOC_DOC)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--no-toc", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=80, color=False, toc=False)
+    assert [line.rstrip() for line in out.splitlines()][0] != "Alpha"
+
+
+def test_config_toc_false_omits_the_toc(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    cfg = tmp_path / "config"
+    cfg.write_text("toc = false\n")
+    path, text = _write_md(tmp_path, _TOC_DOC)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=80, color=False, toc=False)
+
+
+def test_cli_toc_overrides_config_false(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("toc = false\n")
+    path, _ = _write_md(tmp_path, _TOC_DOC)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               "--toc", str(path)])
+    out = capsys.readouterr().out
+    lines = [line.rstrip() for line in out.splitlines()]
+
+    assert rc == 0
+    assert lines[0] == "Alpha"
+    assert lines[1] == "  Beta"
+
+
+def test_cli_no_toc_overrides_config_true(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    cfg = tmp_path / "config"
+    cfg.write_text("toc = true\n")
+    path, text = _write_md(tmp_path, _TOC_DOC)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               "--no-toc", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=80, color=False, toc=False)
+
+
+def test_invalid_config_toc_exits_nonzero_without_traceback(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("toc = maybe\n")
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(cfg), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd:")
+    assert "invalid toc 'maybe'" in captured.err
+    assert "Traceback" not in captured.err

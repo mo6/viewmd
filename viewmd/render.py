@@ -18,6 +18,7 @@ from rich.segment import Segment
 from rich.style import Style
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 from wcwidth import wcswidth
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
@@ -328,7 +329,97 @@ def _make_console(buffer: io.StringIO, *, width: int, color: bool) -> Console:
     )
 
 
-def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bool = False) -> str:
+# ToC indent: one step (two spaces) per heading level below h1 (VIEWMD-0062).
+_TOC_INDENT = "  "
+_TOC_LEVELS = {"h1": 1, "h2": 2, "h3": 3}
+# Cap on ToC *entries* (one per included heading), not wrapped terminal rows.
+_TOC_MAX_ENTRIES = 20
+
+
+@dataclass(frozen=True)
+class HeadingOutline:
+    """One h1/h2/h3 heading as it appears in the document, for the table of contents."""
+
+    text: str
+    level: int  # 1, 2, or 3
+
+
+def _inline_plain_text(token) -> str:
+    """Collect visible text from a markdown-it inline token, dropping markup tokens.
+
+    A heading's following ``inline`` token still carries the raw markup in ``content``
+    (``**bold**``, ``[link](url)``); the parsed children hold the readable text.
+    """
+    if token.children:
+        return "".join(_inline_plain_text(child) for child in token.children)
+    if token.type in {"text", "code_inline"}:
+        return token.content
+    return ""
+
+
+def heading_outline(markdown: Markdown) -> list[HeadingOutline]:
+    """h1/h2/h3 headings in document order, taken from ``markdown.parsed``.
+
+    Walks Rich's already-parsed markdown-it token stream (the same one the body
+    render uses) so the ToC cannot disagree with what the body itself treats as a
+    heading (VIEWMD-0062). h4+ tokens are skipped. Headings inside fenced code are
+    not in this stream as ``heading_open`` (they stay fence content).
+    """
+    outline: list[HeadingOutline] = []
+    tokens = markdown.parsed
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token.type == "heading_open":
+            level = _TOC_LEVELS.get(token.tag)
+            if level is not None:
+                text = ""
+                if i + 1 < len(tokens) and tokens[i + 1].type == "inline":
+                    text = _inline_plain_text(tokens[i + 1])
+                outline.append(HeadingOutline(text=text, level=level))
+        i += 1
+    return outline
+
+
+def _fit_toc_outline(outline: list[HeadingOutline]) -> list[HeadingOutline]:
+    """Pick the deepest heading level whose ToC still fits in ``_TOC_MAX_ENTRIES``.
+
+    Tries h1–h3, then h1–h2, then h1-only. h1 entries are never dropped to meet
+    the cap. If a shallower cut would be empty (no headings at that depth -- an
+    irregular document of only h3s, for example), keep the deeper outline even
+    if it overflows, rather than rendering nothing.
+    """
+    selected = list(outline)
+    for max_level in (3, 2):
+        if len(selected) <= _TOC_MAX_ENTRIES:
+            return selected
+        shallower = [h for h in outline if h.level <= max_level - 1]
+        if not shallower:
+            return selected
+        selected = shallower
+    return selected
+
+
+def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
+    """One left-aligned, heading-styled line per outline entry, indented by level."""
+    lines: list[Text] = []
+    for heading in outline:
+        line = Text(_TOC_INDENT * (heading.level - 1))
+        # Same style the body heading uses (markdown.h1 / h2 / h3) so weight and
+        # color match; alignment is flush-left with indent, not the body's centered h1.
+        line.append(heading.text, style=f"markdown.h{heading.level}")
+        lines.append(line)
+    return lines
+
+
+def render_markdown(
+    text: str,
+    *,
+    width: int,
+    color: bool,
+    full_front_matter: bool = False,
+    toc: bool = True,
+) -> str:
     """Render `text` to an ANSI string, `width` columns wide.
 
     Rendering is pure (writes to an in-memory buffer, never real stdout) so callers decide
@@ -338,7 +429,12 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
     divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
-    (VIEWMD-0005). The body is run through viewmd's preprocessor pipeline (see preprocessors.py)
+    (VIEWMD-0005). When `toc` is True (the default), an indented heading outline of the body's
+    h1/h2/h3 headings is printed after that divider (or at the start, if there is no front
+    matter) and before the body, omitted when the document has fewer than two such headings.
+    Depth is chosen dynamically so the ToC stays at most 20 entries: h1–h3, then h1–h2, then
+    h1-only, with every h1 kept even when there are more than 20 of them (VIEWMD-0062). The body
+    is run through viewmd's preprocessor pipeline (see preprocessors.py)
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
     (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014). `color`
     and `width` are passed into that preprocessing pass too (VIEWMD-0043) -- Mermaid diagrams are
@@ -366,7 +462,16 @@ def render_markdown(text: str, *, width: int, color: bool, full_front_matter: bo
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
-    console.print(ViewmdMarkdown(body, code_theme="monokai"), crop=False)
+    # One parse for both the ToC and the body: ViewmdMarkdown.__init__ is what
+    # produces markdown.parsed (Rich's markdown-it token stream).
+    markdown = ViewmdMarkdown(body, code_theme="monokai")
+    if toc:
+        outline = heading_outline(markdown)
+        if len(outline) >= 2:
+            for line in _toc_lines(_fit_toc_outline(outline)):
+                console.print(line)
+            console.print()
+    console.print(markdown, crop=False)
     return buffer.getvalue()
 
 

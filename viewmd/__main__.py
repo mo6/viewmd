@@ -62,6 +62,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--full-front-matter", action=argparse.BooleanOptionalAction, default=None,
                         help="show every front-matter field, including empty ones "
                              "(default: empty fields are omitted)")
+    # BooleanOptionalAction so `--no-toc` turns the default-on ToC off, and `--toc`
+    # can override a config-file `toc = false` (VIEWMD-0062).
+    parser.add_argument("--toc", action=argparse.BooleanOptionalAction, default=None,
+                        help="render a table of contents from h1/h2/h3 headings "
+                             "(default: on; omitted when the document has fewer than two)")
     parser.add_argument("--config", metavar="PATH", default=None,
                         help="read configuration from PATH instead of "
                              "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
@@ -81,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     color = _resolve_color(coalesce(args.color, cfg.color, "auto"))
     width = _resolve_width(coalesce(args.width, cfg.width), shutil.get_terminal_size().columns)
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
+    toc = coalesce(args.toc, cfg.toc, True)
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
     # existing single-file output stays byte-for-byte identical.
@@ -88,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         path = paths[0]
         try:
             ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=full_front_matter)
+                                     full_front_matter=full_front_matter, toc=toc)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             return 1
@@ -107,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in paths:
         try:
             ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=full_front_matter)
+                                     full_front_matter=full_front_matter, toc=toc)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             had_error = True
@@ -127,7 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if had_error else 0
 
 
-def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool) -> str:
+def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool,
+                 toc: bool) -> str:
     """Resolve `path` to its rendered ANSI text.
 
     A plain file (or '-' for stdin) renders as Markdown directly. A directory looks up
@@ -146,11 +153,12 @@ def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool)
         if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
             text = _read_input(index_path)
             return render_markdown(text, width=width, color=color,
-                                   full_front_matter=full_front_matter)
+                                   full_front_matter=full_front_matter, toc=toc)
         return render_directory_listing(path, width=width, color=color)
 
     text = _read_input(path)
-    return render_markdown(text, width=width, color=color, full_front_matter=full_front_matter)
+    return render_markdown(text, width=width, color=color,
+                           full_front_matter=full_front_matter, toc=toc)
 
 
 def _read_input(path: str) -> str:

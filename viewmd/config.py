@@ -29,6 +29,7 @@ class Config:
     width: str | None = None
     color: str | None = None
     full_front_matter: bool | None = None
+    toc: bool | None = None
 
 
 def default_config_path() -> Path:
@@ -108,16 +109,21 @@ def parse_config(text: str, *, source: str) -> Config:
     width: str | None = None
     color: str | None = None
     full_front_matter: bool | None = None
+    toc: bool | None = None
     for key, (lineno, value) in raw.items():
         if key == "width":
             width = _parse_width(value, source, lineno)
         elif key == "color":
             color = _parse_color(value, source, lineno)
         elif key == "full_front_matter":
-            full_front_matter = _parse_bool(value, source, lineno)
-        # Unknown keys are ignored (forward-compatible with e.g. `toc`).
+            full_front_matter = _parse_bool(value, source, lineno, key=key)
+        elif key == "toc":
+            toc = _parse_bool(value, source, lineno, key=key)
+        # Unknown keys are ignored (forward-compatible with future options).
 
-    return Config(width=width, color=color, full_front_matter=full_front_matter)
+    return Config(
+        width=width, color=color, full_front_matter=full_front_matter, toc=toc
+    )
 
 
 def _parse_width(value: str, source: str, lineno: int) -> str:
@@ -139,14 +145,14 @@ def _parse_color(value: str, source: str, lineno: int) -> str:
     return value
 
 
-def _parse_bool(value: str, source: str, lineno: int) -> bool:
+def _parse_bool(value: str, source: str, lineno: int, *, key: str) -> bool:
     lowered = value.lower()
     if lowered in _TRUE:
         return True
     if lowered in _FALSE:
         return False
     raise ConfigError(
-        f"{source}:{lineno}: invalid full_front_matter {value!r}: must be true or false"
+        f"{source}:{lineno}: invalid {key} {value!r}: must be true or false"
     )
 
 
