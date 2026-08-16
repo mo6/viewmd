@@ -139,4 +139,5 @@ this ToC is expected to relate to that issue's later "Menu" concept.
 
 ## Peer review
 
-Not applicable; not yet built.
+- **Independent review agent** (agent), 2026-08-16: pass-with-nits on `611a831`+`7eb2c4e` vs develop. MUST 1–11 hold; `pytest -k toc` (22) and full suite (939) green; `./viewmd.sh issues/VIEWMD-0041-mermaid-class-diagrams.md --no-pager --color never --width 80` is front matter, centered title, ToC (title omitted), then Summary; `--no-toc` omits the outline; `--width 60` vs `200` reaches the title. Should-fix: cutting the leading h1 at `token.map` and re-parsing `title_src` drops later link-reference definitions (`# See [foo]` plus `[foo]: url` renders `See [foo]` with ToC, `See foo` with `--no-toc`). Nits: placement test's `or` is tautological; inline-markup ToC coverage only exercises the omitted title h1; no pytest for the no-leading-h1 ToC-before-body branch.
+- **George Moses** (maintainer), 2026-08-16: "Accept, commit, merge and close this issue" — approved to land.

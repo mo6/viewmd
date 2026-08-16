@@ -412,27 +412,36 @@ def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
     return lines
 
 
-def _leading_h1_end_line(markdown: Markdown) -> int | None:
-    """Return the source line after a leading h1, or None if the first h1-h3 heading is not an h1.
+def _split_parsed_at_leading_h1(tokens: list) -> tuple[list, list] | None:
+    """Split a parsed token stream after the first h1, or None if that heading is not an h1.
 
-    ``token.map`` is markdown-it's ``[start_line, end_line)`` into the parsed source. Used to
-    split the body so the title heading renders once above the ToC (VIEWMD-0062).
+    Title and rest keep the *same* token objects as the full-document parse (VIEWMD-0062), so
+    inline links in the title still resolve against reference definitions that appear later.
     """
-    for token in markdown.parsed:
+    for i, token in enumerate(tokens):
         if token.type != "heading_open":
             continue
         if token.tag == "h1":
-            if token.map is None:
-                return None
-            return token.map[1]
+            for j in range(i + 1, len(tokens)):
+                if tokens[j].type == "heading_close":
+                    return list(tokens[: j + 1]), list(tokens[j + 1 :])
+            return None
         if token.tag in _TOC_LEVELS:
             return None
     return None
 
 
-def _split_source_at_line(text: str, end_line: int) -> tuple[str, str]:
-    lines = text.splitlines(keepends=True)
-    return "".join(lines[:end_line]), "".join(lines[end_line:])
+def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
+    """A Markdown renderable that draws ``tokens`` from an already-parsed document."""
+    view = ViewmdMarkdown("", code_theme=source.code_theme)
+    view.markup = source.markup
+    view.parsed = tokens
+    view.justify = source.justify
+    view.style = source.style
+    view.hyperlinks = source.hyperlinks
+    view.inline_code_lexer = source.inline_code_lexer
+    view.inline_code_theme = source.inline_code_theme
+    return view
 
 
 def _print_toc(console: Console, outline: list[HeadingOutline]) -> None:
@@ -493,22 +502,22 @@ def render_markdown(
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
-    # One parse for the ToC outline: ViewmdMarkdown.__init__ is what produces
-    # markdown.parsed (Rich's markdown-it token stream). A leading h1 is split out
-    # of that same source and re-rendered as the title so it is not duplicated in
-    # the ToC or again below it; title/rest slices are the same characters, not a
-    # second interpretation of the document.
+    # One parse for the ToC outline and the title/rest split: ViewmdMarkdown.__init__
+    # is what produces markdown.parsed (Rich's markdown-it token stream). A leading
+    # h1 is sliced out of that stream and rendered from the same tokens so it is
+    # not duplicated in the ToC or again below it, and so later link-reference
+    # definitions still resolve in the title (VIEWMD-0062).
     markdown = ViewmdMarkdown(body, code_theme="monokai")
     if toc:
         outline = heading_outline(markdown)
         if len(outline) >= 2:
-            title_end = _leading_h1_end_line(markdown)
-            if title_end is not None and outline[0].level == 1:
-                title_src, rest_src = _split_source_at_line(body, title_end)
-                console.print(ViewmdMarkdown(title_src, code_theme="monokai"), crop=False)
+            split = _split_parsed_at_leading_h1(markdown.parsed)
+            if split is not None and outline[0].level == 1:
+                title_tokens, rest_tokens = split
+                console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
                 console.print()
                 _print_toc(console, _fit_toc_outline(outline[1:]))
-                console.print(ViewmdMarkdown(rest_src, code_theme="monokai"), crop=False)
+                console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
             else:
                 _print_toc(console, _fit_toc_outline(outline))
                 console.print(markdown, crop=False)

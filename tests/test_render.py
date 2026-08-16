@@ -530,9 +530,10 @@ def test_toc_placed_after_front_matter_and_title_before_rest_of_body():
     toc_at = lines.index("  Beta")
     body_at = next(i for i, line in enumerate(lines) if "body text" in line)
     assert hello_at < divider_at < title_at < toc_at < body_at
-    # Alpha is the title, not a ToC row.
+    # Alpha is the title, not a ToC row; ToC starts on the next nonempty line.
     assert "Alpha" not in lines[:title_at]
-    assert lines[title_at + 1 : toc_at + 1] == ["  Beta"] or lines[toc_at] == "  Beta"
+    assert toc_at == title_at + 1
+    assert lines[toc_at] == "  Beta"
 
 
 def test_toc_omitted_for_a_single_heading():
@@ -578,6 +579,17 @@ def test_irregular_heading_nesting_is_rendered_as_it_appears():
     assert toc == ["    First h3", "Later h1", "  Mid"]
 
 
+def test_toc_precedes_the_whole_body_when_there_is_no_leading_h1():
+    md = "## First\n\n### Nested\n\nbody text\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False, toc=True))
+    lines = [line for line in _rstripped(out) if line]
+    assert lines[0] == "  First"
+    assert lines[1] == "    Nested"
+    body_h2 = next(i for i, line in enumerate(lines) if line == "First")
+    assert body_h2 > 1
+    assert any("body text" in line for line in lines[body_h2:])
+
+
 def test_toc_entries_use_the_same_heading_styles_as_the_body():
     md = "# Hello\n\n## World\n\n### Nested\n"
     colored = render_markdown(md, width=80, color=True)
@@ -597,11 +609,27 @@ def test_toc_entries_use_the_same_heading_styles_as_the_body():
 
 
 def test_toc_uses_plain_text_of_inline_markup_in_headings():
-    md = "# With **bold** and `code` and [link](http://x)\n\n## Second\n"
+    md = "# With **bold** title\n\n## With **bold** and `code` and [link](http://x)\n"
     toc = _toc_entries(md)
-    assert toc == ["  Second"]
+    assert toc == ["  With bold and code and link"]
     out = strip_ansi(render_markdown(md, width=80, color=False))
-    assert any(_is_centered(line, "With bold and code and link") for line in _rstripped(out))
+    assert any(_is_centered(line, "With bold title") for line in _rstripped(out))
+
+
+def test_toc_title_resolves_reference_links_defined_later_in_the_document():
+    md = "# See [foo]\n\n## Section\n\n[foo]: http://example.com\n"
+    on = strip_ansi(render_markdown(md, width=80, color=False, toc=True))
+    off = strip_ansi(render_markdown(md, width=80, color=False, toc=False))
+    on_title = next(line for line in _rstripped(on) if line.strip())
+    off_title = next(line for line in _rstripped(off) if line.strip())
+    assert on_title == off_title
+    assert _is_centered(on_title, "See foo")
+    assert "See [foo]" not in on
+    colored_title = next(
+        line for line in render_markdown(md, width=80, color=True, toc=True).splitlines()
+        if line.strip()
+    )
+    assert "http://example.com" in colored_title
 
 
 def test_hash_comment_inside_a_fence_is_not_a_toc_entry():
