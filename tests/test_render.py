@@ -321,6 +321,19 @@ def test_quadrant_chart_is_colored_only_when_color_enabled():
     assert strip_ansi(colored) == plain
 
 
+def test_xychart_plot_size_respects_render_width():
+    # Same plumbing regression as pie/quadrant (VIEWMD-0048 requirement 8):
+    # `width` must reach the xychart renderer, not a freshly-queried raw
+    # terminal size.
+    md = (
+        '```mermaid\nxychart-beta\n    title Sales\n    x-axis [Q1, Q2, Q3, Q4]\n'
+        '    y-axis 0 --> 100\n    bar [40, 55, 70, 90]\n```\n'
+    )
+    narrow = render_markdown(md, width=40, color=False)
+    wide = render_markdown(md, width=80, color=False)
+    assert narrow != wide
+
+
 # Rich's Style(dim=True, strike=True) is SGR 2 (dim) + 9 (strikethrough).
 DIM_STRIKE_ANSI = re.compile(r"\x1b\[2;9m")
 

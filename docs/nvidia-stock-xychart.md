@@ -19,7 +19,7 @@ xychart-beta
     line [173.95, 186.34, 202.23, 176.77, 186.27, 190.90, 176.97, 174.20, 199.34, 210.89, 200.09, 200.75, 225.16]
 ```
 
-Viewing this file with `./viewmd.sh docs/nvidia-stock-xychart.md` today will not render the chart above as box-drawing art, `xychart-beta` is not yet a recognized Mermaid diagram type in viewmd (tracked by [VIEWMD-0048](../issues/VIEWMD-0048-mermaid-xy-charts.md), still `proposed`), so the fence falls through to raw text. Once that issue lands, this same source should render as a stair-step line chart per its rendering spec.
+Viewing this file with `./viewmd.sh docs/nvidia-stock-xychart.md` renders the chart above as a stair-step line chart (VIEWMD-0048). Plot width follows `--width` (capped at the viewport; never narrower than half of it).
 
 Data source: month-end close prices as reported via public financial-data aggregators
 (stockanalysis.com, StatMuse) in August 2026; treat as approximate, not exchange-verified ticks.

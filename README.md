@@ -65,9 +65,9 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
 `erDiagram`, `pie`, `packet-beta`/`packet`, `quadrantChart`, `kanban`, `gantt`, `gitGraph`,
-`mindmap`, or `block-beta`/`block` renders as box-drawing ASCII art in place of its source. Other
-Mermaid diagram types, and any block that fails to parse, are left as plain source text rather
-than causing an error. See
+`mindmap`, `block-beta`/`block`, or `xychart-beta`/`xychart` renders as box-drawing ASCII art in
+place of its source. Other Mermaid diagram types, and any block that fails to parse, are left as
+plain source text rather than causing an error. See
 [docs/mermaid-examples.md](docs/mermaid-examples.md) for an exhaustive tour of sequence diagrams,
 flowcharts, and ER diagrams, and [docs/example.md](docs/example.md) for one example of every
 diagram type below, side by side with the rest of viewmd's Markdown support.
@@ -160,6 +160,10 @@ width; a `:N` suffix lets a block span multiple columns, widening to match their
 blocks sharing a grid column equalize to the widest one in that column, even across rows. A block
 can optionally connect to another same-row block via a plain flowchart-style `-->` arrow. See
 [docs/mermaid-block.md](docs/mermaid-block.md) for more block-diagram fixtures.
+
+### XY charts
+
+An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁` through `█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes, drawn on top of the bars in a combo chart. Like pie and quadrant, the plot sizes itself from `--width` -- capped at the full viewport and never narrower than half of it, with height near-square at that floor and never flatter than 2:1. Horizontal orientation, extra series, and a numeric x-axis are not supported. See [docs/mermaid-xychart.md](docs/mermaid-xychart.md) and [docs/nvidia-stock-xychart.md](docs/nvidia-stock-xychart.md) for more.
 
 ## Development
 

@@ -171,3 +171,26 @@ def test_renders_a_block_beta_fence_as_tagged_code():
 def test_invalid_block_beta_diagram_is_left_untouched():
     text = '```mermaid\nblock-beta\n    A["Source"]\n    A-->B\n```\n'
     assert render_mermaid_blocks(text) == text
+
+
+def test_renders_an_xychart_fence_as_tagged_code():
+    text = (
+        '```mermaid\nxychart-beta\n    x-axis [Q1, Q2]\n    y-axis 0 --> 10\n'
+        '    bar [4, 8]\n```\n'
+    )
+    got = render_mermaid_blocks(text, width=40)
+    assert "```mermaid\n" not in got
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+    assert "│" in got
+
+
+def test_renders_a_bare_xychart_fence_as_tagged_code():
+    text = '```mermaid\nxychart\n    x-axis [A, B]\n    bar [1, 2]\n```\n'
+    got = render_mermaid_blocks(text, width=40)
+    assert f"```{MERMAID_RENDERED_INFO}\n" in got
+
+
+def test_invalid_xychart_is_left_untouched():
+    text = '```mermaid\nxychart-beta\n    x-axis [A, B]\n    bar [1]\n```\n'
+    assert render_mermaid_blocks(text) == text
+    assert render_mermaid_blocks(text, color=True) == text
