@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0064
 title: Give each XY-chart bar its own color and a gap between bars
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-16
 commits: []
 related: [VIEWMD-0048, VIEWMD-0063]
 supersedes: []
