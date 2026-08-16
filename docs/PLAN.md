@@ -36,6 +36,10 @@ state (tolerant of leading indentation, so a fence nested under a list item stil
 skips single-backtick inline code spans, so wikilink-shaped text inside real code (e.g. a Lua
 long-bracket string literal `[[...]]`) is left untouched.
 
+## Config file: a flat key=value file, not TOML
+
+viewmd reads `$XDG_CONFIG_HOME/viewmd/config` (falling back to `~/.config/viewmd/config`) as a hand-rolled `key = value` file rather than TOML or YAML. `tomllib` is stdlib only from Python 3.11 and this package still supports 3.10, so TOML would mean a new runtime dependency (`tomli`) just to parse three keys; YAML would be the same cost for no benefit over a format whose entire grammar is "one key, one equals, one value." `configparser` INI was the other stdlib option, but it requires a `[section]` header even for a single flat set of keys, which is ceremony a three-key file doesn't earn. Unknown keys are ignored so a future key (`toc`, pager preferences) can appear in an already-written file without this parser changing. CLI flags override the file; the file overrides built-in defaults; a missing file is the built-in-defaults case, not an error. `VIEWMD_NO_CONFIG` and `--config PATH` exist so tests and CI never pick up a developer's own file.
+
 ## Out of scope
 
 - **Image-to-ASCII conversion.** `![alt](image.png)` renders as Rich's default (a link/alt-text placeholder), not an ASCII-art rendering of the image itself. Decided explicitly when scoping VIEWMD-0001: ASCII art support means *fenced code blocks render verbatim*, not image conversion. Revisit only if a real need for viewing image-heavy Markdown shows up.

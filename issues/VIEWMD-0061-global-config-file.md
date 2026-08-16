@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0061
 title: Support a user global configuration file for common options
-status: proposed
+status: in-progress
 area: [cli]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-16
 commits: []
 related: [VIEWMD-0007, VIEWMD-0062]
 supersedes: []
@@ -114,4 +114,19 @@ whether to auto-follow single-link nodes, etc. -- once that issue is actually sc
 
 ## Peer review
 
-Not applicable; not yet built.
+- **Claude (Sonnet 5)** (agent), 2026-08-16: PASS, independent review of the Cursor-implemented
+  commit `b7e3e40`. `./run-tests.sh` green (908 tests, ruff clean, pip-audit clean). Verified each
+  requirement against `viewmd/config.py` and `viewmd/__main__.py`: XDG path resolution (req. 1,
+  including the empty-`XDG_CONFIG_HOME` edge case), the flat `key = value` format with `[section]`
+  headers tolerated but not required (req. 2), the three keys with their exact CLI-flag value
+  spaces (req. 3) and unknown keys (e.g. a future `toc`) ignored rather than erroring (req. 3's
+  forward-compatibility clause), CLI-flag > config-file > built-in-default precedence via
+  `argparse`'s `default=None` + `coalesce()` (req. 4), a missing default-location file resolving to
+  `Config()` with no error (req. 5), `ConfigError` -> `viewmd: <message>` on stderr with a non-zero
+  exit for both a malformed file and an invalid value, never a traceback (req. 6), `--config PATH`
+  and `VIEWMD_NO_CONFIG` (req. 7), and unchanged built-in defaults with no config file present
+  (req. 8). Manually ran the built CLI (not just the test suite, per this file's own house rule on
+  verifying flags end to end) with no config, an XDG config setting `width = 30`, a CLI `--width 20`
+  overriding that config, and a config with `color = purple`, confirming each output/exit code
+  matched the requirement. No correctness bugs found; no simplification or efficiency findings
+  worth raising.

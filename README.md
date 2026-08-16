@@ -24,6 +24,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width 80     # render at exactly 80 columns
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
+./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
@@ -67,6 +68,44 @@ Obsidian-only aliases) still renders as a generic card, using the type token as 
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
+
+## Configuration file
+
+A per-user config file supplies default values for `--width`, `--color`, and
+`--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An
+explicit CLI flag always wins over the file (`--no-full-front-matter` is the flag that turns that
+one back off if the file sets `full_front_matter = true`); a missing file is not an error — it's
+the same as viewmd's behavior today.
+
+To set one up:
+
+```
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd"
+cat > "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd/config" <<'EOF'
+width = 80
+color = never
+full_front_matter = true
+EOF
+```
+
+viewmd looks for the file at `$XDG_CONFIG_HOME/viewmd/config` if `XDG_CONFIG_HOME` is set and
+non-empty, otherwise `~/.config/viewmd/config`. It's a flat `key = value` file, one setting per
+line; blank lines, `# comment` lines, and an optional `[section]` header are all ignored. Known
+keys:
+
+| Key | Values | Mirrors |
+|---|---|---|
+| `width` | a positive integer, or `full` | `--width` |
+| `color` | `auto`, `always`, or `never` | `--color` |
+| `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
+
+An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
+value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
+silently falling back. `--config PATH` reads configuration from `PATH` instead of the default
+location — useful for a one-off alternate profile. Setting `VIEWMD_NO_CONFIG` to any non-empty
+value skips reading a config file entirely, regardless of what's on disk — handy for CI or a
+reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
+even then, since it's explicit).
 
 ## Mermaid diagrams
 

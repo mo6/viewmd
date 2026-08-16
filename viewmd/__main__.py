@@ -11,6 +11,7 @@ import shutil
 import sys
 
 from viewmd import __version__
+from viewmd.config import ConfigError, coalesce, read_config
 
 # A common prose line-length standard; the render width default, capped further by a narrower
 # terminal. --width overrides it, either to an exact column count or to "full" (VIEWMD-0003).
@@ -49,14 +50,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="Markdown file(s) to render; '-' or omitted reads stdin")
     parser.add_argument("--no-pager", action="store_true",
                         help="print to stdout, never invoke a pager")
-    parser.add_argument("--color", choices=["auto", "always", "never"], default="auto",
+    # default=None (not "auto") so an omitted --color can fall through to the config file
+    # rather than looking identical to an explicit `--color auto` (VIEWMD-0061).
+    parser.add_argument("--color", choices=["auto", "always", "never"], default=None,
                         help="when to emit ANSI color (default: auto)")
     parser.add_argument("--width", type=_width_arg, default=None,
                         help=f"render width in columns, or 'full' for the full terminal width "
                              f"(default: min({DEFAULT_MAX_WIDTH}, detected terminal width))")
-    parser.add_argument("--full-front-matter", action="store_true",
+    # BooleanOptionalAction (not store_true) so `--no-full-front-matter` can override a
+    # config-file `full_front_matter = true`; default=None means "flag omitted."
+    parser.add_argument("--full-front-matter", action=argparse.BooleanOptionalAction, default=None,
                         help="show every front-matter field, including empty ones "
                              "(default: empty fields are omitted)")
+    parser.add_argument("--config", metavar="PATH", default=None,
+                        help="read configuration from PATH instead of "
+                             "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
     args = parser.parse_args(argv)
     paths = args.path
 
@@ -64,8 +72,15 @@ def main(argv: list[str] | None = None) -> int:
         print("viewmd: cannot mix stdin ('-') with file arguments", file=sys.stderr)
         return 1
 
-    color = _resolve_color(args.color)
-    width = _resolve_width(args.width, shutil.get_terminal_size().columns)
+    try:
+        cfg = read_config(args.config)
+    except ConfigError as e:
+        print(f"viewmd: {e}", file=sys.stderr)
+        return 1
+
+    color = _resolve_color(coalesce(args.color, cfg.color, "auto"))
+    width = _resolve_width(coalesce(args.width, cfg.width), shutil.get_terminal_size().columns)
+    full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
     # existing single-file output stays byte-for-byte identical.
@@ -73,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         path = paths[0]
         try:
             ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=args.full_front_matter)
+                                     full_front_matter=full_front_matter)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             return 1
@@ -92,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     for path in paths:
         try:
             ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=args.full_front_matter)
+                                     full_front_matter=full_front_matter)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             had_error = True
