@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0063
 title: Color the bar and line datasets in Mermaid XY charts
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses
 accepted_at: 2026-08-16
-commits: []
+commits: [6198506, a56a217, 1941a52]
 related: [VIEWMD-0048, VIEWMD-0064]
 supersedes: []
-changelog:
+changelog: "[1.24.0]"
 reason:
 ---
 

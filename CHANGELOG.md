@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.24.0] — 2026-08-16
+
+- **Color Mermaid XY-chart bar and line datasets** (VIEWMD-0063, render/mermaid): with color available, the `bar` dataset's fill glyphs and the `line` dataset's step/staircase glyphs each get their own fixed hue, so a combo chart's two series are distinguishable at a glance instead of only by glyph shape; axis lines, tick labels, category labels, and the title stay plain. Output is byte-identical to before with color off. See `docs/mermaid-xychart.md`.
+
 ## [1.23.0] — 2026-08-16
 
 - **Render Mermaid XY charts** (VIEWMD-0048, render/mermaid): an eleventh Mermaid diagram type, `xychart-beta` (or its bare `xychart` alias) -- plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁`-`█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes. The plot area sizes itself from `--width` (capped at the full viewport, never narrower than half of it), with a monospace-cell-aspect-corrected height so the plot reads ~1:1 at its narrowest and never flatter than 2:1 at its widest, and y-axis ticks snap to a nice 1/2/5 x 10^k spacing rather than an arbitrary fraction of the axis range. No upstream reference implementation to differentially test against, so fixtures are hand-authored/visually verified. See `docs/example.md` and `docs/mermaid-xychart.md`.
