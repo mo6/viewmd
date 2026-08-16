@@ -155,6 +155,28 @@ def _format_tick(v: float, decimals: int = 0) -> str:
     return f"{v:.{decimals}f}"
 
 
+def _nice_step(raw_step: float) -> float:
+    """Round `raw_step` to the nearest "nice" tick spacing -- 1, 2, or 5 times a power of ten --
+    so y-axis labels land on round numbers instead of an arbitrary fraction of the axis range
+    divided by the row count `_plot_geometry` happens to produce. Classic graph-labelling
+    algorithm (Sparks' "nice numbers"); rounds rather than always rounding up, since a tick count
+    close to the caller's target row count matters more here than guaranteeing a specific bound."""
+    if raw_step <= 0 or not math.isfinite(raw_step):
+        return 1.0
+    exponent = math.floor(math.log10(raw_step))
+    magnitude = 10.0**exponent
+    residual = raw_step / magnitude
+    if residual < 1.5:
+        nice = 1
+    elif residual < 3:
+        nice = 2
+    elif residual < 7:
+        nice = 5
+    else:
+        nice = 10
+    return nice * magnitude
+
+
 def _auto_range(values: list[float]) -> tuple[float, float]:
     lo, hi = min(values), max(values)
     if lo == hi:
@@ -278,8 +300,17 @@ def render(chart: XYChart, *, use_ascii: bool = False, width: int | None = None)
 
     min_col = max(_MIN_COL, max((string_width(c) for c in chart.categories), default=1) + 1)
     target_width = width if width is not None else _terminal_width()
-    col_width, plot_w, n_rows = _plot_geometry(len(chart.categories), min_col, target_width)
-    step = (y_max - y_min) / n_rows
+    col_width, plot_w, target_rows = _plot_geometry(len(chart.categories), min_col, target_width)
+    # _plot_geometry's row count is chosen purely from width/aspect (requirement 8); snapping the
+    # step it implies to a "nice" round number (1/2/5 x 10^k) instead of using it verbatim keeps
+    # y-axis labels off arbitrary fractions like "4.8"/"9.6" at the cost of the actual row count
+    # (and so the plot's exact aspect ratio) drifting a bit from that target -- deliberately, nice
+    # labels matter more here than hitting the aspect figure exactly. The resulting `n_rows` can
+    # exceed `target_rows` when the range doesn't divide evenly by the nice step, so the top tick
+    # sits at or above `y_max` rather than clipping it.
+    span = y_max - y_min
+    step = _nice_step(span / target_rows) if target_rows > 0 and span > 0 else max(span, 1.0)
+    n_rows = max(1, math.ceil(span / step - 1e-9)) if step > 0 else target_rows
     levels = [y_min + step * i for i in range(n_rows, 0, -1)]
 
     n = len(chart.categories)

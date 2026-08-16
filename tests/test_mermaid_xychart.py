@@ -21,6 +21,7 @@ from viewmd.mermaid.xychart.renderer import (
     _UNICODE,
     _bar_glyph,
     _build_line_grid,
+    _nice_step,
     _plot_geometry,
     _snap_to_row,
     render,
@@ -117,7 +118,7 @@ def test_line_point_at_axis_baseline_connects_instead_of_vanishing():
     out = render(chart, width=60)
     # Q1's point (0, the axis minimum) must leave a glyph on the bottom axis
     # row -- the old bug snapped it to None and dropped it with no trace.
-    bottom_axis = next(line for line in out.splitlines() if line.lstrip().startswith("0.00"))
+    bottom_axis = next(line for line in out.splitlines() if "└" in line)
     plot = bottom_axis.split("└", 1)[1]
     assert any(ch in plot for ch in "╭╮╰╯│"), f"no line glyph on baseline row: {bottom_axis!r}"
 
@@ -140,6 +141,42 @@ def test_build_line_grid_run_with_no_predecessor_does_not_wrap_to_last_run():
     # every row strictly between 40 and 20.
     leading_col = 1 * 4  # category index 1's first column
     assert grid[20.0][leading_col] == " "
+
+
+# ---------------------------------------------------------------------------
+# Nice tick spacing (y-axis labels land on round numbers, not an arbitrary
+# fraction of the axis range divided by _plot_geometry's row count)
+# ---------------------------------------------------------------------------
+
+
+def test_nice_step_snaps_to_one_two_five_or_ten():
+    assert _nice_step(6) == 5      # 120/20, the motivating case
+    assert _nice_step(0.04) == 0.05
+    assert _nice_step(3.2) == 5
+    assert _nice_step(1.4) == 1
+    assert _nice_step(2.4) == 2
+    assert _nice_step(90) == 100
+    assert _nice_step(5) == 5      # already nice: unchanged
+
+
+def test_y_axis_ticks_are_whole_or_five_ten_intervals():
+    # y-axis 0-->120 at a width whose raw row count doesn't divide 120
+    # evenly (the motivating report: ticks like 4.8/9.6/... instead of
+    # round numbers) must produce ticks that are all whole numbers, each a
+    # consistent step apart, snapped to a 1/2/5 x 10^k spacing.
+    chart = parse(
+        "xychart-beta\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis 0 --> 120\n"
+        "    bar [40, 60, 80, 100]\n"
+    )
+    out = render(chart, width=100)
+    ticks = [
+        float(line.split("│", 1)[0].strip())
+        for line in out.splitlines()
+        if "│" in line
+    ]
+    assert all(t == int(t) for t in ticks), ticks
+    steps = {round(a - b, 6) for a, b in zip(ticks, ticks[1:], strict=False)}
+    assert steps == {5.0} or steps == {10.0} or steps == {2.0} or steps == {1.0}, steps
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +255,13 @@ def test_plot_width_at_fifty_percent_floor():
 
 def test_plot_width_at_one_hundred_percent_cap():
     # 10 one-char categories, content min 20. W=20 puts the plot on the
-    # 100% ceiling; it must not grow past it.
+    # 100% ceiling; it must not grow past it. y-axis 0-->10 is chosen so
+    # its nice-step-adjusted row count (see _nice_step) lands exactly on
+    # _plot_geometry's own target (5 rows), keeping this test focused on
+    # width/aspect geometry rather than tick-spacing rounding.
     cats = ",".join(f"{i}" for i in range(10))
     vals = ",".join("1" for _ in range(10))
-    chart = parse(f"xychart-beta\n    x-axis [{cats}]\n    bar [{vals}]\n")
+    chart = parse(f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 10\n    bar [{vals}]\n")
     out = render(chart, use_ascii=False, width=20)
     pw = _inner_plot_width(out)
     ph = _plot_height(out)
@@ -232,9 +272,11 @@ def test_plot_width_at_one_hundred_percent_cap():
 
 def test_plot_height_grows_slower_than_width_between_bounds():
     # W=30, 10 one-char cats, content=20: between floor 15 and ceil 30.
+    # y-axis 0-->70 lands its nice step exactly on _plot_geometry's target
+    # (7 rows), same reasoning as the ceiling test above.
     cats = ",".join(f"{i}" for i in range(10))
     vals = ",".join("1" for _ in range(10))
-    chart = parse(f"xychart-beta\n    x-axis [{cats}]\n    bar [{vals}]\n")
+    chart = parse(f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 70\n    bar [{vals}]\n")
     out = render(chart, use_ascii=False, width=30)
     pw = _inner_plot_width(out)
     ph = _plot_height(out)

@@ -541,4 +541,20 @@ malformed-input tolerance requirement 9 asks for at the chart level, one layer u
   figures by it, so the ratios hold visually rather than in raw character counts; updated the
   affected unit tests' expected row counts and regenerated `tests/fixtures/mermaid_xychart/*.out`
   (visually re-verified, per this issue's fixture-verification posture) to match.
+- **Claude (maintainer follow-up)**, 2026-08-16: maintainer flagged that the y-axis ticks in
+  docs/mermaid-xychart.md now landed on an arbitrary pattern of values (e.g. `4.8`/`9.6`/`14.4`)
+  instead of round intervals, and asked for whole-number or 5/10-interval ticks even at the cost
+  of the plot's exact aspect ratio. Cause: `step = (y_max - y_min) / n_rows` used whatever row
+  count `_plot_geometry` picked from width/aspect alone, with no regard for whether the resulting
+  step divided the axis range into round numbers. Added `_nice_step` (the classic "nice numbers
+  for graph labels" algorithm -- snaps a raw step to the nearest 1/2/5 x 10^k) and changed
+  `render` to pick `step` from that (based on `_plot_geometry`'s row count as a *target*, not a
+  mandate), then derive the actual `n_rows` as however many nice-sized steps are needed to cover
+  the axis range (`ceil`, so the top tick never clips a value at `y_max`). Row count -- and so the
+  aspect ratio requirement 8 describes -- now drifts a bit to serve nice labels, as the maintainer
+  asked; e.g. `y-axis 0 --> 120` at a width that previously implied a step of 6 now uses 5 (24
+  rows) instead. Updated the two `_plot_geometry`-focused geometry tests that happened to rely on
+  an auto-scaled (non-round) y-range to use an explicit range that keeps their aspect assertions
+  decoupled from this new tick-rounding behavior, added `_nice_step`/whole-tick regression tests,
+  and regenerated the two affected fixtures (`nvda.out`, `sales_vs_target.out`).
 
