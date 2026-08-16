@@ -10,6 +10,9 @@ caller's resolved render `width`, aspect ~1:1 at the floor and never
 flatter than 2:1). `poc/xychart/xychart_poc.py` is the implementation
 example this module follows for the step-line and bar-fill rules; the
 glyph tables and overlay order here are ported from it, not re-derived.
+Color (VIEWMD-0063) is a post-layout ANSI wrap around those already-placed
+glyphs -- `_plot_geometry` / `_build_bar_grid` / `_build_line_grid` are
+unaffected.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import math
 import shutil
 from dataclasses import dataclass
 
+from viewmd.mermaid.grid.canvas import apply_color_spans
 from viewmd.mermaid.textutil import width as string_width
 from viewmd.mermaid.xychart.parser import XYChart
 
@@ -54,6 +58,14 @@ _ASCII = _Glyphs(
 )
 
 _MIN_COL = 2
+
+# Two fixed hues, one per dataset -- same categorical-palette convention as
+# gantt's `_status_color` / gitgraph's `_BRANCH_COLORS` (a small fixed hex
+# list, not a theming system). First two of gitgraph/kanban's "dark" dataviz
+# hues, picked to stay distinct from each other and from typical light/dark
+# terminal backgrounds (VIEWMD-0063).
+_BAR_COLOR = "3987e5"   # blue
+_LINE_COLOR = "d95926"  # orange
 
 # A monospace terminal cell is roughly twice as tall as it is wide, so a plot
 # that's N columns wide needs roughly N/2 rows to *look* square -- raw
@@ -279,7 +291,81 @@ def _merge(
     return merged
 
 
-def render(chart: XYChart, *, use_ascii: bool = False, width: int | None = None) -> str:
+def _dataset_color(kind: str) -> str:
+    """Map a dataset kind (`"bar"` / `"line"`) to its fixed hex (VIEWMD-0063)."""
+    if kind == "bar":
+        return _BAR_COLOR
+    return _LINE_COLOR
+
+
+def _bar_chars(g: _Glyphs) -> frozenset[str]:
+    if g.bar_full == "#":
+        return frozenset("#")
+    return frozenset(_EIGHTHS[1:])  # skip the leading space
+
+
+def _line_chars(g: _Glyphs) -> frozenset[str]:
+    return frozenset({g.h, g.v, g.line_tl, g.line_tr, g.line_bl, g.line_br})
+
+
+def _plot_color_spans(chars: list[str], g: _Glyphs) -> list[tuple[int, int, str]]:
+    """Consecutive same-dataset glyph runs in a plot row, as color spans."""
+    bar, line = _bar_chars(g), _line_chars(g)
+    spans: list[tuple[int, int, str]] = []
+    i = 0
+    n = len(chars)
+    while i < n:
+        ch = chars[i]
+        if ch in bar:
+            hex_ = _dataset_color("bar")
+            belong = bar
+        elif ch in line:
+            hex_ = _dataset_color("line")
+            belong = line
+        else:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and chars[j] in belong:
+            j += 1
+        spans.append((i, j, hex_))
+        i = j
+    return spans
+
+
+def _colorize_row(chars: list[str], g: _Glyphs, *, color: bool) -> str:
+    if not color:
+        return "".join(chars)
+    return apply_color_spans(chars, _plot_color_spans(chars, g))
+
+
+def _colorize_axis(
+    axis_chars: list[str],
+    line_baseline: list[str] | None,
+    *,
+    color: bool,
+) -> str:
+    """Wrap line-dataset glyphs stitched onto the axis; leave └/┬/─ plain."""
+    if not color or line_baseline is None:
+        return "".join(axis_chars)
+    hex_ = _dataset_color("line")
+    spans: list[tuple[int, int, str]] = []
+    i = 0
+    n = len(line_baseline)
+    while i < n:
+        if line_baseline[i] != " ":
+            j = i + 1
+            while j < n and line_baseline[j] != " ":
+                j += 1
+            spans.append((i + 1, j + 1, hex_))  # +1: axis_chars[0] is the bl corner
+            i = j
+        else:
+            i += 1
+    return apply_color_spans(axis_chars, spans)
+
+
+def render(chart: XYChart, *, use_ascii: bool = False, color: bool = False,
+           width: int | None = None) -> str:
     g = _ASCII if use_ascii else _UNICODE
     if not chart.categories:
         return chart.title
@@ -342,14 +428,18 @@ def render(chart: XYChart, *, use_ascii: bool = False, width: int | None = None)
 
     for lv, tick in zip(levels, tick_labels, strict=True):
         pad = " " * (label_w - string_width(tick))
-        lines.append(f"{pad}{tick} {g.v}{''.join(grid[lv])}")
+        plot = _colorize_row(grid[lv], g, color=color)
+        lines.append(f"{pad}{tick} {g.v}{plot}")
 
     axis_chars = list(g.bl + (g.tee_d + g.h * (col_width - 1)) * n)
-    if line_grid is not None and y_min in line_grid:
-        for c, ch in enumerate(line_grid[y_min]):
+    line_baseline = (
+        line_grid[y_min] if line_grid is not None and y_min in line_grid else None
+    )
+    if line_baseline is not None:
+        for c, ch in enumerate(line_baseline):
             if ch != " ":
                 axis_chars[c + 1] = ch  # +1: axis_chars[0] is g.bl, left of the plot columns
-    axis = "".join(axis_chars)
+    axis = _colorize_axis(axis_chars, line_baseline, color=color)
     ymin_pad = " " * (label_w - string_width(ymin_s))
     lines.append(f"{ymin_pad}{ymin_s} {axis}")
 
