@@ -33,14 +33,6 @@ line-length standard, so a wide terminal doesn't stretch prose or tables edge to
 picks an exact width instead; `--width full` uses the full terminal width regardless of the
 100-column default.
 
-A per-user config file at `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config` if `XDG_CONFIG_HOME` is unset) supplies default values for `--width`, `--color`, and `--full-front-matter` as a flat `key = value` file. An explicit CLI flag always wins over the file (`--no-full-front-matter` is the flag that turns that one back off); a missing file is not an error. `--config PATH` reads from `PATH` instead of the default location, and `VIEWMD_NO_CONFIG` (any non-empty value) skips the file entirely.
-
-```
-width = 80
-color = never
-full_front_matter = true
-```
-
 A file that opens with a YAML-style front-matter block (`--- ... ---`) — common in this project's
 own `issues/*.md`, and in static-site-generator posts — renders that block as a key/value table,
 followed by a divider, ahead of the document body. Parsing covers flat `key: value` pairs and
@@ -69,6 +61,44 @@ Obsidian-only aliases) still renders as a generic card, using the type token as 
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
+
+## Configuration file
+
+A per-user config file supplies default values for `--width`, `--color`, and
+`--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An
+explicit CLI flag always wins over the file (`--no-full-front-matter` is the flag that turns that
+one back off if the file sets `full_front_matter = true`); a missing file is not an error — it's
+the same as viewmd's behavior today.
+
+To set one up:
+
+```
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd"
+cat > "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd/config" <<'EOF'
+width = 80
+color = never
+full_front_matter = true
+EOF
+```
+
+viewmd looks for the file at `$XDG_CONFIG_HOME/viewmd/config` if `XDG_CONFIG_HOME` is set and
+non-empty, otherwise `~/.config/viewmd/config`. It's a flat `key = value` file, one setting per
+line; blank lines, `# comment` lines, and an optional `[section]` header are all ignored. Known
+keys:
+
+| Key | Values | Mirrors |
+|---|---|---|
+| `width` | a positive integer, or `full` | `--width` |
+| `color` | `auto`, `always`, or `never` | `--color` |
+| `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
+
+An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
+value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
+silently falling back. `--config PATH` reads configuration from `PATH` instead of the default
+location — useful for a one-off alternate profile. Setting `VIEWMD_NO_CONFIG` to any non-empty
+value skips reading a config file entirely, regardless of what's on disk — handy for CI or a
+reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
+even then, since it's explicit).
 
 ## Mermaid diagrams
 
