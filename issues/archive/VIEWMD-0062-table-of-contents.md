@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0062
 title: Render a table of contents from a document's heading structure
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses
 accepted_at: 2026-08-16
-commits: []
+commits: [611a831, 7eb2c4e, 0bf909f]
 related: [VIEWMD-0007, VIEWMD-0061, VIEWMD-0006]
 supersedes: []
-changelog:
+changelog: "[1.29.0]"
 reason:
 ---
 

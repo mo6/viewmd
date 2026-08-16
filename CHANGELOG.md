@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.29.0] — 2026-08-16
+
+- **Heading-derived table of contents** (VIEWMD-0062, render): a document with two or more `#` / `##` / `###` headings now gets an indented outline under its leading `#` title (that title is not repeated in the list or again below it). The outline starts at three levels and steps down to h1–h2, then h1-only, if it would otherwise exceed 20 entries; remaining `#` headings are always kept. On by default; `--no-toc` turns it off, `--toc` turns it back on (including to override a config-file `toc` key). See the README.
+
 ## [1.28.0] — 2026-08-16
 
 - **Color a combo chart's bar background where its line crosses it** (VIEWMD-0066, render/mermaid): where an XY-chart combo's `line` dataset draws over a cell a `bar` dataset would otherwise have filled, that cell now keeps the bar's own color as a true-color ANSI background underneath the line's glyph, instead of the line erasing all trace of the bar's color. The line's own foreground color and every glyph's placement are unchanged; a cell the line never touches, a line-only chart, and `color=False` output are all unaffected. See `poc/xychart/line_bg_poc.py` for a real-color before/after.
