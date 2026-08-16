@@ -9,7 +9,7 @@ updated: 2026-08-16
 accepted_by:
 accepted_at:
 commits: []
-related: [VIEWMD-0006, VIEWMD-0061, VIEWMD-0062]
+related: [VIEWMD-0006, VIEWMD-0061, VIEWMD-0062, VIEWMD-0067]
 supersedes: []
 changelog:
 reason:
@@ -33,13 +33,14 @@ Flagged by the maintainer as a future direction, alongside VIEWMD-0006 (link hig
 ## Requirements
 
 1. MUST scroll rendered Markdown output continuously, line-based, matching `less`'s own scrolling behavior -- not paginated by document node/section the way Info is.
-2. MUST NOT implement Info's per-node header line, `Next`/`Prev`/`Up` navigation, or a two-line mode-line/echo-area split -- v1 has no node concept; ordinary scroll-position feedback (e.g. `less`'s own filename/percentage line) is enough.
-3. MUST provide an on-demand ToC popup, opened by a dedicated key, that overlays the document's heading outline (the same `h1`-`h3` structure and indentation [VIEWMD-0062](VIEWMD-0062-table-of-contents.md) extracts and renders statically) on top of the current scroll view.
-4. MUST let the reader move a selection within the popup (e.g. arrow keys) and confirm it (e.g. Enter), and on confirmation scroll the underlying view to that heading's position and close the popup.
-5. MUST let the reader dismiss the popup without jumping (e.g. Esc, or the same key that opened it) and return to exactly the scroll position the popup was opened from.
-6. MUST make the popup available regardless of current scroll position -- including when VIEWMD-0062's static ToC at the top of the document is itself off-screen.
-7. MUST NOT change any `--no-pager` or non-terminal (piped/redirected) output -- the popup, like the pager itself, is a terminal-interactive-only feature.
-8. MUST NOT implement link navigation (jump to next/prev link, follow a link's target, back-history) -- explicitly v2, see Non-goals.
+2. MUST support mouse-wheel/trackpad scrolling, moving the view the same way it does in `less` (with `--mouse`, [VIEWMD-0067](VIEWMD-0067-less-pager-mouse-scroll.md)) -- since v1 stops delegating to an external `less` process (see Design notes below), this behavior has to be implemented directly in viewmd's own scrolling loop rather than inherited for free; it does not happen automatically just because v1's scrolling *feels* like `less`.
+3. MUST NOT implement Info's per-node header line, `Next`/`Prev`/`Up` navigation, or a two-line mode-line/echo-area split -- v1 has no node concept; ordinary scroll-position feedback (e.g. `less`'s own filename/percentage line) is enough.
+4. MUST provide an on-demand ToC popup, opened by a dedicated key, that overlays the document's heading outline (the same `h1`-`h3` structure and indentation [VIEWMD-0062](VIEWMD-0062-table-of-contents.md) extracts and renders statically) on top of the current scroll view.
+5. MUST let the reader move a selection within the popup (e.g. arrow keys, and mouse wheel per requirement 2) and confirm it (e.g. Enter, or a mouse click per `less --mouse`'s own left-click convention), and on confirmation scroll the underlying view to that heading's position and close the popup.
+6. MUST let the reader dismiss the popup without jumping (e.g. Esc, or the same key that opened it) and return to exactly the scroll position the popup was opened from.
+7. MUST make the popup available regardless of current scroll position -- including when VIEWMD-0062's static ToC at the top of the document is itself off-screen.
+8. MUST NOT change any `--no-pager` or non-terminal (piped/redirected) output -- the popup, like the pager itself, is a terminal-interactive-only feature.
+9. MUST NOT implement link navigation (jump to next/prev link, follow a link's target, back-history) -- explicitly v2, see Non-goals.
 
 ## Non-goals
 
@@ -49,9 +50,9 @@ Flagged by the maintainer as a future direction, alongside VIEWMD-0006 (link hig
 
 ## Design notes / links
 
-Builds on [VIEWMD-0006](VIEWMD-0006-wikilink-highlighting.md)'s link highlighting for v2 (not v1, which has no link interaction) and directly on [VIEWMD-0062](VIEWMD-0062-table-of-contents.md)'s heading-outline extraction for v1's popup content -- **VIEWMD-0062 is now a blocking dependency of this issue's v1**, not just a prerequisite of convenience as originally filed below, since the popup has nothing to show without that issue's outline data structure existing first. Also interacts with [docs/PLAN.md](../docs/PLAN.md)'s pager design: `viewmd/pager.py` spawns `$PAGER` as an external subprocess today, handing the terminal over entirely once `less` starts -- a popup that can interrupt scrolling to overlay content and later hand control back is not reachable that way. v1 likely needs viewmd to own a minimal interactive scrolling loop itself (raw terminal input, feeding pre-rendered screenfuls, `less`-equivalent scroll keys) rather than delegating to an external `$PAGER` process, even though v1's scrolling behavior otherwise deliberately mimics `less` rather than reinventing it -- this is the single biggest architectural change v1 introduces relative to today's pager, and worth its own design note (and a proof-of-concept, matching this project's usual practice for a UI/architecture-shape decision) once this issue is actually scoped for building.
+Builds on [VIEWMD-0006](VIEWMD-0006-wikilink-highlighting.md)'s link highlighting for v2 (not v1, which has no link interaction) and directly on [VIEWMD-0062](VIEWMD-0062-table-of-contents.md)'s heading-outline extraction for v1's popup content -- **VIEWMD-0062 is now a blocking dependency of this issue's v1**, not just a prerequisite of convenience as originally filed below, since the popup has nothing to show without that issue's outline data structure existing first (VIEWMD-0062 has since shipped, see below). Also interacts with [docs/PLAN.md](../docs/PLAN.md)'s pager design: `viewmd/pager.py` spawns `$PAGER` as an external subprocess today, handing the terminal over entirely once `less` starts -- a popup that can interrupt scrolling to overlay content and later hand control back is not reachable that way. v1 likely needs viewmd to own a minimal interactive scrolling loop itself (raw terminal input, feeding pre-rendered screenfuls, `less`-equivalent scroll keys, including mouse-wheel handling per requirement 2) rather than delegating to an external `$PAGER` process, even though v1's scrolling behavior otherwise deliberately mimics `less` rather than reinventing it -- this is the single biggest architectural change v1 introduces relative to today's pager, and worth its own design note (and a proof-of-concept, matching this project's usual practice for a UI/architecture-shape decision) once this issue is actually scoped for building. [VIEWMD-0067](VIEWMD-0067-less-pager-mouse-scroll.md) fixes mouse-wheel scrolling for *today's* `less`-delegated pager in the meantime -- a separate, narrower fix that stands on its own regardless of when this issue's v1 is built, but whose `--mouse` flag becomes moot once v1 stops delegating to external `less` at all.
 
-**Split into preparation issues (2026-08-16):** rather than scoping this whole issue in one pass, two smaller, independently-useful pieces were filed and built ahead of it: [VIEWMD-0061](VIEWMD-0061-global-config-file.md) (a user-global config file -- this issue's own future interactive-pager preferences will want somewhere to live too, and VIEWMD-0062 needs a `toc` on/off key; **implemented**) and [VIEWMD-0062](VIEWMD-0062-table-of-contents.md) (a static table of contents from `h1`-`h3` headings -- the closest thing a non-interactive renderer can produce to Info's `* Menu:` concept below, and a real feature on its own regardless of whether/when this issue itself is ever scoped and built; **still proposed, not yet built** -- see the blocking-dependency note above).
+**Split into preparation issues (2026-08-16):** rather than scoping this whole issue in one pass, two smaller, independently-useful pieces were filed and built ahead of it: [VIEWMD-0061](VIEWMD-0061-global-config-file.md) (a user-global config file -- this issue's own future interactive-pager preferences will want somewhere to live too, and VIEWMD-0062 needs a `toc` on/off key; **implemented**) and [VIEWMD-0062](VIEWMD-0062-table-of-contents.md) (a static table of contents from `h1`-`h3` headings -- the closest thing a non-interactive renderer can produce to Info's `* Menu:` concept below, and a real feature on its own regardless of whether/when this issue itself is ever scoped and built; **implemented** -- the blocking-dependency note above is now satisfied).
 
 ### Research: GNU Info's pager model (v2 background, not v1)
 
@@ -109,7 +110,7 @@ None of the above is a v1 requirement (see Requirements, above) -- it's vocabula
 
 Illustrative only -- the exact popup key, its border style, and selection-highlight styling are all implementation decisions for the eventual scoping pass, not settled by this mockup. Shown rendering this very issue file, mid-scroll (partway through the "Requirements" section), the way `viewmd VIEWMD-0007-link-navigation.md` would look today plus this issue's own popup addition.
 
-Ordinary scrolling -- no viewmd-specific chrome, just the rendered body and whatever status line the terminal/pager already shows (here, `less`'s own default filename+percentage line, unchanged by this issue per requirement 2):
+Ordinary scrolling -- no viewmd-specific chrome, just the rendered body and whatever status line the terminal/pager already shows (here, `less`'s own default filename+percentage line, unchanged by this issue per requirement 3):
 
 ```
   1. MUST scroll rendered Markdown output continuously, line-based, matching
@@ -167,7 +168,7 @@ VIEWMD-0007-link-navigation.md (78%)
 
 ## Acceptance / verification
 
-To be defined when this issue is actually scoped for v1 building -- but per the v1/v2 split above, acceptance criteria will need to cover at minimum: plain scroll behavior unchanged from `less` (requirement 1), the popup opening from any scroll position and rendering the same outline VIEWMD-0062 produces (requirements 3, 6), selection/confirm/cancel each returning to the correct scroll position (requirements 4-5), and `--no-pager`/piped output completely unaffected (requirement 7).
+To be defined when this issue is actually scoped for v1 building -- but per the v1/v2 split above, acceptance criteria will need to cover at minimum: plain scroll behavior unchanged from `less` (requirement 1), mouse-wheel/trackpad scrolling actually moving the view (requirement 2), the popup opening from any scroll position and rendering the same outline VIEWMD-0062 produces (requirements 4, 7), selection/confirm/cancel each returning to the correct scroll position (requirements 5-6), and `--no-pager`/piped output completely unaffected (requirement 8).
 
 ## Peer review
 
