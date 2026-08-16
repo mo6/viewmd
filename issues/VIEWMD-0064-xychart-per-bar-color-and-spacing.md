@@ -101,6 +101,66 @@ belongs to, not just "is this a bar glyph or a line glyph" as they do today -- l
 `_build_bar_grid` needs to record (or `_plot_color_spans` needs to derive from `col_width`) each
 colored span's category index, not just its dataset kind.
 
+### Mockup: before / after, `tests/fixtures/mermaid_xychart/sales.mmd`
+
+Markdown can't show real ANSI color, so the "after" mockup below stands in each bar's color with a different fill character (`░`/`▒`/`▓`/`█`) instead -- the real renderer keeps using the same eighth-block glyphs (`▁`-`█`) for every bar regardless of color, per-bar color is a `wrap_text_in_color`-style ANSI wrap around those glyphs (VIEWMD-0063's own mechanism), not a new glyph set. The eighth-block partial-top row (VIEWMD-0048 requirement 7) is also simplified away here to keep the mockup readable -- rounded to the nearest whole row instead; unaffected by this issue either way.
+
+Today (VIEWMD-0063, shipped): one hue for the whole bar dataset, bars flush against each other:
+
+```
+100 │
+ 95 │
+ 90 │                              ▄▄▄▄▄▄▄▄▄▄
+ 85 │                              ██████████
+ 80 │                              ██████████
+ 75 │                              ██████████
+ 70 │                    ▄▄▄▄▄▄▄▄▄▄██████████
+ 65 │                    ████████████████████
+ 60 │                    ████████████████████
+ 55 │          ▄▄▄▄▄▄▄▄▄▄████████████████████
+ 50 │          ██████████████████████████████
+ 45 │          ██████████████████████████████
+ 40 │▄▄▄▄▄▄▄▄▄▄██████████████████████████████
+ 35 │████████████████████████████████████████
+ 30 │████████████████████████████████████████
+ 25 │████████████████████████████████████████
+ 20 │████████████████████████████████████████
+ 15 │████████████████████████████████████████
+ 10 │████████████████████████████████████████
+  5 │████████████████████████████████████████
+  0 └┬─────────┬─────────┬─────────┬─────────
+    Q1        Q2        Q3        Q4
+```
+
+After this issue: each bar its own color (stand-in glyph here) and a one-column gap (requirement 4) separates every bar from its neighbor, including where two full-height bars would otherwise touch (e.g. Q3/Q4 above, rows 55-70):
+
+```
+100 │
+ 95 │
+ 90 │                              █████████
+ 85 │                              █████████
+ 80 │                              █████████
+ 75 │                              █████████
+ 70 │                    ▓▓▓▓▓▓▓▓▓ █████████
+ 65 │                    ▓▓▓▓▓▓▓▓▓ █████████
+ 60 │                    ▓▓▓▓▓▓▓▓▓ █████████
+ 55 │          ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 50 │          ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 45 │          ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 40 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 35 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 30 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 25 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 20 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 15 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+ 10 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+  5 │░░░░░░░░░ ▒▒▒▒▒▒▒▒▒ ▓▓▓▓▓▓▓▓▓ █████████
+  0 └┬─────────┬─────────┬─────────┬─────────
+    Q1        Q2        Q3        Q4
+```
+
+(`░`=Q1, `▒`=Q2, `▓`=Q3, `█`=Q4 above -- four different palette entries per requirement 1, not four different glyph shapes; a real render draws every bar with the same block glyphs, just wrapped in each category's own hex per `wrap_text_in_color`. Axis line and tick/category labels are deliberately left contiguous/unchanged -- the gap is a bar-fill-only change, requirement 4.)
+
 ## Acceptance / verification
 
 - `./run-tests.sh` green, including new `pytest` coverage for: a multi-category bar chart with
