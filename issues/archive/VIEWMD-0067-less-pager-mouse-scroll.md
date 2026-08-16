@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0067
 title: Enable mouse/trackpad scroll-wheel support in the default less pager
-status: in-progress
+status: implemented
 area: [cli]
 effort: low
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-16
-commits: []
+commits: [88f527b]
 related: [VIEWMD-0007]
 supersedes: []
-changelog:
+changelog: "[1.30.0]"
 reason:
 ---
 
