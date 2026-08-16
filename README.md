@@ -41,13 +41,13 @@ followed by a divider, ahead of the document body. Parsing covers flat `key: val
 with no value are omitted from the table by default; `--full-front-matter` shows every field,
 empty ones included.
 
-A document with two or more `#` / `##` / `###` headings also gets a table of contents printed
-after that front-matter block (if any) and before the body: one indented line per heading, styled
-like the headings themselves. The outline starts at three levels and steps down to h1–h2, then to
-h1-only, if it would otherwise exceed 20 entries; every `#` heading is kept even when there are
-more than 20 of them. `--no-toc` turns it off; `--toc` turns it back on (for example to override
-a config file that disabled it). `h4` and deeper headings stay in the body but are left out of
-the outline.
+A document with two or more `#` / `##` / `###` headings also gets a table of contents: the leading
+`#` title renders first (as a normal heading), then an indented outline of the remaining headings,
+then the rest of the body. The outline starts at three levels and steps down to h1–h2, then to
+h1-only, if it would otherwise exceed 20 entries; every remaining `#` heading is kept even when
+there are more than 20 of them. `--no-toc` turns it off; `--toc` turns it back on (for example to
+override a config file that disabled it). `h4` and deeper headings stay in the body but are left
+out of the outline.
 
 Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
 preceded by a heading naming its path and separated by a divider, concatenated into a single

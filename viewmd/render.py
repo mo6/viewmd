@@ -412,6 +412,37 @@ def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
     return lines
 
 
+def _leading_h1_end_line(markdown: Markdown) -> int | None:
+    """Return the source line after a leading h1, or None if the first h1-h3 heading is not an h1.
+
+    ``token.map`` is markdown-it's ``[start_line, end_line)`` into the parsed source. Used to
+    split the body so the title heading renders once above the ToC (VIEWMD-0062).
+    """
+    for token in markdown.parsed:
+        if token.type != "heading_open":
+            continue
+        if token.tag == "h1":
+            if token.map is None:
+                return None
+            return token.map[1]
+        if token.tag in _TOC_LEVELS:
+            return None
+    return None
+
+
+def _split_source_at_line(text: str, end_line: int) -> tuple[str, str]:
+    lines = text.splitlines(keepends=True)
+    return "".join(lines[:end_line]), "".join(lines[end_line:])
+
+
+def _print_toc(console: Console, outline: list[HeadingOutline]) -> None:
+    if not outline:
+        return
+    for line in _toc_lines(outline):
+        console.print(line)
+    console.print()
+
+
 def render_markdown(
     text: str,
     *,
@@ -429,12 +460,12 @@ def render_markdown(
     divider, ahead of the rendered document body (VIEWMD-0004). A file with no front matter, an
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
-    (VIEWMD-0005). When `toc` is True (the default), an indented heading outline of the body's
-    h1/h2/h3 headings is printed after that divider (or at the start, if there is no front
-    matter) and before the body, omitted when the document has fewer than two such headings.
-    Depth is chosen dynamically so the ToC stays at most 20 entries: h1–h3, then h1–h2, then
-    h1-only, with every h1 kept even when there are more than 20 of them (VIEWMD-0062). The body
-    is run through viewmd's preprocessor pipeline (see preprocessors.py)
+    (VIEWMD-0005). When `toc` is True (the default), a document with two or more h1/h2/h3 headings
+    gets an indented outline: after the front-matter divider (if any) the leading h1 renders as
+    the document title, then the ToC (that title omitted from the list), then the rest of the
+    body. Depth is chosen dynamically so the ToC stays at most 20 entries: h1–h3, then h1–h2,
+    then h1-only, with every remaining h1 kept even when there are more than 20 of them
+    (VIEWMD-0062). The body is run through viewmd's preprocessor pipeline (see preprocessors.py)
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
     (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014). `color`
     and `width` are passed into that preprocessing pass too (VIEWMD-0043) -- Mermaid diagrams are
@@ -462,15 +493,26 @@ def render_markdown(
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
-    # One parse for both the ToC and the body: ViewmdMarkdown.__init__ is what
-    # produces markdown.parsed (Rich's markdown-it token stream).
+    # One parse for the ToC outline: ViewmdMarkdown.__init__ is what produces
+    # markdown.parsed (Rich's markdown-it token stream). A leading h1 is split out
+    # of that same source and re-rendered as the title so it is not duplicated in
+    # the ToC or again below it; title/rest slices are the same characters, not a
+    # second interpretation of the document.
     markdown = ViewmdMarkdown(body, code_theme="monokai")
     if toc:
         outline = heading_outline(markdown)
         if len(outline) >= 2:
-            for line in _toc_lines(_fit_toc_outline(outline)):
-                console.print(line)
-            console.print()
+            title_end = _leading_h1_end_line(markdown)
+            if title_end is not None and outline[0].level == 1:
+                title_src, rest_src = _split_source_at_line(body, title_end)
+                console.print(ViewmdMarkdown(title_src, code_theme="monokai"), crop=False)
+                console.print()
+                _print_toc(console, _fit_toc_outline(outline[1:]))
+                console.print(ViewmdMarkdown(rest_src, code_theme="monokai"), crop=False)
+            else:
+                _print_toc(console, _fit_toc_outline(outline))
+                console.print(markdown, crop=False)
+            return buffer.getvalue()
     console.print(markdown, crop=False)
     return buffer.getvalue()
 
