@@ -1,15 +1,15 @@
 ---
 id: VIEWMD-0063
 title: Color the bar and line datasets in Mermaid XY charts
-status: proposed
+status: in-progress
 area: [render, mermaid]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-16
 commits: []
-related: [VIEWMD-0048]
+related: [VIEWMD-0048, VIEWMD-0064]
 supersedes: []
 changelog:
 reason:
@@ -123,4 +123,20 @@ is an implementation decision.
 
 ## Peer review
 
-Not applicable; not yet built.
+- **Claude (code-review, high effort)**, 2026-08-16: no correctness bugs found (color-wrapping
+  correctly isolates bar vs. line glyph sets in both ASCII and Unicode tables, span bounds
+  consistent, `color=False` output provably unchanged, full suite green). Four maintainability
+  findings, all fixed inline: (1) `_plot_color_spans` and `_colorize_axis` each hand-rolled a
+  near-identical run-detection loop with different index offsets -- factored into a shared
+  `_color_runs` helper both now call, so a future fix to run-boundary logic can't drift between
+  them. (2) `_dataset_color` silently fell back to the line color for any unrecognized kind string
+  -- now raises `ValueError` on anything other than `"bar"`/`"line"`. (3) `_bar_chars`/`_line_chars`
+  rebuilt their frozensets on every plot row despite `g` being one of only two fixed singletons
+  (`_ASCII`/`_UNICODE`) for an entire render -- `@lru_cache(maxsize=2)`. (4) A redundant
+  `color=False` assertion in `test_matches_fixture` duplicated the very next line and added no
+  coverage (a real `color=True` comparison against the same fixtures already exists in
+  `test_color_true_strips_to_the_same_plain_text_as_fixtures`) -- removed.
+- **Maintainer**, 2026-08-16: implementation matches this issue's actual requirements (one fixed
+  hue per dataset, not per bar/point) -- flagged two requests beyond this issue's scope while
+  reviewing: every individual bar getting a distinct color, and visible spacing between bars. Not
+  addressed here; filed as a separate follow-up issue instead of expanding this one after the fact.

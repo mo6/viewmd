@@ -77,12 +77,13 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
     `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
-    gantt-chart (VIEWMD-0032), and gitGraph (VIEWMD-0042) renderers -- every
-    other diagram type ignores it, unaffected. `width` is read by pie,
-    quadrant, and xychart (VIEWMD-0048), and is the caller's resolved render
-    width, not a hard cap (Mermaid diagrams are still allowed to render wider
-    and scroll, VIEWMD-0018); it's what those charts' default sizing targets,
-    so none sizes itself independently of the document it's embedded in.
+    gantt-chart (VIEWMD-0032), gitGraph (VIEWMD-0042), and xychart
+    (VIEWMD-0063) renderers -- every other diagram type ignores it, unaffected.
+    `width` is read by pie, quadrant, and xychart (VIEWMD-0048), and is the
+    caller's resolved render width, not a hard cap (Mermaid diagrams are still
+    allowed to render wider and scroll, VIEWMD-0018); it's what those charts'
+    default sizing targets, so none sizes itself independently of the document
+    it's embedded in.
     xychart additionally caps its plot area at 100% of `width` (and will not
     shrink it below 50%) rather than treating `width` as a soft target.
     Raises `UnsupportedDiagramError` if `text` isn't a diagram type this module
@@ -165,5 +166,5 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
             chart = _parse_xychart(text)
         except _XychartParseError as e:
             raise MermaidError(str(e)) from e
-        return _render_xychart(chart, use_ascii=use_ascii, width=width)
+        return _render_xychart(chart, use_ascii=use_ascii, color=color, width=width)
     raise UnsupportedDiagramError("not a recognized (or not yet supported) Mermaid diagram type")
