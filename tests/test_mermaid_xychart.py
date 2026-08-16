@@ -19,12 +19,15 @@ import viewmd.mermaid as mermaid
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO, render_mermaid_blocks
 from viewmd.mermaid.xychart.parser import parse
 from viewmd.mermaid.xychart.renderer import (
-    _BAR_COLOR,
+    _BAR_COLORS,
+    _BAR_GAP,
     _LINE_COLOR,
     _UNICODE,
+    _bar_color,
     _bar_glyph,
     _build_line_grid,
     _nice_step,
+    _plot_color_spans,
     _plot_geometry,
     _snap_to_row,
     render,
@@ -461,24 +464,26 @@ _COMBO = (
 
 def test_bar_only_dataset_is_colored():
     out = render(parse(_SALES), color=True, width=80)
-    assert _sgr(_BAR_COLOR) in out
+    for hex_ in _BAR_COLORS[:4]:
+        assert _sgr(hex_) in out
     assert _sgr(_LINE_COLOR) not in out
-    assert re.search(rf"\x1b\[{_sgr(_BAR_COLOR)}m[█▁▂▃▄▅▆▇]+", out)
+    assert re.search(rf"\x1b\[{_sgr(_BAR_COLORS[0])}m[█▁▂▃▄▅▆▇]+", out)
 
 
 def test_line_only_dataset_is_colored():
     out = render(parse(_LINE_ONLY), color=True, width=80)
     assert _sgr(_LINE_COLOR) in out
-    assert _sgr(_BAR_COLOR) not in out
+    for hex_ in _BAR_COLORS:
+        assert _sgr(hex_) not in out
     assert re.search(rf"\x1b\[{_sgr(_LINE_COLOR)}m[─│╭╮╰╯]+", out)
 
 
 def test_combo_chart_uses_two_distinct_hues():
     out = render(parse(_COMBO), color=True, width=80)
-    assert _sgr(_BAR_COLOR) in out
+    assert _sgr(_BAR_COLORS[0]) in out
     assert _sgr(_LINE_COLOR) in out
-    assert _sgr(_BAR_COLOR) != _sgr(_LINE_COLOR)
-    assert re.search(rf"\x1b\[{_sgr(_BAR_COLOR)}m[█▁▂▃▄▅▆▇]+", out)
+    assert _LINE_COLOR not in _BAR_COLORS
+    assert re.search(rf"\x1b\[{_sgr(_BAR_COLORS[0])}m[█▁▂▃▄▅▆▇]+", out)
     assert re.search(rf"\x1b\[{_sgr(_LINE_COLOR)}m[─│╭╮╰╯]+", out)
 
 
@@ -528,7 +533,7 @@ def test_color_and_use_ascii_are_independent():
     assert "\x1b[38;2;" in out
     for ch in "█▁▂▃▄▅▆▇╭╮╰╯│─└┬":
         assert ch not in out
-    assert _sgr(_BAR_COLOR) in out
+    assert _sgr(_BAR_COLORS[0]) in out
     assert _sgr(_LINE_COLOR) in out
 
 
@@ -541,4 +546,150 @@ def test_baseline_line_glyphs_are_colored_axis_ticks_are_not():
     axis = next(line for line in out.splitlines() if "└" in line)
     assert not re.search(r"\x1b\[[0-9;]*m└", axis)
     assert _sgr(_LINE_COLOR) in axis
-    assert _sgr(_BAR_COLOR) not in axis
+    assert all(_sgr(h) not in axis for h in _BAR_COLORS)
+
+
+# ---------------------------------------------------------------------------
+# Per-bar color and inter-bar gap (VIEWMD-0064)
+# ---------------------------------------------------------------------------
+
+
+def _bar_run_hexes(row: str) -> list[str]:
+    """Left-to-right hex colors of bar-glyph SGR runs in a y-axis plot row."""
+    plot = row.split("│", 1)[1] if "│" in row else row
+    return [
+        f"{int(m.group(1)):02x}{int(m.group(2)):02x}{int(m.group(3)):02x}"
+        for m in re.finditer(r"\x1b\[38;2;(\d+);(\d+);(\d+)m[█▁▂▃▄▅▆▇#]+", plot)
+    ]
+
+
+def _plot_rows(out: str) -> list[str]:
+    rows = []
+    for line in out.splitlines():
+        if "│" in line:
+            rows.append(line.split("│", 1)[1])
+    return rows
+
+
+def test_multi_category_bar_chart_uses_a_different_hex_per_bar():
+    out = render(parse(_SALES), color=True, width=80)
+    hexes = _bar_run_hexes(_row_for_tick(out, "5"))
+    assert hexes == _BAR_COLORS[:4]
+    assert len(set(hexes)) == 4
+
+
+def test_adjacent_bars_never_share_a_color_when_palette_wraps():
+    n = len(_BAR_COLORS) + 2
+    expected = [_bar_color(i) for i in range(n)]
+    for a, b in zip(expected, expected[1:], strict=False):
+        assert a != b
+    assert _LINE_COLOR not in _BAR_COLORS
+    assert len(set(_BAR_COLORS)) == len(_BAR_COLORS)
+
+    col_width = 4
+    chars: list[str] = []
+    for _i in range(n):
+        chars.extend(["█"] * (col_width - _BAR_GAP))
+        chars.extend([" "] * _BAR_GAP)
+    spans = _plot_color_spans(chars, _UNICODE, col_width)
+    assert [hex_ for _s, _e, hex_ in spans] == expected
+
+    cats = ",".join(str(i) for i in range(n))
+    vals = ",".join("10" for _ in range(n))
+    chart = parse(
+        f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 10\n    bar [{vals}]\n"
+    )
+    out = render(chart, color=True, width=80)
+    full = next(ln for ln in out.splitlines() if "│" in ln and "█" in _strip_ansi(ln))
+    hexes = _bar_run_hexes(full)
+    assert hexes == expected
+    for a, b in zip(hexes, hexes[1:], strict=False):
+        assert a != b
+
+
+def test_gap_between_adjacent_bars_with_color_on_or_off():
+    # The gap sits before every bar except the first (VIEWMD-0064 finding 1
+    # fix) -- the first bar has no left neighbor to share a gap with, so it
+    # fills its whole column; every later bar leads with one blank column.
+    chart = parse(_SALES)
+    expected = "█" * 10 + (" " + "█" * 9) * 3
+    for color in (False, True):
+        out = render(chart, color=color, width=80)
+        plot = _strip_ansi(_row_for_tick(out, "5")).split("│", 1)[1]
+        assert plot == expected, (color, plot)
+
+
+def test_minimum_column_still_leaves_a_fillable_bar():
+    # 10 one-char categories at W=20 pins col_width=_MIN_COL=2 (requirement 5:
+    # 1 fill + 1 gap, never a vanished bar). Gap leads every bar but the
+    # first (VIEWMD-0064 finding 1 fix).
+    cats = ",".join(str(i) for i in range(10))
+    vals = ",".join("10" for _ in range(10))
+    chart = parse(
+        f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 10\n    bar [{vals}]\n"
+    )
+    col, _pw, _rows = _plot_geometry(10, 2, 20)
+    assert col == 2
+    out = render(chart, use_ascii=False, width=20)
+    plot = _row_for_tick(out, "2").split("│", 1)[1]
+    assert plot == "██" + " █" * 9
+
+
+def test_single_category_chart_still_renders_a_fillable_bar():
+    chart = parse("xychart-beta\n    x-axis [A]\n    y-axis 0 --> 10\n    bar [8]\n")
+    out = render(chart, use_ascii=False, width=20)
+    plot = _row_for_tick(out, "4").split("│", 1)[1]
+    assert any(ch in "█▁▂▃▄▅▆▇" for ch in plot)
+    assert plot.strip(" ") != ""
+
+
+def test_combo_chart_bar_survives_line_peak_at_minimum_column_width():
+    # Peer-review finding 1 against VIEWMD-0064: at col_width == _MIN_COL,
+    # a bar's one fillable column used to be exactly the column
+    # `_build_line_grid` writes a category's own corner/vertical-stem glyph
+    # into, so a line peak/trough could erase the bar entirely. Every
+    # category here shares the same (max) bar value; an alternating line
+    # must not blank out any of them.
+    cats = ",".join(str(i) for i in range(10))
+    vals = ",".join("10" for _ in range(10))
+    line = ",".join("1" if i % 2 == 0 else "10" for i in range(10))
+    chart = parse(
+        f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 10\n"
+        f"    bar [{vals}]\n    line [{line}]\n"
+    )
+    col, _pw, _rows = _plot_geometry(10, 2, 20)
+    assert col == 2
+    out = render(chart, use_ascii=False, width=20)
+    plot = _row_for_tick(out, "4").split("│", 1)[1]
+    for i in range(10):
+        fill_col = 0 if i == 0 else i * col + 1
+        assert plot[fill_col] in "█▁▂▃▄▅▆▇", (i, plot)
+
+
+def test_combo_line_hue_and_position_unchanged():
+    line_only = parse(
+        "xychart-beta\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis 0 --> 120\n"
+        "    line [60, 80, 100, 120]\n"
+    )
+    combo_out = render(parse(_COMBO), width=80)
+    line_out = render(line_only, width=80)
+    line_chars = set("─│╭╮╰╯")
+    for lr, cr in zip(_plot_rows(line_out), _plot_rows(combo_out), strict=True):
+        assert len(lr) == len(cr)
+        for i, ch in enumerate(lr):
+            if ch in line_chars:
+                assert cr[i] == ch
+    colored = render(parse(_COMBO), color=True, width=80)
+    assert _sgr(_LINE_COLOR) in colored
+    for hex_ in _BAR_COLORS:
+        assert hex_ != _LINE_COLOR
+
+
+def test_line_only_output_matches_pre_gap_fixtures():
+    # Requirement 7: a chart with no bar dataset is byte-identical to before
+    # this issue. revenue_trend and nvda are line-only; their .out files are
+    # the VIEWMD-0063 pin and must not be regenerated.
+    for stem, width in (("revenue_trend", 80), ("nvda", 100)):
+        mmd = FIXTURES / f"{stem}.mmd"
+        expected = FIXTURES / f"{stem}.out"
+        assert render(parse(mmd.read_text()), width=width) == expected.read_text()

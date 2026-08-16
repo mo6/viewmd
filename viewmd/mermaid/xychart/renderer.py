@@ -11,8 +11,9 @@ flatter than 2:1). `poc/xychart/xychart_poc.py` is the implementation
 example this module follows for the step-line and bar-fill rules; the
 glyph tables and overlay order here are ported from it, not re-derived.
 Color (VIEWMD-0063) is a post-layout ANSI wrap around those already-placed
-glyphs -- `_plot_geometry` / `_build_bar_grid` / `_build_line_grid` are
-unaffected.
+glyphs. VIEWMD-0064 then splits the bar dataset's wrap per category (a small
+categorical palette, cycling) and leaves a one-column gap between adjacent
+bars; `_plot_geometry` and `_build_line_grid` stay on VIEWMD-0063's math.
 """
 
 from __future__ import annotations
@@ -58,15 +59,28 @@ _ASCII = _Glyphs(
     bar_full="#",
 )
 
-_MIN_COL = 2
+# One trailing empty column between adjacent bars (VIEWMD-0064). `_MIN_COL`
+# is fill + gap so a bar never shrinks to zero width when the gap is taken
+# out of `col_width` (requirement 5).
+_BAR_GAP = 1
+_MIN_COL = 1 + _BAR_GAP
 
-# Two fixed hues, one per dataset -- same categorical-palette convention as
-# gantt's `_status_color` / gitgraph's `_BRANCH_COLORS` (a small fixed hex
-# list, not a theming system). First two of gitgraph/kanban's "dark" dataviz
-# hues, picked to stay distinct from each other and from typical light/dark
-# terminal backgrounds (VIEWMD-0063).
-_BAR_COLOR = "3987e5"   # blue
-_LINE_COLOR = "d95926"  # orange
+# Per-bar categorical palette (VIEWMD-0064), cycling by category index. Same
+# "dark" dataviz hues as kanban's `_CATEGORICAL` / gitgraph's `_BRANCH_COLORS`,
+# minus `_LINE_COLOR` so every bar stays distinct from the line dataset
+# (requirement 2). Length > 1 and every entry unique, so `palette[i]` and
+# `palette[(i+1) % n]` are never equal when the palette wraps (requirement 3).
+# Slot 0 keeps VIEWMD-0063's former whole-dataset bar hue.
+_BAR_COLORS = [
+    "3987e5",  # blue
+    "199e70",  # aqua
+    "c98500",  # yellow
+    "d55181",  # magenta
+    "008300",  # green
+    "9085e9",  # violet
+    "e66767",  # red
+]
+_LINE_COLOR = "d95926"  # orange -- unchanged from VIEWMD-0063
 
 # A monospace terminal cell is roughly twice as tall as it is wide, so a plot
 # that's N columns wide needs roughly N/2 rows to *look* square -- raw
@@ -215,11 +229,27 @@ def _build_bar_grid(
     values: list[float], levels: list[float], step: float, col_width: int,
     *, use_ascii: bool,
 ) -> dict[float, list[str]]:
+    """The gap (requirement 4) sits before every bar except the first, not
+    after -- `_build_line_grid`'s own corner/vertical-stem glyph for
+    category `i` (`i > 0`) only ever lands at that category's *leading*
+    column (`i * col_width`), never elsewhere in its span, so reserving that
+    exact column as the gap keeps a combo chart's bar fill out of the one
+    column a line dataset can overwrite (finding 1 against this issue --
+    with the gap trailing instead, at `_MIN_COL` a bar's lone fillable
+    column *was* that vulnerable one, so a line peak/trough could erase the
+    bar entirely). Consecutive categories still read as "one column between
+    adjacent bars" since each shares its own leading gap with its left
+    neighbor's fill; the first category has nothing to its left, so it gets
+    no gap and fills its whole span, and the last bar ends up flush against
+    the plot's right edge -- both match this issue's own mockup above.
+    """
     n = len(values)
     total_w = n * col_width
     grid = {lv: [" "] * total_w for lv in levels}
     for i, h in enumerate(values):
-        col0, col1 = i * col_width, (i + 1) * col_width
+        fill_w = col_width if i == 0 else max(1, col_width - _BAR_GAP)
+        col0 = i * col_width + (col_width - fill_w)
+        col1 = col0 + fill_w
         for lv in levels:
             ch = _bar_glyph(h, lv, step, use_ascii=use_ascii)
             if ch == " ":
@@ -292,13 +322,9 @@ def _merge(
     return merged
 
 
-def _dataset_color(kind: str) -> str:
-    """Map a dataset kind (`"bar"` / `"line"`) to its fixed hex (VIEWMD-0063)."""
-    if kind == "bar":
-        return _BAR_COLOR
-    if kind == "line":
-        return _LINE_COLOR
-    raise ValueError(f"unknown xychart dataset kind {kind!r}")
+def _bar_color(category_index: int) -> str:
+    """Category `i`'s bar hue, cycling the palette (VIEWMD-0064)."""
+    return _BAR_COLORS[category_index % len(_BAR_COLORS)]
 
 
 @lru_cache(maxsize=2)  # g is always one of the two module-level _ASCII/_UNICODE singletons
@@ -314,44 +340,50 @@ def _line_chars(g: _Glyphs) -> frozenset[str]:
 
 
 def _color_runs(chars: list[str], classify) -> list[tuple[int, int, str]]:
-    """Consecutive runs of chars mapping to the same non-None `classify(ch)` label, as
-    `(start, end, label)` triples. Shared scan shape for both `_plot_color_spans` (bar vs. line
-    glyphs in a plot row) and `_colorize_axis` (line glyphs stitched onto the axis row), so a
-    future change to run-detection can't drift between the two."""
+    """Consecutive runs of chars mapping to the same non-None `classify(i, ch)`
+    label, as `(start, end, label)` triples. Shared scan shape for both
+    `_plot_color_spans` (per-bar / line glyphs in a plot row) and
+    `_colorize_axis` (line glyphs stitched onto the axis row), so a future
+    change to run-detection can't drift between the two."""
     runs: list[tuple[int, int, str]] = []
     i = 0
     n = len(chars)
     while i < n:
-        label = classify(chars[i])
+        label = classify(i, chars[i])
         if label is None:
             i += 1
             continue
         j = i + 1
-        while j < n and classify(chars[j]) == label:
+        while j < n and classify(j, chars[j]) == label:
             j += 1
         runs.append((i, j, label))
         i = j
     return runs
 
 
-def _plot_color_spans(chars: list[str], g: _Glyphs) -> list[tuple[int, int, str]]:
-    """Consecutive same-dataset glyph runs in a plot row, as color spans."""
-    bar, line = _bar_chars(g), _line_chars(g)
+def _plot_color_spans(chars: list[str], g: _Glyphs, col_width: int) -> list[tuple[int, int, str]]:
+    """Consecutive same-color glyph runs in a plot row, as color spans.
 
-    def classify(ch: str) -> str | None:
+    Bar glyphs take category `i`'s palette entry (`col_width` columns each,
+    VIEWMD-0064); line glyphs stay VIEWMD-0063's one fixed hue.
+    """
+    bar, line = _bar_chars(g), _line_chars(g)
+    col_width = max(1, col_width)
+
+    def classify(i: int, ch: str) -> str | None:
         if ch in bar:
-            return "bar"
+            return _bar_color(i // col_width)
         if ch in line:
-            return "line"
+            return _LINE_COLOR
         return None
 
-    return [(s, e, _dataset_color(kind)) for s, e, kind in _color_runs(chars, classify)]
+    return _color_runs(chars, classify)
 
 
-def _colorize_row(chars: list[str], g: _Glyphs, *, color: bool) -> str:
+def _colorize_row(chars: list[str], g: _Glyphs, col_width: int, *, color: bool) -> str:
     if not color:
         return "".join(chars)
-    return apply_color_spans(chars, _plot_color_spans(chars, g))
+    return apply_color_spans(chars, _plot_color_spans(chars, g, col_width))
 
 
 def _colorize_axis(
@@ -363,8 +395,8 @@ def _colorize_axis(
     """Wrap line-dataset glyphs stitched onto the axis; leave └/┬/─ plain."""
     if not color or line_baseline is None:
         return "".join(axis_chars)
-    hex_ = _dataset_color("line")
-    runs = _color_runs(line_baseline, lambda ch: "line" if ch != " " else None)
+    hex_ = _LINE_COLOR
+    runs = _color_runs(line_baseline, lambda _i, ch: "line" if ch != " " else None)
     # +1 on both ends: axis_chars[0] is the bl corner, one column left of the plot columns
     # line_baseline (and every plot row) is indexed from.
     spans = [(s + 1, e + 1, hex_) for s, e, _kind in runs]
@@ -435,7 +467,7 @@ def render(chart: XYChart, *, use_ascii: bool = False, color: bool = False,
 
     for lv, tick in zip(levels, tick_labels, strict=True):
         pad = " " * (label_w - string_width(tick))
-        plot = _colorize_row(grid[lv], g, color=color)
+        plot = _colorize_row(grid[lv], g, col_width, color=color)
         lines.append(f"{pad}{tick} {g.v}{plot}")
 
     axis_chars = list(g.bl + (g.tee_d + g.h * (col_width - 1)) * n)
