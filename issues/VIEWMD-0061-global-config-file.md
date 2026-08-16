@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0061
 title: Support a user global configuration file for common options
-status: proposed
+status: in-progress
 area: [cli]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-16
 commits: []
 related: [VIEWMD-0007, VIEWMD-0062]
 supersedes: []

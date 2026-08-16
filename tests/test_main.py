@@ -1,5 +1,7 @@
 import argparse
 import io
+import os
+import sys
 
 import pytest
 
@@ -214,3 +216,219 @@ def test_multi_path_mode_handles_a_directory_among_files(tmp_path, capsys):
     assert rc == 0
     assert "One" in out
     assert "Sub Landing" in out
+
+
+def _write_md(tmp_path, text="# Hello\n\nbody text\n"):
+    path = tmp_path / "doc.md"
+    path.write_text(text)
+    return path, text
+
+
+def test_absent_config_file_leaves_builtin_defaults_unchanged(tmp_path, capsys, monkeypatch):
+    from viewmd.render import render_markdown
+
+    monkeypatch.delenv("VIEWMD_NO_CONFIG", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(
+        "viewmd.__main__.shutil.get_terminal_size",
+        lambda: os.terminal_size((200, 24)),
+    )
+    path, text = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--color", "never", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=100, color=False)
+
+
+def test_config_width_overrides_builtin_default(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    cfg = tmp_path / "config"
+    cfg.write_text("width = 40\n")
+    path, text = _write_md(tmp_path, "word " * 40 + "\n")
+
+    rc = main(["--no-pager", "--color", "never", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=40, color=False)
+
+
+def test_config_color_overrides_builtin_default(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("color = always\n")
+    path, _text = _write_md(tmp_path, "# Hello\n")
+
+    rc = main(["--no-pager", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "\x1b[" in out
+
+
+def test_config_full_front_matter_overrides_builtin_default(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("full_front_matter = true\n")
+    text = "---\ntitle: Hello\naccepted_by:\n---\n# Body\n"
+    path, _ = _write_md(tmp_path, text)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "accepted_by" in out
+
+
+def test_cli_width_overrides_config_file(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    cfg = tmp_path / "config"
+    cfg.write_text("width = 40\n")
+    path, text = _write_md(tmp_path, "word " * 40 + "\n")
+
+    rc = main(["--no-pager", "--color", "never", "--config", str(cfg), "--width", "80", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=80, color=False)
+
+
+def test_cli_color_overrides_config_file(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("color = always\n")
+    path, _ = _write_md(tmp_path, "# Hello\n")
+
+    rc = main(["--no-pager", "--width", "80", "--config", str(cfg), "--color", "never", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "\x1b[" not in out
+
+
+def test_cli_color_auto_overrides_config_never(tmp_path, capsys, monkeypatch):
+    # `--color auto` must not be confused with "flag omitted": config says never, the
+    # explicit flag asks for auto, and a tty means auto resolves to color-on.
+    cfg = tmp_path / "config"
+    cfg.write_text("color = never\n")
+    path, _ = _write_md(tmp_path, "# Hello\n")
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    rc = main(["--no-pager", "--width", "80", "--config", str(cfg), "--color", "auto", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "\x1b[" in out
+
+
+def test_cli_no_full_front_matter_overrides_config_true(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("full_front_matter = true\n")
+    text = "---\ntitle: Hello\naccepted_by:\n---\n# Body\n"
+    path, _ = _write_md(tmp_path, text)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               "--no-full-front-matter", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "accepted_by" not in out
+
+
+def test_malformed_config_file_exits_nonzero_without_traceback(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("this is not a config\n")
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(cfg), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd:")
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+def test_invalid_config_value_exits_nonzero_without_traceback(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("color = purple\n")
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(cfg), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd:")
+    assert "invalid color 'purple'" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_config_flag_reads_from_explicit_path_not_xdg(tmp_path, capsys, monkeypatch):
+    from viewmd.render import render_markdown
+
+    monkeypatch.delenv("VIEWMD_NO_CONFIG", raising=False)
+    xdg = tmp_path / "xdg" / "viewmd"
+    xdg.mkdir(parents=True)
+    (xdg / "config").write_text("width = 40\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    explicit = tmp_path / "other.conf"
+    explicit.write_text("width = 60\n")
+    path, text = _write_md(tmp_path, "word " * 40 + "\n")
+
+    rc = main(["--no-pager", "--color", "never", "--config", str(explicit), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=60, color=False)
+
+
+def test_xdg_config_file_is_read_when_present(tmp_path, capsys, monkeypatch):
+    from viewmd.render import render_markdown
+
+    monkeypatch.delenv("VIEWMD_NO_CONFIG", raising=False)
+    xdg = tmp_path / "xdg" / "viewmd"
+    xdg.mkdir(parents=True)
+    (xdg / "config").write_text("width = 40\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    path, text = _write_md(tmp_path, "word " * 40 + "\n")
+
+    rc = main(["--no-pager", "--color", "never", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=40, color=False)
+
+
+def test_viewmd_no_config_skips_xdg_file(tmp_path, capsys, monkeypatch):
+    from viewmd.render import render_markdown
+
+    monkeypatch.setenv("VIEWMD_NO_CONFIG", "1")
+    xdg = tmp_path / "xdg" / "viewmd"
+    xdg.mkdir(parents=True)
+    (xdg / "config").write_text("width = 40\n")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setattr(
+        "viewmd.__main__.shutil.get_terminal_size",
+        lambda: os.terminal_size((200, 24)),
+    )
+    path, text = _write_md(tmp_path, "word " * 40 + "\n")
+
+    rc = main(["--no-pager", "--color", "never", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown(text, width=100, color=False)
+
+
+def test_missing_explicit_config_path_is_an_error(tmp_path, capsys):
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(tmp_path / "missing"), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd: cannot read")
+    assert "Traceback" not in captured.err

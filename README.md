@@ -24,6 +24,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width 80     # render at exactly 80 columns
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
+./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
@@ -31,6 +32,14 @@ Render width defaults to `min(100, detected terminal width)` — 100 columns is 
 line-length standard, so a wide terminal doesn't stretch prose or tables edge to edge. `--width N`
 picks an exact width instead; `--width full` uses the full terminal width regardless of the
 100-column default.
+
+A per-user config file at `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config` if `XDG_CONFIG_HOME` is unset) supplies default values for `--width`, `--color`, and `--full-front-matter` as a flat `key = value` file. An explicit CLI flag always wins over the file (`--no-full-front-matter` is the flag that turns that one back off); a missing file is not an error. `--config PATH` reads from `PATH` instead of the default location, and `VIEWMD_NO_CONFIG` (any non-empty value) skips the file entirely.
+
+```
+width = 80
+color = never
+full_front_matter = true
+```
 
 A file that opens with a YAML-style front-matter block (`--- ... ---`) — common in this project's
 own `issues/*.md`, and in static-site-generator posts — renders that block as a key/value table,

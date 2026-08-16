@@ -34,6 +34,7 @@ executed -- Rich renders Markdown as text, never as code (docs/PLAN.md's "HTML r
 |---|---|---|
 | Pager subprocess | `viewmd/pager.py` | Spawns `$PAGER` (default `less -R -F -X`) via `subprocess.run`, argv list, no shell. The command comes from the `$PAGER` environment variable or the fixed default, never from parsed Markdown content. |
 | File / stdin reading | `viewmd/__main__.py` | Reads the path given on the command line, or stdin, as UTF-8 text. No execution, no templating. |
+| Config-file reading | `viewmd/config.py` | Reads a UTF-8 `key = value` file from an XDG path, `--config PATH`, or not at all (`VIEWMD_NO_CONFIG`). No execution, no interpolation, no includes. |
 | Front-matter / wikilink parsing | `viewmd/frontmatter.py`, `viewmd/wikilinks.py` | Regex- and string-based text parsing only; no `eval`, no dynamic import, no YAML deserialization (deliberately not a full YAML parser -- docs/PLAN.md). |
 
 Out of scope for this gate: the terminal emulator, the user's actual `$PAGER`/`$EDITOR` binary
