@@ -44,6 +44,13 @@ preceded by a heading naming its path and separated by a divider, concatenated i
 `less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
 scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
 
+Passing a directory renders its `_Index.md` if one exists (exact case match), exactly as if that
+file had been passed directly; otherwise it renders a table-of-contents listing of the
+directory's immediate entries (subdirectories first, then Markdown files, each alphabetically) —
+a file's title (from front matter, its first heading, or its filename) and last-modified time,
+one level deep, no recursion. This applies the same way whether the directory is the only `path`
+argument or one of several.
+
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
 spans, which are left untouched.
