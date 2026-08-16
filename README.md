@@ -163,15 +163,7 @@ can optionally connect to another same-row block via a plain flowchart-style `--
 
 ### XY charts
 
-An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one line dataset, or
-both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution
-block glyphs (`▁` through `█`); lines are an orthogonal step/staircase using the same rounded
-corners as flowchart stadium/round nodes, drawn on top of the bars in a combo chart. Like pie and
-quadrant, the plot sizes itself from `--width` -- capped at the full viewport and never narrower
-than half of it, with height near-square at that floor and never flatter than 2:1. Horizontal
-orientation, extra series, and a numeric x-axis are not supported. See
-[docs/mermaid-xychart.md](docs/mermaid-xychart.md) and
-[docs/nvidia-stock-xychart.md](docs/nvidia-stock-xychart.md) for more.
+An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one line dataset, or both together against a shared category x-axis and numeric y-axis. Bars fill with eighth-resolution block glyphs (`▁` through `█`); lines are an orthogonal step/staircase using the same rounded corners as flowchart stadium/round nodes, drawn on top of the bars in a combo chart. Like pie and quadrant, the plot sizes itself from `--width` -- capped at the full viewport and never narrower than half of it, with height near-square at that floor and never flatter than 2:1. Horizontal orientation, extra series, and a numeric x-axis are not supported. See [docs/mermaid-xychart.md](docs/mermaid-xychart.md) and [docs/nvidia-stock-xychart.md](docs/nvidia-stock-xychart.md) for more.
 
 ## Development
 

@@ -17,7 +17,14 @@ import pytest
 import viewmd.mermaid as mermaid
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO, render_mermaid_blocks
 from viewmd.mermaid.xychart.parser import parse
-from viewmd.mermaid.xychart.renderer import _bar_glyph, _plot_geometry, render
+from viewmd.mermaid.xychart.renderer import (
+    _UNICODE,
+    _bar_glyph,
+    _build_line_grid,
+    _plot_geometry,
+    _snap_to_row,
+    render,
+)
 from viewmd.render import render_markdown
 
 FIXTURES = Path(__file__).parent / "fixtures" / "mermaid_xychart"
@@ -88,6 +95,54 @@ def test_bar_glyph_ascii_collapses_to_one_fill():
 
 
 # ---------------------------------------------------------------------------
+# Line-dataset edge cases: axis baseline points and non-adjacent runs
+# ---------------------------------------------------------------------------
+
+
+def test_snap_to_row_baseline_snaps_to_y_min_when_included_in_levels():
+    # step=10, rows [90, 80, 70, ..., 10]; y_min=0 appended as render() does
+    # for a line dataset -- a value resting on the baseline must snap to
+    # y_min itself, not fall through to None (the old bug: y_min was never
+    # in `levels`, so its band [-5, 5) matched nothing).
+    levels = [*(90 - 10 * i for i in range(9)), 0]
+    assert _snap_to_row(0, 10, levels) == 0
+    assert _snap_to_row(3, 10, levels) == 0
+
+
+def test_line_point_at_axis_baseline_connects_instead_of_vanishing():
+    chart = parse(
+        "xychart-beta\n    x-axis [Q1, Q2, Q3, Q4]\n    y-axis 0 --> 100\n"
+        "    line [0, 50, 100, 50]\n"
+    )
+    out = render(chart, width=60)
+    # Q1's point (0, the axis minimum) must leave a glyph on the bottom axis
+    # row -- the old bug snapped it to None and dropped it with no trace.
+    bottom_axis = next(line for line in out.splitlines() if line.lstrip().startswith("0.00"))
+    plot = bottom_axis.split("└", 1)[1]
+    assert any(ch in plot for ch in "╭╮╰╯│"), f"no line glyph on baseline row: {bottom_axis!r}"
+
+
+def test_build_line_grid_run_with_no_predecessor_does_not_wrap_to_last_run():
+    # Regression for `runs[ridx - 1]` reading `runs[-1]` via Python's
+    # negative-index wraparound when the first run has no real predecessor
+    # (here: category 0's value snaps to None, so the run starting at
+    # category 1 is not adjacent to anything and must not be connected to
+    # the last run in the list).
+    levels = [80.0, 60.0, 40.0, 20.0]
+    step = 20.0
+    # None, 40, 80, 20 -- category 0 has no snapped value (simulates an
+    # out-of-range point); category 3's value (20) is far from category
+    # 1's (40) and must never appear connected to it.
+    values = [-1000.0, 40.0, 80.0, 20.0]
+    grid = _build_line_grid(values, levels, step, col_width=4, g=_UNICODE)
+    # The old bug drew a "│" connecting category 1's run down/up towards
+    # category 3's value (20) at category 1's leading column, spanning
+    # every row strictly between 40 and 20.
+    leading_col = 1 * 4  # category index 1's first column
+    assert grid[20.0][leading_col] == " "
+
+
+# ---------------------------------------------------------------------------
 # Golden fixtures
 # ---------------------------------------------------------------------------
 
@@ -107,23 +162,25 @@ def test_matches_fixture(mmd_path, expected_path):
 
 
 def test_tick_aligned_bar_renders_half_block():
-    # y 0-->10 with W=10 yields n_rows=5, step=2, so 4 is an exact tick.
+    # y 0-->10 with W=20 (cell-aspect-corrected floor) yields n_rows=5,
+    # step=2, so 4 is an exact tick.
     chart = parse("xychart-beta\n    x-axis [A]\n    y-axis 0 --> 10\n    bar [4]\n")
-    out = render(chart, use_ascii=False, width=10)
+    out = render(chart, use_ascii=False, width=20)
     row = _row_for_tick(out, "4")
     assert "▄" in row
     assert "█" not in row.split("│", 1)[1]
 
 
 def test_eighth_block_levels_all_appear_in_a_render():
-    # 8 categories, W=16 -> plot_w=16 (at the 100% cap), n_rows=8, step=1
-    # for y 0-->8. Bars land at 3.5+k/8 so row 4 shows every eighth glyph.
+    # 8 categories, W=32 (cell-aspect-corrected floor) -> plot_w=16,
+    # n_rows=8, step=1 for y 0-->8. Bars land at 3.5+k/8 so row 4 shows
+    # every eighth glyph.
     cats = ",".join("ABCDEFGH")
     vals = ",".join(str(3.5 + k / 8) for k in range(1, 9))
     chart = parse(
         f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 8\n    bar [{vals}]\n"
     )
-    out = render(chart, use_ascii=False, width=16)
+    out = render(chart, use_ascii=False, width=32)
     row = _row_for_tick(out, "4")
     plot = row.split("│", 1)[1]
     for ch in "▁▂▃▄▅▆▇█":
@@ -146,13 +203,15 @@ _SALES = (
 
 def test_plot_width_at_fifty_percent_floor():
     # 4 short categories: content min is well below 50% of W=80, so the
-    # plot sits on the floor (40 columns) with height close to width (1:1).
+    # plot sits on the floor (40 columns) with height corrected for the
+    # terminal cell's ~2:1 aspect so it looks square, not literal 1:1 in
+    # raw row/column counts (which would render twice as tall as wide).
     chart = parse(_SALES)
     out = render(chart, use_ascii=False, width=80)
     pw = _inner_plot_width(out)
     ph = _plot_height(out)
     assert pw == 40
-    assert ph == 40
+    assert ph == 20
     # Must not compress narrower than the floor.
     assert pw >= 40
 
@@ -167,7 +226,7 @@ def test_plot_width_at_one_hundred_percent_cap():
     pw = _inner_plot_width(out)
     ph = _plot_height(out)
     assert pw == 20
-    assert ph == 10  # 2:1 at the ceiling
+    assert ph == 5  # 2:1 at the ceiling, visually (cell-aspect corrected)
     assert pw <= 20
 
 
@@ -180,8 +239,8 @@ def test_plot_height_grows_slower_than_width_between_bounds():
     pw = _inner_plot_width(out)
     ph = _plot_height(out)
     assert pw == 20
-    assert ph == 15  # frozen at the 50%-of-W floor, so height < width
-    assert pw / ph <= 2.0 + 1e-9
+    assert ph == 7  # frozen at the 50%-of-W floor, so height < width
+    assert pw / ph <= 2.0 * 2 + 1e-9  # visual 2:1 == raw 4:1 (cell-aspect)
 
 
 def test_plot_overflows_when_fifty_percent_floor_cannot_fit_labels():
@@ -196,13 +255,15 @@ def test_plot_overflows_when_fifty_percent_floor_cannot_fit_labels():
 
 
 def test_plot_geometry_unit():
-    # Directly pins the three requirement-8 bounds.
+    # Directly pins the three requirement-8 bounds, corrected for the
+    # terminal cell's own ~2:1 (tall:wide) aspect (_CELL_ASPECT) so the
+    # ratios hold visually rather than in raw column/row counts.
     col, pw, rows = _plot_geometry(4, 3, 80)
-    assert pw == 40 and rows == 40 and col == 10
+    assert pw == 40 and rows == 20 and col == 10  # visually ~1:1 at the floor
     col, pw, rows = _plot_geometry(10, 2, 20)
-    assert pw == 20 and rows == 10 and col == 2
+    assert pw == 20 and rows == 5 and col == 2  # visually 2:1 at the ceiling
     col, pw, rows = _plot_geometry(10, 2, 30)
-    assert pw == 20 and rows == 15 and col == 2
+    assert pw == 20 and rows == 7 and col == 2
     # Snapping to whole columns must not drop back below the 50% floor.
     col, pw, rows = _plot_geometry(13, 6, 200)
     assert pw >= 100

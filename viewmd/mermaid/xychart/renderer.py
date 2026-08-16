@@ -55,6 +55,14 @@ _ASCII = _Glyphs(
 
 _MIN_COL = 2
 
+# A monospace terminal cell is roughly twice as tall as it is wide, so a plot
+# that's N columns wide needs roughly N/2 rows to *look* square -- raw
+# column/row count parity (no correction) renders about twice as tall as
+# wide instead. Requirement 8 leaves this correction as an implementation
+# choice; _plot_geometry applies it so "~1:1 at the floor" and "2:1 at the
+# ceiling" hold visually, not just in character counts.
+_CELL_ASPECT = 2
+
 
 def _terminal_width(fallback: int = 100) -> int:
     return shutil.get_terminal_size(fallback=(fallback, 24)).columns
@@ -63,7 +71,9 @@ def _terminal_width(fallback: int = 100) -> int:
 def _plot_geometry(n_cats: int, min_col: int, target_width: int) -> tuple[int, int, int]:
     """Requirement 8: plot width in `[50% of width, 100% of width]`, overflowing
     past the ceiling when category labels cannot shrink further; height is ~1:1
-    at the 50% floor and never flatter than 2:1.
+    at the 50% floor and never flatter than 2:1 -- both visually, correcting
+    for the terminal cell's own non-square aspect (see `_CELL_ASPECT`), not
+    literal column/row count parity.
 
     Returns `(col_width, plot_width, n_rows)`.
     """
@@ -88,10 +98,14 @@ def _plot_geometry(n_cats: int, min_col: int, target_width: int) -> tuple[int, i
         col_width += 1
     plot_w = col_width * n_cats
 
-    # Height stays at the 1:1-at-floor figure while width grows toward the
-    # ceiling, then lifts just enough to keep the 2:1 floor if the plot
-    # overflows past `width`.
-    n_rows = max(floor_w, (plot_w + 1) // 2)
+    # Height stays at the visually-square (1:1) figure for the floor width
+    # while width grows toward the ceiling, then lifts just enough to keep
+    # the visual 2:1 floor if the plot overflows past `width`. Both figures
+    # are divided by _CELL_ASPECT to correct for the terminal cell's own
+    # (non-square) aspect -- see its definition above.
+    n_rows_floor = max(1, floor_w // _CELL_ASPECT)
+    n_rows_for_2to1 = -(-plot_w // (2 * _CELL_ASPECT))  # ceil division
+    n_rows = max(n_rows_floor, n_rows_for_2to1)
     return col_width, plot_w, n_rows
 
 
@@ -150,8 +164,10 @@ def _auto_range(values: list[float]) -> tuple[float, float]:
 
 
 def _snap_to_row(h: float, step: float, levels: list[float]) -> float | None:
-    """The data-row value whose band contains `h`, or None if `h` sits on
-    or below the axis baseline."""
+    """The data-row value whose band contains `h`, clamped to the highest row when `h` is above
+    the top row's band; `levels` is expected to include the axis baseline itself (`y_min`) as its
+    last entry when called for a line dataset (see `render`), so a point resting on the baseline
+    snaps to `y_min` via the same band check as every other row rather than being dropped."""
     for v in levels:
         if v - step / 2 <= h < v + step / 2:
             return v
@@ -203,7 +219,7 @@ def _build_line_grid(
         right_end = b * col_width if b == n else b * col_width
         for c in range(left_start, right_end):
             grid[v][c] = g.h
-        if a > 0:
+        if a > 0 and ridx > 0 and runs[ridx - 1][1] == a:
             prev_v = runs[ridx - 1][2]
             col = a * col_width
             grid[v][col] = g.line_tl if v > prev_v else g.line_bl
@@ -271,8 +287,12 @@ def render(chart: XYChart, *, use_ascii: bool = False, width: int | None = None)
         _build_bar_grid(chart.bar, levels, step, col_width, use_ascii=use_ascii)
         if chart.bar is not None else None
     )
+    # `y_min` itself is appended so a line point resting on the axis baseline snaps into its own
+    # band (_snap_to_row) instead of falling through to None and being dropped; `_merge` below is
+    # given the un-extended `levels` so this extra row never reaches the printed grid rows -- it's
+    # pulled out separately and stitched into the axis line instead (below).
     line_grid = (
-        _build_line_grid(chart.line, levels, step, col_width, g)
+        _build_line_grid(chart.line, [*levels, y_min], step, col_width, g)
         if chart.line is not None else None
     )
     grid = _merge(bar_grid, line_grid, levels, plot_w)
@@ -293,7 +313,12 @@ def render(chart: XYChart, *, use_ascii: bool = False, width: int | None = None)
         pad = " " * (label_w - string_width(tick))
         lines.append(f"{pad}{tick} {g.v}{''.join(grid[lv])}")
 
-    axis = g.bl + (g.tee_d + g.h * (col_width - 1)) * n
+    axis_chars = list(g.bl + (g.tee_d + g.h * (col_width - 1)) * n)
+    if line_grid is not None and y_min in line_grid:
+        for c, ch in enumerate(line_grid[y_min]):
+            if ch != " ":
+                axis_chars[c + 1] = ch  # +1: axis_chars[0] is g.bl, left of the plot columns
+    axis = "".join(axis_chars)
     ymin_pad = " " * (label_w - string_width(ymin_s))
     lines.append(f"{ymin_pad}{ymin_s} {axis}")
 

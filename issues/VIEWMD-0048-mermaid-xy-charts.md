@@ -514,3 +514,31 @@ malformed-input tolerance requirement 9 asks for at the chart level, one layer u
 
 ## Peer review
 
+- **Claude (code-review, high effort)**, 2026-08-16: two confirmed correctness bugs in the line
+  dataset's grid-building logic. (1) `viewmd/mermaid/xychart/renderer.py:_build_line_grid`:
+  `runs[ridx - 1]` relies on Python negative-index wraparound, so a run with no real predecessor
+  reads `runs[-1]` (the *last* run) as its previous point -- reproduced with `line [0, 30, 100,
+  80]` and `y-axis 0 --> 100`, which draws a spurious riser connecting Q2 to Q4. (2)
+  `_snap_to_row`: clamps values above the axis max to the top row but has no symmetric clamp at
+  the axis minimum, so a point landing at or near `y_min` returns `None` and is silently dropped
+  from the line -- reproduced with `line [0, 50, 100, 50]`, which drops the Q1 point entirely
+  (and is what feeds bug (1), since the dropped point produces the gap that triggers the
+  wraparound). Also flagged, lower severity: the new README.md "XY charts" paragraph is
+  hard-wrapped across multiple lines, against AGENTS.md's "Markdown paragraphs are single lines"
+  rule (the equivalent paragraphs in docs/example.md and docs/mermaid-xychart.md are correctly
+  single-lined) -- matches README.md's pre-existing hard-wrapped style elsewhere in the file, so
+  a continuation of existing debt rather than a new pattern. Fixed all three inline (regression
+  tests added for the two renderer bugs).
+- **Claude (maintainer follow-up)**, 2026-08-16: maintainer flagged the rendered charts in
+  docs/example.md and docs/mermaid-xychart.md as visibly too tall (should read wider than tall).
+  Root cause in `viewmd/mermaid/xychart/renderer.py:_plot_geometry`:
+  `n_rows = max(floor_w, (plot_w + 1) // 2)` reused `floor_w` (a *column*-count floor) directly as
+  the row-count floor instead of half of it, so in the common small-category case (`plot_w`
+  already sitting at `floor_w`) `n_rows` collapsed to `floor_w` itself -- i.e. row count == column
+  count. Since a monospace terminal cell is roughly twice as tall as it is wide, equal row/column
+  counts render about twice as tall as wide, not the "~1:1 at the floor" requirement 8 actually
+  asks for. Fixed by introducing `_CELL_ASPECT = 2` and dividing both the floor and the 2:1-ceiling
+  figures by it, so the ratios hold visually rather than in raw character counts; updated the
+  affected unit tests' expected row counts and regenerated `tests/fixtures/mermaid_xychart/*.out`
+  (visually re-verified, per this issue's fixture-verification posture) to match.
+
