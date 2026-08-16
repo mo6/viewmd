@@ -229,12 +229,26 @@ def _build_bar_grid(
     values: list[float], levels: list[float], step: float, col_width: int,
     *, use_ascii: bool,
 ) -> dict[float, list[str]]:
+    """The gap (requirement 4) sits before every bar except the first, not
+    after -- `_build_line_grid`'s own corner/vertical-stem glyph for
+    category `i` (`i > 0`) only ever lands at that category's *leading*
+    column (`i * col_width`), never elsewhere in its span, so reserving that
+    exact column as the gap keeps a combo chart's bar fill out of the one
+    column a line dataset can overwrite (finding 1 against this issue --
+    with the gap trailing instead, at `_MIN_COL` a bar's lone fillable
+    column *was* that vulnerable one, so a line peak/trough could erase the
+    bar entirely). Consecutive categories still read as "one column between
+    adjacent bars" since each shares its own leading gap with its left
+    neighbor's fill; the first category has nothing to its left, so it gets
+    no gap and fills its whole span, and the last bar ends up flush against
+    the plot's right edge -- both match this issue's own mockup above.
+    """
     n = len(values)
     total_w = n * col_width
     grid = {lv: [" "] * total_w for lv in levels}
-    fill_w = max(1, col_width - _BAR_GAP)
     for i, h in enumerate(values):
-        col0 = i * col_width
+        fill_w = col_width if i == 0 else max(1, col_width - _BAR_GAP)
+        col0 = i * col_width + (col_width - fill_w)
         col1 = col0 + fill_w
         for lv in levels:
             ch = _bar_glyph(h, lv, step, use_ascii=use_ascii)

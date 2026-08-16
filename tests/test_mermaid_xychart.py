@@ -608,8 +608,11 @@ def test_adjacent_bars_never_share_a_color_when_palette_wraps():
 
 
 def test_gap_between_adjacent_bars_with_color_on_or_off():
+    # The gap sits before every bar except the first (VIEWMD-0064 finding 1
+    # fix) -- the first bar has no left neighbor to share a gap with, so it
+    # fills its whole column; every later bar leads with one blank column.
     chart = parse(_SALES)
-    expected = ("█" * 9 + " ") * 4
+    expected = "█" * 10 + (" " + "█" * 9) * 3
     for color in (False, True):
         out = render(chart, color=color, width=80)
         plot = _strip_ansi(_row_for_tick(out, "5")).split("│", 1)[1]
@@ -618,7 +621,8 @@ def test_gap_between_adjacent_bars_with_color_on_or_off():
 
 def test_minimum_column_still_leaves_a_fillable_bar():
     # 10 one-char categories at W=20 pins col_width=_MIN_COL=2 (requirement 5:
-    # 1 fill + 1 gap, never a vanished bar).
+    # 1 fill + 1 gap, never a vanished bar). Gap leads every bar but the
+    # first (VIEWMD-0064 finding 1 fix).
     cats = ",".join(str(i) for i in range(10))
     vals = ",".join("10" for _ in range(10))
     chart = parse(
@@ -628,7 +632,7 @@ def test_minimum_column_still_leaves_a_fillable_bar():
     assert col == 2
     out = render(chart, use_ascii=False, width=20)
     plot = _row_for_tick(out, "2").split("│", 1)[1]
-    assert plot == ("█ ") * 10
+    assert plot == "██" + " █" * 9
 
 
 def test_single_category_chart_still_renders_a_fillable_bar():
@@ -637,6 +641,29 @@ def test_single_category_chart_still_renders_a_fillable_bar():
     plot = _row_for_tick(out, "4").split("│", 1)[1]
     assert any(ch in "█▁▂▃▄▅▆▇" for ch in plot)
     assert plot.strip(" ") != ""
+
+
+def test_combo_chart_bar_survives_line_peak_at_minimum_column_width():
+    # Peer-review finding 1 against VIEWMD-0064: at col_width == _MIN_COL,
+    # a bar's one fillable column used to be exactly the column
+    # `_build_line_grid` writes a category's own corner/vertical-stem glyph
+    # into, so a line peak/trough could erase the bar entirely. Every
+    # category here shares the same (max) bar value; an alternating line
+    # must not blank out any of them.
+    cats = ",".join(str(i) for i in range(10))
+    vals = ",".join("10" for _ in range(10))
+    line = ",".join("1" if i % 2 == 0 else "10" for i in range(10))
+    chart = parse(
+        f"xychart-beta\n    x-axis [{cats}]\n    y-axis 0 --> 10\n"
+        f"    bar [{vals}]\n    line [{line}]\n"
+    )
+    col, _pw, _rows = _plot_geometry(10, 2, 20)
+    assert col == 2
+    out = render(chart, use_ascii=False, width=20)
+    plot = _row_for_tick(out, "4").split("│", 1)[1]
+    for i in range(10):
+        fill_col = 0 if i == 0 else i * col + 1
+        assert plot[fill_col] in "█▁▂▃▄▅▆▇", (i, plot)
 
 
 def test_combo_line_hue_and_position_unchanged():

@@ -178,4 +178,30 @@ After this issue: each bar its own color (stand-in glyph here) and a one-column 
 
 ## Peer review
 
-Not applicable; not yet built.
+- **code-review agent** (agent), 2026-08-16: 2 findings at high effort, both confirmed by direct
+  differential testing against the pre-VIEWMD-0064 renderer (commit `74404b1`); fixes pending.
+  1. **Confirmed, high severity -- requirement 5 violated for combo charts at `_MIN_COL`.** At
+     `col_width == _MIN_COL == 2` a bar has exactly one fillable column
+     (`fill_w = col_width - _BAR_GAP == 1`). Combo charts have always let the line dataset win
+     wherever both draw a cell (`_merge`, VIEWMD-0063, unchanged here); before this issue a bar
+     had two columns to lose one to the line and still show something, but with only one
+     fillable column left, a line corner/vertical-stem glyph landing on that exact column erases
+     the bar's data entirely, with no visual trace it was ever there. Reproduced in a scratch doc
+     (10-category combo chart, every bar at the same max value, alternating line, `--width 20`)
+     -- every category except the first showed zero bar glyphs at any row. **Fixed**: reserving
+     the gap as each category's *leading* column instead of its trailing one (`_build_bar_grid`)
+     -- `_build_line_grid`'s own corner/vertical-stem glyph for category `i` (`i > 0`) only ever
+     lands at that category's leading column (`i * col_width`), never elsewhere in its span, so
+     putting the gap there keeps the fill out of the one column a line dataset can overwrite. The
+     first category has no left neighbor to share a gap with, so it fills its whole span (no
+     leading gap); the last category ends up flush against the plot's right edge -- which also
+     fixes finding 2 below as a side effect, since that's exactly what the mockup already showed.
+     New regression test `test_combo_chart_bar_survives_line_peak_at_minimum_column_width`.
+  2. **Confirmed, low severity -- trailing gap after the last bar didn't match the issue's own
+     mockup.** The "after" mockup above shows the last category's bar flush against the plot's
+     right edge with no trailing gap column, but the shipped implementation (and
+     `test_gap_between_adjacent_bars_with_color_on_or_off`'s own expectation,
+     `("█"*9+" ")*4`) left a blank column after every bar including the last. **Fixed** by the
+     same leading-gap change as finding 1 -- the last bar is flush right with no trailing gap
+     again, matching the mockup byte-for-byte (`sales.out` regenerated).
+- **George Moses** (maintainer), 2026-08-16: "commit and close it out" -- approved to land.
