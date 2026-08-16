@@ -329,8 +329,11 @@ def _make_console(buffer: io.StringIO, *, width: int, color: bool) -> Console:
     )
 
 
-# ToC indent: one step (two spaces) per heading level below h1 (VIEWMD-0062).
-_TOC_INDENT = "  "
+# Rich's ListItem.render_bullet prefixes each item with " • " (3 columns) and nested
+# lists inherit that indent, so each heading level below h1 steps 3 columns -- matching
+# the body's own Markdown bullet lists (VIEWMD-0068).
+_TOC_BULLET = " • "
+_TOC_NEST_COLUMNS = 3
 _TOC_LEVELS = {"h1": 1, "h2": 2, "h3": 3}
 # Cap on ToC *entries* (one per included heading), not wrapped terminal rows.
 _TOC_MAX_ENTRIES = 20
@@ -381,32 +384,42 @@ def heading_outline(markdown: Markdown) -> list[HeadingOutline]:
     return outline
 
 
-def _fit_toc_outline(outline: list[HeadingOutline]) -> list[HeadingOutline]:
+def _fit_toc_outline(outline: list[HeadingOutline]) -> tuple[list[HeadingOutline], int]:
     """Pick the deepest heading level whose ToC still fits in ``_TOC_MAX_ENTRIES``.
 
-    Tries h1–h3, then h1–h2, then h1-only. h1 entries are never dropped to meet
-    the cap. If a shallower cut would be empty (no headings at that depth -- an
-    irregular document of only h3s, for example), keep the deeper outline even
-    if it overflows, rather than rendering nothing.
+    Tries h1–h3, then h1–h2, then h1-only. If the chosen cut still overflows,
+    truncate to the first ``_TOC_MAX_ENTRIES`` entries in document order and
+    report how many were omitted (VIEWMD-0068). If a shallower cut would be
+    empty (no headings at that depth -- an irregular document of only h3s, for
+    example), keep the deeper outline and truncate that, rather than rendering
+    nothing.
     """
     selected = list(outline)
     for max_level in (3, 2):
         if len(selected) <= _TOC_MAX_ENTRIES:
-            return selected
+            return selected, 0
         shallower = [h for h in outline if h.level <= max_level - 1]
         if not shallower:
-            return selected
+            break
         selected = shallower
-    return selected
+    if len(selected) <= _TOC_MAX_ENTRIES:
+        return selected, 0
+    omitted = len(selected) - _TOC_MAX_ENTRIES
+    return selected[:_TOC_MAX_ENTRIES], omitted
 
 
 def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
-    """One left-aligned, heading-styled line per outline entry, indented by level."""
+    """One bulleted, heading-styled line per outline entry, nested by level."""
     lines: list[Text] = []
     for heading in outline:
-        line = Text(_TOC_INDENT * (heading.level - 1))
-        # Same style the body heading uses (markdown.h1 / h2 / h3) so weight and
-        # color match; alignment is flush-left with indent, not the body's centered h1.
+        indent = " " * (_TOC_NEST_COLUMNS * (heading.level - 1))
+        # Marker uses the same style as the body's Markdown bullet lists; the
+        # entry text keeps markdown.h1 / h2 / h3 so weight and color still match
+        # the body heading (VIEWMD-0068). The Text itself has no base style, so
+        # the heading span does not inherit the bullet's bold. Alignment is
+        # flush-left with nest indent, not the body's centered h1.
+        line = Text()
+        line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
         line.append(heading.text, style=f"markdown.h{heading.level}")
         lines.append(line)
     return lines
@@ -444,11 +457,15 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
     return view
 
 
-def _print_toc(console: Console, outline: list[HeadingOutline]) -> None:
+def _print_toc(
+    console: Console, outline: list[HeadingOutline], omitted: int = 0
+) -> None:
     if not outline:
         return
     for line in _toc_lines(outline):
         console.print(line)
+    if omitted:
+        console.print(f"... {omitted} more")
     console.print()
 
 
@@ -470,11 +487,12 @@ def render_markdown(
     unterminated `---` block, or a front-matter block that parses to no pairs, renders unchanged.
     Fields with an empty value are omitted from the table unless `full_front_matter` is True
     (VIEWMD-0005). When `toc` is True (the default), a document with two or more h1/h2/h3 headings
-    gets an indented outline: after the front-matter divider (if any) the leading h1 renders as
+    gets a bulleted outline: after the front-matter divider (if any) the leading h1 renders as
     the document title, then the ToC (that title omitted from the list), then the rest of the
     body. Depth is chosen dynamically so the ToC stays at most 20 entries: h1–h3, then h1–h2,
-    then h1-only, with every remaining h1 kept even when there are more than 20 of them
-    (VIEWMD-0062). The body is run through viewmd's preprocessor pipeline (see preprocessors.py)
+    then h1-only; if the chosen cut still overflows, it is truncated to the first 20 entries
+    in document order with a trailing ``... N more`` note (VIEWMD-0068). The body is run through
+    viewmd's preprocessor pipeline (see preprocessors.py)
     before Rich sees it -- Obsidian-style ``[[wikilinks]]`` become ordinary Markdown links
     (VIEWMD-0006), and ` ```mermaid ` fences are rendered to box-drawing art (VIEWMD-0014). `color`
     and `width` are passed into that preprocessing pass too (VIEWMD-0043) -- Mermaid diagrams are
@@ -516,10 +534,12 @@ def render_markdown(
                 title_tokens, rest_tokens = split
                 console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
                 console.print()
-                _print_toc(console, _fit_toc_outline(outline[1:]))
+                fitted, omitted = _fit_toc_outline(outline[1:])
+                _print_toc(console, fitted, omitted)
                 console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
             else:
-                _print_toc(console, _fit_toc_outline(outline))
+                fitted, omitted = _fit_toc_outline(outline)
+                _print_toc(console, fitted, omitted)
                 console.print(markdown, crop=False)
             return buffer.getvalue()
     console.print(markdown, crop=False)

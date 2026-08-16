@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0068
 title: Cap the ToC by truncating overflowing entries, and render it as a bulleted list
-status: proposed
+status: in-progress
 area: [render]
 effort: low
 created: 2026-08-16
 updated: 2026-08-16
-accepted_by:
-accepted_at:
+accepted_by: George Moses
+accepted_at: 2026-08-16
 commits: []
 related: [VIEWMD-0062]
 supersedes: []
@@ -51,4 +51,5 @@ Both fixes are in `viewmd/render.py`. `_fit_toc_outline` (currently returns the 
 
 ## Peer review
 
-Not applicable; not yet built.
+- **Independent review agent** (agent), 2026-08-16: pass-with-nits on `5e36e71` vs develop. MUST 1–6 hold; `./run-tests.sh -k toc` (27) green; `./viewmd.sh CHANGELOG.md --no-pager --color never --width 80` shows 20 bulleted h2s then `... 30 more`. Heading styles stay markdown.h1/h2/h3 without inheriting bullet bold. Nit: README still said remaining `#` headings are always kept past 20 — fixed before landing.
+- **George Moses** (maintainer), 2026-08-16: "accept and close this" — approved to land.

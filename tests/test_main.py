@@ -446,7 +446,7 @@ def test_toc_is_on_by_default_for_a_multi_heading_document(tmp_path, capsys):
 
     assert rc == 0
     assert any(line.strip() == "Alpha" and line != "Alpha" for line in lines)
-    assert "  Beta" in lines
+    assert "    • Beta" in lines
 
 
 def test_no_toc_flag_omits_the_toc(tmp_path, capsys):
@@ -488,7 +488,7 @@ def test_cli_toc_overrides_config_false(tmp_path, capsys):
 
     assert rc == 0
     assert any(line.strip() == "Alpha" and line != "Alpha" for line in lines)
-    assert "  Beta" in lines
+    assert "    • Beta" in lines
 
 
 def test_cli_no_toc_overrides_config_true(tmp_path, capsys):

@@ -42,10 +42,10 @@ with no value are omitted from the table by default; `--full-front-matter` shows
 empty ones included.
 
 A document with two or more `#` / `##` / `###` headings also gets a table of contents: the leading
-`#` title renders first (as a normal heading), then an indented outline of the remaining headings,
+`#` title renders first (as a normal heading), then a bulleted outline of the remaining headings,
 then the rest of the body. The outline starts at three levels and steps down to h1–h2, then to
-h1-only, if it would otherwise exceed 20 entries; every remaining `#` heading is kept even when
-there are more than 20 of them. `--no-toc` turns it off; `--toc` turns it back on (for example to
+h1-only, if it would otherwise exceed 20 entries; if that cut still overflows, it is truncated
+to the first 20 with a trailing `... N more` note. `--no-toc` turns it off; `--toc` turns it back on (for example to
 override a config file that disabled it). `h4` and deeper headings stay in the body but are left
 out of the outline.
 
