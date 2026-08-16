@@ -8,5 +8,5 @@ xychart-beta
     x-axis [Q1, Q2, Q3, Q4]
     y-axis 0 --> 120
     bar  [40, 60, 80, 100]
-    line [60, 80, 100, 120]
+    line [60, 80, 60, 120]
 ```
