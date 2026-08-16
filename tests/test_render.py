@@ -472,3 +472,223 @@ def test_gfm_task_list_unknown_marker_renders_as_plain_text():
     assert "⬜" not in out
     assert "[y] not a task" in out
     assert "[x]no-space" in out
+
+
+def _rstripped(text: str) -> list[str]:
+    return [line.rstrip() for line in text.splitlines()]
+
+
+TOC_MD = "# Title\n\n## Section\n\n### Nested\n\nbody text\n"
+
+
+def _toc_entries(md: str) -> list[str]:
+    """ToC lines: non-empty rstripped lines in toc=True that are not in toc=False, in order."""
+    on_out = strip_ansi(render_markdown(md, width=80, color=False, toc=True))
+    off_out = strip_ansi(render_markdown(md, width=80, color=False, toc=False))
+    on = [line for line in _rstripped(on_out) if line]
+    off = [line for line in _rstripped(off_out) if line]
+    extra = []
+    j = 0
+    for line in on:
+        if j < len(off) and line == off[j]:
+            j += 1
+        else:
+            extra.append(line)
+    return extra
+
+
+def _headings_md(entries: list[tuple[int, str]]) -> str:
+    body = "\n\n".join("#" * level + " " + title for level, title in entries)
+    return body + "\n\nbody text\n"
+
+
+def _is_centered(line: str, text: str) -> bool:
+    return line.strip() == text and line != text
+
+
+def test_toc_renders_under_the_leading_h1_without_repeating_it():
+    out = strip_ansi(render_markdown(TOC_MD, width=80, color=False))
+    lines = _rstripped(out)
+    nonempty = [line for line in lines if line]
+    assert _is_centered(nonempty[0], "Title")
+    assert nonempty[1] == "  Section"
+    assert nonempty[2] == "    Nested"
+    # Title is not a flush-left ToC line, and is not repeated as a second centered heading.
+    assert "Title" not in [line for line in nonempty[1:] if line.strip() == "Title"]
+    assert "body text" in out
+    toc = _toc_entries(TOC_MD)
+    assert toc == ["  Section", "    Nested"]
+
+
+def test_toc_placed_after_front_matter_and_title_before_rest_of_body():
+    md = "---\ntitle: Hello\n---\n# Alpha\n\n## Beta\n\nbody text\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    lines = [line for line in _rstripped(out) if line]
+    hello_at = next(i for i, line in enumerate(lines) if "Hello" in line)
+    divider_at = next(i for i, line in enumerate(lines) if "═" in line)
+    title_at = next(i for i, line in enumerate(lines) if _is_centered(line, "Alpha"))
+    toc_at = lines.index("  Beta")
+    body_at = next(i for i, line in enumerate(lines) if "body text" in line)
+    assert hello_at < divider_at < title_at < toc_at < body_at
+    # Alpha is the title, not a ToC row; ToC starts on the next nonempty line.
+    assert "Alpha" not in lines[:title_at]
+    assert toc_at == title_at + 1
+    assert lines[toc_at] == "  Beta"
+
+
+def test_toc_omitted_for_a_single_heading():
+    md = "# Only one\n\nbody\n"
+    default = render_markdown(md, width=80, color=False)
+    off = render_markdown(md, width=80, color=False, toc=False)
+    assert default == off
+    lines = [line for line in _rstripped(strip_ansi(default)) if line.strip()]
+    # The only "Only one" is the centered body heading, not a flush-left ToC line.
+    assert lines[0] != "Only one"
+    assert "Only one" in lines[0]
+
+
+def test_toc_omitted_for_no_headings():
+    md = "just a paragraph\n"
+    default = render_markdown(md, width=80, color=False)
+    off = render_markdown(md, width=80, color=False, toc=False)
+    assert default == off
+
+
+def test_no_toc_leaves_the_body_unchanged():
+    off = render_markdown(TOC_MD, width=80, color=False, toc=False)
+    on = render_markdown(TOC_MD, width=80, color=False, toc=True)
+    assert _toc_entries(TOC_MD) == ["  Section", "    Nested"]
+    assert "Section" in strip_ansi(off)
+    assert strip_ansi(off).count("Title") >= 1
+    # --no-toc is the body-only render; with-toc is longer because of the outline.
+    assert len(on) > len(off)
+
+
+def test_h4_and_deeper_are_absent_from_toc_but_present_in_body():
+    md = "# A\n\n## B\n\n#### Deep\n\n### C\n"
+    toc = _toc_entries(md)
+    assert toc == ["  B", "    C"]
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert "Deep" in out
+    assert not any("Deep" in line for line in toc)
+
+
+def test_irregular_heading_nesting_is_rendered_as_it_appears():
+    md = "### First h3\n\n# Later h1\n\n## Mid\n"
+    toc = _toc_entries(md)
+    assert toc == ["    First h3", "Later h1", "  Mid"]
+
+
+def test_toc_precedes_the_whole_body_when_there_is_no_leading_h1():
+    md = "## First\n\n### Nested\n\nbody text\n"
+    out = strip_ansi(render_markdown(md, width=80, color=False, toc=True))
+    lines = [line for line in _rstripped(out) if line]
+    assert lines[0] == "  First"
+    assert lines[1] == "    Nested"
+    body_h2 = next(i for i, line in enumerate(lines) if line == "First")
+    assert body_h2 > 1
+    assert any("body text" in line for line in lines[body_h2:])
+
+
+def test_toc_entries_use_the_same_heading_styles_as_the_body():
+    md = "# Hello\n\n## World\n\n### Nested\n"
+    colored = render_markdown(md, width=80, color=True)
+    lines = [line for line in colored.splitlines() if line.strip()]
+    # Leading h1 is the title (centered, bold+underline), then ToC h2/h3.
+    assert "\x1b[1;4mHello\x1b[0m" in lines[0]
+    assert _is_centered(strip_ansi(lines[0]), "Hello")
+    assert "\x1b[4;35mWorld\x1b[0m" in lines[1]
+    assert strip_ansi(lines[1]).startswith("  World")
+    assert "\x1b[1;35mNested\x1b[0m" in lines[2]
+    body_h2 = [line for line in lines[3:] if "World" in strip_ansi(line)]
+    body_h3 = [line for line in lines[3:] if "Nested" in strip_ansi(line)]
+    assert body_h2 and "\x1b[4;35mWorld\x1b[0m" in body_h2[0]
+    assert body_h3 and "\x1b[1;35mNested\x1b[0m" in body_h3[0]
+    # Title is not repeated below the ToC.
+    assert not any("Hello" in strip_ansi(line) for line in lines[1:])
+
+
+def test_toc_uses_plain_text_of_inline_markup_in_headings():
+    md = "# With **bold** title\n\n## With **bold** and `code` and [link](http://x)\n"
+    toc = _toc_entries(md)
+    assert toc == ["  With bold and code and link"]
+    out = strip_ansi(render_markdown(md, width=80, color=False))
+    assert any(_is_centered(line, "With bold title") for line in _rstripped(out))
+
+
+def test_toc_title_resolves_reference_links_defined_later_in_the_document():
+    md = "# See [foo]\n\n## Section\n\n[foo]: http://example.com\n"
+    on = strip_ansi(render_markdown(md, width=80, color=False, toc=True))
+    off = strip_ansi(render_markdown(md, width=80, color=False, toc=False))
+    on_title = next(line for line in _rstripped(on) if line.strip())
+    off_title = next(line for line in _rstripped(off) if line.strip())
+    assert on_title == off_title
+    assert _is_centered(on_title, "See foo")
+    assert "See [foo]" not in on
+    colored_title = next(
+        line for line in render_markdown(md, width=80, color=True, toc=True).splitlines()
+        if line.strip()
+    )
+    assert "http://example.com" in colored_title
+
+
+def test_hash_comment_inside_a_fence_is_not_a_toc_entry():
+    md = "```\n# not a heading\n```\n\n# Real\n\n## Also real\n"
+    toc = _toc_entries(md)
+    assert toc == ["  Also real"]
+    assert not any("not a heading" in line for line in toc)
+
+
+def test_toc_keeps_all_three_levels_at_exactly_20_displayed_entries():
+    # Title h1 is not a ToC line. 1 h2 + 19 h3 = 20 displayed; cap allows 20.
+    entries = [(1, "Top"), (2, "Mid")] + [(3, f"Leaf {i}") for i in range(19)]
+    lines = _toc_entries(_headings_md(entries))
+    assert len(lines) == 20
+    assert lines[0] == "  Mid"
+    assert lines[1] == "    Leaf 0"
+    assert lines[-1] == "    Leaf 18"
+
+
+def test_toc_drops_h3_when_displayed_outline_exceeds_20_entries():
+    # Title "One" is not in the ToC. Displayed: Two + 2 h2 + 18 h3 = 21, so drop h3.
+    entries = [
+        (1, "One"), (2, "One-a"), (3, "deep-a"),
+        (1, "Two"), (2, "Two-a"),
+    ] + [(3, f"Leaf {i}") for i in range(17)]
+    lines = _toc_entries(_headings_md(entries))
+    assert lines == ["  One-a", "Two", "  Two-a"]
+    assert not any("Leaf" in line or "deep-a" in line for line in lines)
+    body = strip_ansi(render_markdown(_headings_md(entries), width=80, color=False))
+    assert "deep-a" in body
+    assert "Leaf 0" in body
+
+
+def test_toc_drops_h2_when_h1_h2_still_exceeds_20_entries():
+    # Title A omitted. Displayed: 19 h2 + B + C = 21, so drop to remaining h1s.
+    entries = [(1, "A")] + [(2, f"A-{i}") for i in range(19)] + [(1, "B"), (1, "C")]
+    lines = _toc_entries(_headings_md(entries))
+    assert lines == ["B", "C"]
+
+
+def test_toc_keeps_every_remaining_h1_even_past_20_entries():
+    # Title is Chapter 0. 21 remaining h1s stay in the ToC.
+    entries = [(1, f"Chapter {i}") for i in range(22)]
+    lines = _toc_entries(_headings_md(entries))
+    assert lines == [f"Chapter {i}" for i in range(1, 22)]
+    assert len(lines) == 21
+
+
+def test_toc_keeps_overflowing_h3s_when_there_is_no_shallower_outline():
+    # 21 h3s, no h1/h2: dropping a level would empty the ToC, so keep the h3s.
+    entries = [(3, f"Note {i}") for i in range(21)]
+    lines = _toc_entries(_headings_md(entries))
+    assert lines == [f"    Note {i}" for i in range(21)]
+    assert len(lines) == 21
+
+
+def test_toc_one_remaining_h1_after_depth_cap_is_still_rendered():
+    # Title Only + later h1 Rest + 20 h3s. Displayed 1 h1 + 20 h3 = 21, drop h3
+    # to the remaining h1. Requirement 7 checked the full extract (22 headings).
+    entries = [(1, "Only"), (1, "Rest")] + [(3, f"Leaf {i}") for i in range(20)]
+    lines = _toc_entries(_headings_md(entries))
+    assert lines == ["Rest"]

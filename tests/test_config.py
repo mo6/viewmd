@@ -46,10 +46,10 @@ def test_config_path_to_read_does_not_skip_when_viewmd_no_config_is_empty(tmp_pa
 
 def test_parse_config_reads_each_known_key():
     cfg = parse_config(
-        "width = 80\ncolor = never\nfull_front_matter = true\n",
+        "width = 80\ncolor = never\nfull_front_matter = true\ntoc = false\n",
         source="config",
     )
-    assert cfg == Config(width="80", color="never", full_front_matter=True)
+    assert cfg == Config(width="80", color="never", full_front_matter=True, toc=False)
 
 
 def test_parse_config_accepts_width_full():
@@ -59,6 +59,8 @@ def test_parse_config_accepts_width_full():
 def test_parse_config_accepts_boolean_synonyms():
     assert parse_config("full_front_matter = yes\n", source="c").full_front_matter is True
     assert parse_config("full_front_matter = off\n", source="c").full_front_matter is False
+    assert parse_config("toc = on\n", source="c").toc is True
+    assert parse_config("toc = 0\n", source="c").toc is False
 
 
 def test_parse_config_ignores_comments_blanks_and_section_headers():
@@ -71,8 +73,9 @@ def test_parse_config_ignores_comments_blanks_and_section_headers():
 
 
 def test_parse_config_ignores_unknown_keys():
-    cfg = parse_config("toc = true\nwidth = 40\n", source="config")
+    cfg = parse_config("pager = less\nwidth = 40\n", source="config")
     assert cfg.width == "40"
+    assert cfg.toc is None
 
 
 def test_parse_config_rejects_malformed_line():
@@ -88,6 +91,11 @@ def test_parse_config_rejects_invalid_color():
 def test_parse_config_rejects_invalid_width():
     with pytest.raises(ConfigError, match="invalid width"):
         parse_config("width = banana\n", source="config")
+
+
+def test_parse_config_rejects_invalid_toc():
+    with pytest.raises(ConfigError, match="invalid toc 'maybe'"):
+        parse_config("toc = maybe\n", source="config")
 
 
 def test_parse_config_rejects_duplicate_key():

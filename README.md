@@ -24,6 +24,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width 80     # render at exactly 80 columns
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
+./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
 ./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
@@ -39,6 +40,14 @@ followed by a divider, ahead of the document body. Parsing covers flat `key: val
 `[a, b]`-style lists; it is not a full YAML parser (see [docs/PLAN.md](docs/PLAN.md)). Fields
 with no value are omitted from the table by default; `--full-front-matter` shows every field,
 empty ones included.
+
+A document with two or more `#` / `##` / `###` headings also gets a table of contents: the leading
+`#` title renders first (as a normal heading), then an indented outline of the remaining headings,
+then the rest of the body. The outline starts at three levels and steps down to h1–h2, then to
+h1-only, if it would otherwise exceed 20 entries; every remaining `#` heading is kept even when
+there are more than 20 of them. `--no-toc` turns it off; `--toc` turns it back on (for example to
+override a config file that disabled it). `h4` and deeper headings stay in the body but are left
+out of the outline.
 
 Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
 preceded by a heading naming its path and separated by a divider, concatenated into a single
@@ -71,11 +80,11 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 ## Configuration file
 
-A per-user config file supplies default values for `--width`, `--color`, and
-`--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An
-explicit CLI flag always wins over the file (`--no-full-front-matter` is the flag that turns that
-one back off if the file sets `full_front_matter = true`); a missing file is not an error — it's
-the same as viewmd's behavior today.
+A per-user config file supplies default values for `--width`, `--color`,
+`--full-front-matter`, and `--toc`, so a standing preference doesn't need to be passed on every
+invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
+are the flags that turn those defaults back off if the file sets them on); a missing file is not
+an error — it's the same as viewmd's built-in defaults.
 
 To set one up:
 
@@ -85,6 +94,7 @@ cat > "${XDG_CONFIG_HOME:-$HOME/.config}/viewmd/config" <<'EOF'
 width = 80
 color = never
 full_front_matter = true
+toc = false
 EOF
 ```
 
@@ -98,6 +108,7 @@ keys:
 | `width` | a positive integer, or `full` | `--width` |
 | `color` | `auto`, `always`, or `never` | `--color` |
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
+| `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
 
 An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
 value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
