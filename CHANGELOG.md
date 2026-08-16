@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.28.0] — 2026-08-16
+
+- **Color a combo chart's bar background where its line crosses it** (VIEWMD-0066, render/mermaid): where an XY-chart combo's `line` dataset draws over a cell a `bar` dataset would otherwise have filled, that cell now keeps the bar's own color as a true-color ANSI background underneath the line's glyph, instead of the line erasing all trace of the bar's color. The line's own foreground color and every glyph's placement are unchanged; a cell the line never touches, a line-only chart, and `color=False` output are all unaffected. See `poc/xychart/line_bg_poc.py` for a real-color before/after.
+
 ## [1.27.0] — 2026-08-16
 
 - **User-global config file for standing CLI defaults** (VIEWMD-0061, cli): a flat `key = value` file at `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config`) now supplies default values for `--width`, `--color`, and `--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An explicit CLI flag always overrides the file; a missing file changes nothing (today's no-config behavior is unchanged). `--config PATH` reads from an explicit alternate location, and `VIEWMD_NO_CONFIG` skips config-file reading entirely. See the README's "Configuration file" section.

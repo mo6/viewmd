@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0066
 title: Color the bar's background where a combo chart's line crosses it
-status: in-progress
+status: implemented
 area: [render, mermaid]
 effort: medium
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses
 accepted_at: 2026-08-16
-commits: []
+commits: [1f68f7d, e5f509d, cbdc65f]
 related: [VIEWMD-0048, VIEWMD-0063, VIEWMD-0064]
 supersedes: []
-changelog:
+changelog: "[1.28.0]"
 reason:
 ---
 
