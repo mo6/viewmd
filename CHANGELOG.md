@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.27.0] — 2026-08-16
+
+- **User-global config file for standing CLI defaults** (VIEWMD-0061, cli): a flat `key = value` file at `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config`) now supplies default values for `--width`, `--color`, and `--full-front-matter`, so a standing preference doesn't need to be passed on every invocation. An explicit CLI flag always overrides the file; a missing file changes nothing (today's no-config behavior is unchanged). `--config PATH` reads from an explicit alternate location, and `VIEWMD_NO_CONFIG` skips config-file reading entirely. See the README's "Configuration file" section.
+
 ## [1.26.0] — 2026-08-16
 
 - **Per-bar color and inter-bar gap for Mermaid XY-chart bars** (VIEWMD-0064, render/mermaid): the `bar` dataset's bars each get their own hue, cycling a small categorical palette by category index, instead of sharing one fixed color; a one-column gap between adjacent bars keeps their shapes visually distinct with color on or off. The gap sits before each bar rather than after (except the first, which has no left neighbor to share it with), keeping a combo chart's bar fill out of the one column its line dataset can legitimately overwrite — a peer-review finding against the initial implementation, fixed before landing. The line dataset's own hue, positioning, and layering over bars are unchanged. See `docs/mermaid-xychart.md`.
