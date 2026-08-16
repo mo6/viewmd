@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.30.1] — 2026-08-16
+
+- **Truncate an overflowing table of contents and render it as a bulleted list** (VIEWMD-0068, render): the 20-entry cap no longer only drops heading depth -- a flat outline (one `#` title plus many `##` sections, like `CHANGELOG.md`) that could not shrink that way is truncated to the first 20 entries with a trailing `... N more` note, instead of listing every heading unbounded. Each entry also gets the same ` • ` marker and nest indent as the body's own Markdown bullet lists, while keeping its heading-level text styling.
+
 ## [1.30.0] — 2026-08-16
 
 - **Mouse/trackpad scroll-wheel support in the default `less` pager** (VIEWMD-0067, cli): `--mouse` is now appended to the default pager invocation (`less -R -F -X -S --mouse`), so a reader's mouse wheel or trackpad scroll gesture actually scrolls viewmd's paged output, the way it does in a bare `less somefile` today. Root cause was `-X` (`--no-init`) skipping the terminal's alternate-screen switch, which most terminals rely on to route wheel events to the foreground program; `--mouse` enables wheel scrolling independent of that. Only viewmd's own default changes -- an explicit `$PAGER` override is still used verbatim, unmodified.

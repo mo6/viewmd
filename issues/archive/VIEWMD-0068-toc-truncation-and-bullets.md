@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0068
 title: Cap the ToC by truncating overflowing entries, and render it as a bulleted list
-status: in-progress
+status: implemented
 area: [render]
 effort: low
 created: 2026-08-16
 updated: 2026-08-16
 accepted_by: George Moses
 accepted_at: 2026-08-16
-commits: []
+commits: [5e36e71, 79b3739]
 related: [VIEWMD-0062]
 supersedes: []
-changelog:
+changelog: "[1.30.1]"
 reason:
 ---
 
