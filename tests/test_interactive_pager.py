@@ -270,6 +270,23 @@ def test_read_event_sgr_mouse_wheel():
     assert ip._read_event(fd) == ip.Event("wheel_down")
 
 
+def test_read_event_sgr_mouse_horizontal_wheel():
+    fd = _pipe_with(b"\x1b[<66;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_left")
+    fd = _pipe_with(b"\x1b[<67;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_right")
+
+
+def test_read_event_sgr_mouse_shift_wheel_falls_back_to_horizontal():
+    # Terminals with no native horizontal-wheel report (e.g. macOS Terminal.app) send Shift +
+    # vertical wheel instead (SGR adds 4 for a held Shift: 64+4=68, 65+4=69) -- the same
+    # shift-scrolls-horizontally convention other GUI apps fall back to.
+    fd = _pipe_with(b"\x1b[<68;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_left")
+    fd = _pipe_with(b"\x1b[<69;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_right")
+
+
 # --- _mode_line ------------------------------------------------------------------------------
 
 
