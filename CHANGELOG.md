@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.31.0] — 2026-08-17
+
+- **viewmd's own interactive pager, replacing the default `less` delegation** (VIEWMD-0007, cli/render): viewing a single Markdown document (a file, stdin, or a directory's `_Index.md`) in a terminal now pages into an owned, in-process interactive scrolling loop instead of spawning `less` by default -- mouse-wheel/trackpad scrolling, a table-of-contents popup, forward search with match highlighting, horizontal scrolling with truncation markers for a Mermaid diagram or code block wider than the terminal, a render-width toggle, a mouse-capture toggle (so a plain click-drag can still select text natively), direct terminal-resize handling, and a `?` help screen listing every keybinding. An explicit `$PAGER` override still delegates to that external pager unchanged; viewing multiple files at once or a directory listing without an index file is unchanged too, still `less` by default. See the README's new "Interactive pager" section. A known limitation carried over from this issue's own design notes: a double-width character (an emoji, most CJK text) can misalign the popup's borders, tracked separately as VIEWMD-0070.
+
 ## [1.30.1] — 2026-08-16
 
 - **Truncate an overflowing table of contents and render it as a bulleted list** (VIEWMD-0068, render): the 20-entry cap no longer only drops heading depth -- a flat outline (one `#` title plus many `##` sections, like `CHANGELOG.md`) that could not shrink that way is truncated to the first 20 entries with a trailing `... N more` note, instead of listing every heading unbounded. Each entry also gets the same ` • ` marker and nest indent as the body's own Markdown bullet lists, while keeping its heading-level text styling.
