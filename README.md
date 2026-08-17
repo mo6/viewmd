@@ -2,8 +2,8 @@
 
 View Markdown files from the command line — headers, emphasis, tables, syntax-highlighted code
 blocks, GFM task list checkboxes, Obsidian/GitHub-style admonition callouts, basic Mermaid diagram
-support, and any ASCII art in fenced code blocks, rendered to your terminal with color and
-auto-paged into `less`.
+support, and any ASCII art in fenced code blocks, rendered to your terminal with color and paged
+into viewmd's own interactive pager — table of contents, search, and more, see below.
 
 ![viewmd demo](docs/demo.gif)
 
@@ -17,7 +17,7 @@ python3 -m venv .venv
 ## Usage
 
 ```
-./viewmd.sh README.md              # renders and pages into $PAGER (less -R -F -X --mouse) if stdout is a terminal
+./viewmd.sh README.md              # renders and pages into viewmd's own interactive pager if stdout is a terminal
 ./viewmd.sh README.md --no-pager   # print rendered ANSI straight to stdout, no pager
 cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --color=never  # plain text, no ANSI color
@@ -71,6 +71,33 @@ Obsidian-only aliases) still renders as a generic card, using the type token as 
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
+
+## Interactive pager
+
+Viewing a single document (a file, stdin, or a directory's `_Index.md`) in a terminal pages into
+viewmd's own interactive pager, not an external `less` process — mouse-wheel/trackpad scrolling
+works the same as `less`, plus a table-of-contents popup, search with match highlighting,
+horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more. Press
+`?` at any time for the full keybinding reference; a few of the more useful ones:
+
+```
+up/down, wheel, j/k     scroll one line                    t          open the table of contents
+space / b               page down / back up                /          search forward
+g / G                   jump to top / bottom                N          repeat the last search
+n / p                   jump to next / previous heading      w         toggle full terminal width
+left/right, h/l         scroll sideways (wide content)        m        toggle mouse capture
+q                       quit
+```
+
+Toggling mouse capture off (`m`) lets a plain click-drag select text the normal way — enabling it
+(the default, needed for wheel scroll) is what stops the terminal's own native text selection from
+working; most terminals also support a modifier-drag bypass (Option on macOS, Shift elsewhere)
+that needs no toggling. Setting `$PAGER` still delegates to that external pager unchanged, exactly
+as before — only the *default* (no `$PAGER` set) no longer spawns `less`.
+
+Viewing more than one file at once (multiple paths, a directory listing with no `_Index.md`) still
+pages into `less` ($PAGER, default `less -R -F -X --mouse`) as before — the interactive pager's
+table of contents and search are scoped to a single document.
 
 ## Configuration file
 
