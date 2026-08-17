@@ -33,9 +33,6 @@ select = ["E", "F", "I", "UP", "B", "S"]
 "tests/**" = ["S101"]
 # Maintainer tooling: fixed argv lists to known binaries, no shell, no user input as argv0.
 "tools/**" = ["S101", "S603", "S607"]
-# Deliberate subprocess use for the pager; command comes from $PAGER or a fixed default, never
-# built from unsanitized user input.
-"viewmd/pager.py" = ["S603"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

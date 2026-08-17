@@ -119,20 +119,15 @@ def main(argv: list[str] | None = None) -> int:
                              color=color, full_front_matter=full_front_matter, toc=toc)
             return 0
 
-        from viewmd.render import render_directory_listing
-        ansi_text = render_directory_listing(path, width=directory_width, color=color)
-        from viewmd.pager import display
-        display(ansi_text, no_pager=args.no_pager)
+        from viewmd.pager import display_directory_listing
+        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color)
         return 0
 
-    from viewmd.render import render_divider, render_file_heading
-
     had_error = False
-    parts: list[str] = []
+    entries: list[tuple[str, str | None]] = []
     for path in paths:
         try:
-            ansi_text = _render_path(path, width=width, directory_width=directory_width,
-                                     color=color, full_front_matter=full_front_matter, toc=toc)
+            resolved = _resolve_document(path)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             had_error = True
@@ -142,52 +137,31 @@ def main(argv: list[str] | None = None) -> int:
             had_error = True
             continue
 
-        if parts:
-            parts.append(render_divider(width=width, color=color))
-        parts.append(render_file_heading(path, width=width, color=color))
-        parts.append(ansi_text)
+        if resolved is not None:
+            text, _name = resolved
+            # `path` (the original CLI argument), not `_name` (the resolved index-file path for a
+            # directory's `_Index.md` note, VIEWMD-0065) -- render_file_heading names the file
+            # heading after what the reader actually typed, matching pre-VIEWMD-0072 behavior.
+            entries.append((path, text))
+        else:
+            entries.append((path, None))
 
-    from viewmd.pager import display
-    display("".join(parts), no_pager=args.no_pager)
+    from viewmd.pager import display_multi_file
+    display_multi_file(entries, no_pager=args.no_pager, width=width,
+                       directory_width=directory_width, color=color,
+                       full_front_matter=full_front_matter, toc=toc)
     return 1 if had_error else 0
-
-
-def _render_path(path: str, *, width: int, directory_width: int, color: bool,
-                 full_front_matter: bool, toc: bool) -> str:
-    """Resolve `path` to its rendered ANSI text.
-
-    A plain file (or '-' for stdin) renders as Markdown directly, at `width`. A directory looks up
-    `viewmd.render.INDEX_FILENAMES` inside it, in priority order, and renders the first match if
-    any is present (VIEWMD-0065, VIEWMD-0074), also at `width`; otherwise it renders a
-    table-of-contents listing of the directory's own entries instead of raising
-    `IsADirectoryError` the way a bare `open()` would, at `directory_width` (VIEWMD-0071). Raises
-    `OSError`/`UnicodeDecodeError` the same as a direct read, for the caller's existing error
-    handling.
-    """
-    from viewmd.render import render_directory_listing, render_markdown
-
-    if path != "-" and os.path.isdir(path):
-        index_path = _find_index_path(path)
-        if index_path is not None:
-            text = _read_input(index_path)
-            return render_markdown(text, width=width, color=color,
-                                   full_front_matter=full_front_matter, toc=toc)
-        return render_directory_listing(path, width=directory_width, color=color)
-
-    text = _read_input(path)
-    return render_markdown(text, width=width, color=color,
-                           full_front_matter=full_front_matter, toc=toc)
 
 
 def _resolve_document(path: str) -> tuple[str, str] | None:
     """Returns `(source_markdown_text, display_name)` for `path` when it resolves to one real
     document -- a plain file, stdin, or a directory's index file (VIEWMD-0065) -- or `None` for a
     bare directory listing, which is a synthesized table, not a document with headings/content of
-    its own for `viewmd.pager.display_document`'s interactive pager to page. Mirrors
-    `_render_path`'s own resolution logic exactly, but returns the raw source text instead of an
-    already-rendered string -- the interactive pager needs to derive its own plain-render twin and
-    heading outline from that itself (`viewmd.interactive_pager._load`). Raises `OSError`/
-    `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
+    its own for `viewmd.pager.display_document`'s interactive pager to page. Used for both the
+    single-path and multi-path cases -- the multi-path loop keeps the original CLI-argument
+    `path` as its own display name rather than this function's resolved index-file path (see its
+    call site). Raises `OSError`/`UnicodeDecodeError` the same as a direct read, for the caller's
+    existing error handling.
     """
     if path != "-" and os.path.isdir(path):
         index_path = _find_index_path(path)

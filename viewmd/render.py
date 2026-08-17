@@ -39,8 +39,8 @@ class ViewmdCodeBlock(CodeBlock):
     Rich 15's default ``CodeBlock`` hardcodes ``Syntax(..., word_wrap=True,
     padding=1)``, which folds long lines onto extra rows instead of letting
     them run wide. A line longer than the render width should stay intact and
-    scroll horizontally in the pager (``less -S``, set in pager.py) rather
-    than being torn onto a second line -- or, as an earlier version of this
+    scroll horizontally in the pager rather than being torn onto a second
+    line -- or, as an earlier version of this
     class did, silently cropped and lost (VIEWMD-0019). Mermaid-rendered
     fences (tagged with ``MERMAID_RENDERED_INFO``) already got this treatment
     for VIEWMD-0018; ordinary fences now get the same one, via ``Syntax``
@@ -631,6 +631,38 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
     console.print(f"[bold]{escape(dir_path)}/[/bold]")
     console.print(table)
     return buffer.getvalue()
+
+
+def render_multi_file(
+    entries: list[tuple[str, str | None]],
+    *,
+    width: int,
+    directory_width: int,
+    color: bool,
+    full_front_matter: bool,
+    toc: bool,
+) -> str:
+    """Render a resolved multi-file concatenation (two or more `path` arguments, VIEWMD-0013),
+    each entry preceded by a heading naming its path and separated by a divider. `entries` is
+    `(display_path, text)` per already-read/resolved path -- `text` is `None` for a bare directory
+    listing among the paths (rendered at `directory_width`, VIEWMD-0071's own full-terminal-width
+    default), or the raw Markdown source otherwise (rendered at `width`). Callers do their own
+    file reading/error handling (`viewmd/__main__.py`) before building `entries`; this function is
+    pure re-rendering, so it can be called again at a different `width` for the interactive
+    pager's width toggle/resize reload (`viewmd.interactive_pager.run_multi_file`, VIEWMD-0072)
+    without re-reading anything from disk.
+    """
+    parts: list[str] = []
+    for display_path, text in entries:
+        if parts:
+            parts.append(render_divider(width=width, color=color))
+        parts.append(render_file_heading(display_path, width=width, color=color))
+        if text is None:
+            parts.append(render_directory_listing(display_path, width=directory_width, color=color))
+        else:
+            parts.append(render_markdown(text, width=width, color=color,
+                                         full_front_matter=full_front_matter, toc=toc))
+    return "".join(parts)
 
 
 def _front_matter_table(data: dict[str, str]) -> Table:

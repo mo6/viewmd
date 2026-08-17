@@ -45,8 +45,7 @@ A document with two or more `#` / `##` / `###` headings also gets a table of con
 
 Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
 preceded by a heading naming its path and separated by a divider, concatenated into a single
-`less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
-scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
+scroll (see "Interactive pager" below). Mixing stdin (`-`) with a file path is rejected.
 
 Passing a directory renders its index file if one exists — `_Index.md`, `index.md`, or
 `_index.md`, checked in that order (exact case match) — exactly as if that file had been passed
@@ -75,17 +74,18 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 ## Interactive pager
 
-Viewing a single document (a file, stdin, or a directory's index file) in a terminal pages into
-viewmd's own interactive pager, not an external `less` process — mouse-wheel/trackpad scrolling
-works the same as `less`, plus a table-of-contents popup, search with match highlighting,
-horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more. Press
-`?` at any time for the full keybinding reference; a few of the more useful ones:
+Viewing anything in a terminal — a single document (a file, stdin, or a directory's index file),
+a directory listing with no index file, or more than one path at once — pages into viewmd's own
+interactive pager. viewmd never spawns an external pager process: no `less` by default, and no
+`$PAGER` override either — mouse-wheel/trackpad scrolling, search with match highlighting,
+horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more are all
+built in. Press `?` at any time for the full keybinding reference; a few of the more useful ones:
 
 ```
-up/down, wheel, j/k     scroll one line                    t          open the table of contents
+up/down, wheel, j/k     scroll one line                    t          open the table of contents*
 space / b               page down / back up                /          search forward
 g / G                   jump to top / bottom                N          repeat the last search
-n / p                   jump to next / previous heading      w         toggle full terminal width
+n / p                   jump to next / previous heading*     w         toggle full terminal width
 left/right, h/l         scroll sideways (wide content)        m        toggle mouse capture
 q                       quit
 ```
@@ -93,12 +93,14 @@ q                       quit
 Toggling mouse capture off (`m`) lets a plain click-drag select text the normal way — enabling it
 (the default, needed for wheel scroll) is what stops the terminal's own native text selection from
 working; most terminals also support a modifier-drag bypass (Option on macOS, Shift elsewhere)
-that needs no toggling. Setting `$PAGER` still delegates to that external pager unchanged, exactly
-as before — only the *default* (no `$PAGER` set) no longer spawns `less`.
+that needs no toggling.
 
-Viewing more than one file at once (multiple paths, a directory listing with no index file) still
-pages into `less` ($PAGER, default `less -R -F -X --mouse`) as before — the interactive pager's
-table of contents and search are scoped to a single document.
+\* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
+they're only available for a single document; viewing more than one file at once or a bare
+directory listing pages the same way — mouse scroll, search, resize, the width toggle, all of
+it — just without those two, since there's no per-file/per-entry heading structure to build a
+table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
+it's one long continuous scroll through every file in the order given.
 
 ## Configuration file
 

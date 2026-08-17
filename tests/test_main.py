@@ -275,6 +275,46 @@ def test_multi_path_mode_handles_a_directory_among_files(tmp_path, capsys):
     assert "Sub Landing" in out
 
 
+def test_directory_listing_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
+    # VIEWMD-0072: a bare directory listing no longer spawns `less` -- it dispatches to
+    # viewmd's own interactive pager, the same as a single document does (VIEWMD-0007).
+    (tmp_path / "a.md").write_text("# A\n")
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    calls = []
+
+    def fake_run(dir_path, *, width, color):
+        calls.append((dir_path, width, color))
+
+    monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
+
+    rc = main(["--color", "never", "--width", "80", str(tmp_path)])
+
+    assert rc == 0
+    assert calls == [(str(tmp_path), 80, False)]
+
+
+def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
+    # VIEWMD-0072: a multi-file view no longer spawns `less` either.
+    (tmp_path / "one.md").write_text("# One\n\nbody\n")
+    (tmp_path / "two.md").write_text("# Two\n\nbody\n")
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    calls = []
+
+    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc):
+        calls.append(entries)
+
+    monkeypatch.setattr("viewmd.interactive_pager.run_multi_file", fake_run)
+
+    rc = main(["--color", "never", "--width", "80",
+               str(tmp_path / "one.md"), str(tmp_path / "two.md")])
+
+    assert rc == 0
+    assert calls == [[
+        (str(tmp_path / "one.md"), "# One\n\nbody\n"),
+        (str(tmp_path / "two.md"), "# Two\n\nbody\n"),
+    ]]
+
+
 def test_resolve_width_default_max_width_overrides_the_100_cap():
     assert _resolve_width(None, terminal_width=200, default_max_width=200) == 200
     assert _resolve_width(None, terminal_width=60, default_max_width=200) == 60
@@ -292,7 +332,7 @@ def test_directory_listing_defaults_to_full_terminal_width(tmp_path, capsys, mon
         captured["width"] = width
         return orig(dir_path, width=width, color=color)
 
-    monkeypatch.setattr("viewmd.render.render_directory_listing", spy)
+    monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
     rc = main(["--no-pager", "--color", "never", str(tmp_path)])
 
@@ -312,7 +352,7 @@ def test_directory_listing_explicit_width_overrides_the_full_default(tmp_path, c
         captured["width"] = width
         return orig(dir_path, width=width, color=color)
 
-    monkeypatch.setattr("viewmd.render.render_directory_listing", spy)
+    monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
     rc = main(["--no-pager", "--color", "never", "--width", "50", str(tmp_path)])
 

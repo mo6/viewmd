@@ -324,6 +324,18 @@ def test_keybind_help_omits_width_toggle_and_highlight_hints_when_not_applicable
     assert "clear hl" not in ip._strip_ansi(line)
 
 
+def test_keybind_help_omits_contents_hint_without_headings():
+    # VIEWMD-0072: a directory listing/multi-file view has no heading outline, so 't' is inert --
+    # not advertised in the echo-area default hint.
+    line = ip._keybind_help(False, None, False, has_headings=False)
+    assert "contents" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_contents_hint_with_headings_by_default():
+    line = ip._keybind_help(False, None, False)
+    assert "contents" in ip._strip_ansi(line)
+
+
 def test_pad_ansi_pads_with_plain_trailing_spaces():
     colored = ip._keycap("q")
     padded = ip._pad_ansi(colored, 20)
@@ -540,6 +552,38 @@ def test_run_reads_input_from_dev_tty_not_stdin(monkeypatch):
     monkeypatch.setattr(ip.os, "open", fake_open)
     ip.run("# Hello\n", "-", width=80, color=False)
     assert opened == ["/dev/tty"]
+
+
+# --- run_directory_listing()/run_multi_file(): non-terminal fallback (VIEWMD-0072) ------------
+
+
+def test_run_directory_listing_falls_back_to_plain_print(monkeypatch, capsys, tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "a.md").write_text("# A\n")
+
+    def fake_open(path, flags):
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+
+
+def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
+    from viewmd.render import render_multi_file
+
+    def fake_open(path, flags):
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    entries = [("a.md", "# A\n"), ("b.md", "# B\n")]
+    ip.run_multi_file(entries, width=80, directory_width=80, color=False,
+                      full_front_matter=False, toc=True)
+    out = capsys.readouterr().out
+    assert out == render_multi_file(entries, width=80, directory_width=80, color=False,
+                                    full_front_matter=False, toc=True)
 
 
 if __name__ == "__main__":

@@ -1,46 +1,20 @@
 """Decide whether to page rendered output, and do it.
 
-`display()` (multi-file concatenations and directory listings, see `__main__.py`) is unchanged by
-VIEWMD-0007: still an already-rendered ANSI string, still `less` by default, still a plain
-`$PAGER` override. A single Markdown document -- the overwhelmingly common case, and the only one
-with a heading outline for a ToC popup/search to act on -- goes through `display_document()`
-instead, which owns viewmd's own interactive pager (`viewmd/interactive_pager.py`) by default,
-still deferring to an explicit `$PAGER` override unchanged (VIEWMD-0007's Non-goals)."""
+VIEWMD-0072: viewmd never spawns an external pager -- no `less` default, no `$PAGER` override,
+no `subprocess` call anywhere in this module. Every paged case (a single Markdown document, a
+bare directory listing, a multi-file concatenation) owns the terminal directly via
+`viewmd.interactive_pager`, finishing what VIEWMD-0007 started only for the single-document case.
+`--no-pager`/non-terminal output is unaffected by any of this: each `display_*` function below
+still just prints the plain already-rendered bytes in that case, identical to before this issue.
+"""
 
-import os
-import shlex
-import subprocess
 import sys
 
-from viewmd.render import render_markdown
-
-# -S (chop long lines) so mermaid diagrams wider than the terminal stay on one
-# row inside less instead of soft-wrapping and destroying the 2D art
-# (VIEWMD-0018). --mouse enables wheel/trackpad scrolling despite -X disabling
-# the alternate screen buffer that terminals otherwise rely on for that
-# (VIEWMD-0067). Override via $PAGER if soft-wrap or mouse scroll is unwanted.
-DEFAULT_PAGER = ["less", "-R", "-F", "-X", "-S", "--mouse"]
+from viewmd.render import render_directory_listing, render_markdown, render_multi_file
 
 
 def should_page(no_pager_flag: bool) -> bool:
     return not no_pager_flag and sys.stdout.isatty()
-
-
-def _pager_command() -> list[str]:
-    env_pager = os.environ.get("PAGER", "").strip()
-    return shlex.split(env_pager) if env_pager else DEFAULT_PAGER
-
-
-def display(text: str, *, no_pager: bool) -> None:
-    if not should_page(no_pager):
-        print(text, end="")
-        return
-
-    cmd = _pager_command()
-    try:
-        subprocess.run(cmd, input=text.encode(), check=False)  # noqa: S603
-    except (BrokenPipeError, FileNotFoundError):
-        print(text, end="")
 
 
 def display_document(
@@ -55,14 +29,7 @@ def display_document(
 ) -> None:
     """Page a single Markdown document, `text` being its raw (unrendered) source -- the
     interactive pager needs that itself, to derive its plain-render twin and heading outline
-    (`viewmd.interactive_pager._load`), not just the one ANSI string `display()` takes.
-
-    `--no-pager`/non-terminal output renders and prints exactly like `display()` would (requirement
-    8) -- one `render_markdown` call, identical bytes either way. An explicit `$PAGER` still
-    delegates to that external pager unchanged (VIEWMD-0007's Non-goals: a reader who's
-    deliberately chosen a different pager shouldn't lose it). Otherwise, viewmd owns the terminal
-    directly (`viewmd.interactive_pager.run`) instead of spawning `less` -- this is the one thing
-    VIEWMD-0007 actually changes about the *default* (no-`$PAGER`-set) behavior.
+    (`viewmd.interactive_pager._load`).
     """
     if not should_page(no_pager):
         print(
@@ -72,16 +39,45 @@ def display_document(
         )
         return
 
-    env_pager = os.environ.get("PAGER", "").strip()
-    if env_pager:
-        ansi_text = render_markdown(text, width=width, color=color,
-                                    full_front_matter=full_front_matter, toc=toc)
-        try:
-            subprocess.run(shlex.split(env_pager), input=ansi_text.encode(), check=False)  # noqa: S603
-        except (BrokenPipeError, FileNotFoundError):
-            print(ansi_text, end="")
-        return
-
     from viewmd.interactive_pager import run
 
     run(text, name, width=width, color=color, full_front_matter=full_front_matter, toc=toc)
+
+
+def display_directory_listing(dir_path: str, *, no_pager: bool, width: int, color: bool) -> None:
+    """Page a bare directory listing (VIEWMD-0065, no `_Index.md` note), interactively via
+    `viewmd.interactive_pager.run_directory_listing` (VIEWMD-0072) when paging applies."""
+    if not should_page(no_pager):
+        print(render_directory_listing(dir_path, width=width, color=color), end="")
+        return
+
+    from viewmd.interactive_pager import run_directory_listing
+
+    run_directory_listing(dir_path, width=width, color=color)
+
+
+def display_multi_file(
+    entries: list[tuple[str, str | None]],
+    *,
+    no_pager: bool,
+    width: int,
+    directory_width: int,
+    color: bool,
+    full_front_matter: bool,
+    toc: bool,
+) -> None:
+    """Page a multi-file concatenation (two or more `path` arguments), interactively via
+    `viewmd.interactive_pager.run_multi_file` (VIEWMD-0072) when paging applies. `entries` is
+    `(display_path, text)` per already-resolved path -- see `viewmd.render.render_multi_file`."""
+    if not should_page(no_pager):
+        print(
+            render_multi_file(entries, width=width, directory_width=directory_width, color=color,
+                              full_front_matter=full_front_matter, toc=toc),
+            end="",
+        )
+        return
+
+    from viewmd.interactive_pager import run_multi_file
+
+    run_multi_file(entries, width=width, directory_width=directory_width, color=color,
+                   full_front_matter=full_front_matter, toc=toc)
