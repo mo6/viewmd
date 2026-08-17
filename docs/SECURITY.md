@@ -9,8 +9,7 @@ any installed packages known-vulnerable? [VIEWMD-0009](../issues/archive/VIEWMD-
 is the testable *what*; this essay is the *why* and the runbook.
 
 Green here means the checklist below passed. It does not mean viewmd's output can be trusted as
-a substitute for reading the source `.md` file yourself, or that a malicious pager/editor set via
-`$PAGER` is somehow made safe. Those limits stay in section 6.
+a substitute for reading the source `.md` file yourself. Those limits stay in section 6.
 
 ---
 
@@ -26,19 +25,18 @@ narrow.
 
 ## 2. Attack surface
 
-viewmd's surface is small by construction: it renders Markdown text to ANSI and pages it. There
-is no network access anywhere in the tool, and no content from a rendered `.md` file is ever
-executed -- Rich renders Markdown as text, never as code (docs/PLAN.md's "HTML rendering" section).
+viewmd's surface is small by construction: it renders Markdown text to ANSI and pages it, entirely
+in-process (VIEWMD-0072: no external pager subprocess, `$PAGER` is not read anywhere). There is no
+network access anywhere in the tool, and no content from a rendered `.md` file is ever executed --
+Rich renders Markdown as text, never as code (docs/PLAN.md's "HTML rendering" section).
 
 | Surface | Where | Notes |
 |---|---|---|
-| Pager subprocess | `viewmd/pager.py` | Spawns `$PAGER` (default `less -R -F -X --mouse`) via `subprocess.run`, argv list, no shell. The command comes from the `$PAGER` environment variable or the fixed default, never from parsed Markdown content. |
 | File / stdin reading | `viewmd/__main__.py` | Reads the path given on the command line, or stdin, as UTF-8 text. No execution, no templating. |
 | Config-file reading | `viewmd/config.py` | Reads a UTF-8 `key = value` file from an XDG path, `--config PATH`, or not at all (`VIEWMD_NO_CONFIG`). No execution, no interpolation, no includes. |
 | Front-matter / wikilink parsing | `viewmd/frontmatter.py`, `viewmd/wikilinks.py` | Regex- and string-based text parsing only; no `eval`, no dynamic import, no YAML deserialization (deliberately not a full YAML parser -- docs/PLAN.md). |
 
-Out of scope for this gate: the terminal emulator, the user's actual `$PAGER`/`$EDITOR` binary
-and whatever it does once invoked, and the host OS.
+Out of scope for this gate: the terminal emulator and the host OS.
 
 ## 3. Tools in `./run-tests.sh`
 
@@ -84,15 +82,12 @@ config stays short.
 |---|---|---|
 | `tests/**` | `S101` | pytest uses `assert`; not a production assert-as-control-flow smell. |
 | `tools/**` | `S101`, `S603`, `S607` | Maintainer tooling (`tools/issues.py`): fixed argv lists, no shell, no attacker-controlled executable name. Its own `assert`-based checks use the same idiom as tests. |
-| `viewmd/pager.py` | `S603` | Deliberate `subprocess.run` for the pager. Command comes from `$PAGER` or a fixed default (`less -R -F -X --mouse`), never built from unsanitized Markdown content. |
 
 No `pip-audit` ignores at 1.1.0. When one is needed, add a row here (package, advisory id,
 reason) and the matching ignore flag/config beside the `pip-audit` step.
 
 ## 6. What green does not mean
 
-- **The pager is out of band.** viewmd hands already-rendered ANSI text to whatever `$PAGER`
-  points at (or `less` by default); this gate does not audit that binary.
 - **Front-matter and wikilink parsing are intentionally not full parsers** (docs/PLAN.md): a
   value that doesn't fit the flat shape renders as its raw string rather than failing, which is a
   correctness choice, not a security boundary being asserted.

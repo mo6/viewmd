@@ -1,13 +1,20 @@
-"""viewmd's own interactive terminal pager (VIEWMD-0007), replacing the default delegation to an
-external `less` subprocess: raw terminal input, line-based scroll with mouse-wheel support, a
-two-line Info-style mode-line/echo-area status split, a table-of-contents popup, forward search
-with match highlighting, horizontal scroll for content wider than the terminal, a render-width
-toggle, a mouse-capture toggle, direct terminal-resize handling, and a `?` help screen.
+"""viewmd's own interactive terminal pager (VIEWMD-0007, extended to every paged case by
+VIEWMD-0072), replacing external `less`/`$PAGER` delegation entirely: raw terminal input,
+line-based scroll with mouse-wheel support, a two-line Info-style mode-line/echo-area status
+split, a table-of-contents popup (when there's a heading outline to build one from), forward
+search with match highlighting, horizontal scroll for content wider than the terminal, a
+render-width toggle, a mouse-capture toggle, direct terminal-resize handling, and a `?` help
+screen.
 
-Ported from `poc/pager/pager_poc.py`, the proof-of-concept built to de-risk this architecture
-shape before it was scoped for real building -- see that issue's Design notes for the full
-rationale. `viewmd/pager.py` decides when to reach for `run()` here versus the plain-print or
-`$PAGER`-subprocess paths; this module doesn't make that decision itself.
+Three public entry points share one scrolling engine (`_run()`): `run()` for a single Markdown
+document (VIEWMD-0007), `run_directory_listing()` for a bare directory listing (VIEWMD-0065's
+table-of-contents view, VIEWMD-0072), and `run_multi_file()` for a multi-file concatenation
+(VIEWMD-0013, VIEWMD-0072) -- the latter two have no heading outline to build a ToC popup from,
+so that feature is simply inert for them (see `_run`'s docstring). Ported from
+`poc/pager/pager_poc.py`, the proof-of-concept built to de-risk this architecture shape before it
+was scoped for real building -- see VIEWMD-0007's Design notes for the full rationale.
+`viewmd/pager.py` decides when to reach for which entry point here versus a plain print; this
+module doesn't make that decision itself.
 """
 
 from __future__ import annotations
@@ -593,7 +600,11 @@ _HELP_KEY_STYLE = "\x1b[1;38;5;220m"  # bold gold
 
 
 def _keybind_help(
-    popup_open: bool, width_toggle: str | None = None, highlight_active: bool = False
+    popup_open: bool,
+    width_toggle: str | None = None,
+    highlight_active: bool = False,
+    *,
+    has_headings: bool = True,
 ) -> str:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
     for the complete reference (`_HELP_GROUPS`/`_help_box`) rather than trying to cram every
@@ -608,11 +619,15 @@ def _keybind_help(
     shown disabled when there's nothing for `w` to do (the configured/`--width` render already
     fills the terminal), since a keybinding that's always a no-op isn't worth advertising.
     `highlight_active` likewise only advertises `Esc: clear highlight` while there's a highlight
-    to clear."""
+    to clear. `has_headings` (VIEWMD-0072) likewise drops the `t: contents` hint for content with
+    no heading outline to build a popup from (a directory listing, a multi-file view) -- `t` is
+    inert there, same reasoning as the other two omissions."""
     if popup_open:
         pairs = [("up/down,wheel,j/k", "move"), ("Enter", "jump"), ("Esc/t", "cancel")]
     else:
-        pairs = [("up/down,wheel", "scroll"), ("/", "search"), ("t", "contents")]
+        pairs = [("up/down,wheel", "scroll"), ("/", "search")]
+        if has_headings:
+            pairs.append(("t", "contents"))
         if width_toggle:
             pairs.append(("w", width_toggle))
         if highlight_active:
@@ -736,23 +751,103 @@ def run(
 ) -> None:
     """Page `text` (raw Markdown source) interactively. `name` is the display name shown in the
     mode line (typically the source path, or "-" for stdin); only its basename is shown.
-
-    Reads keyboard/mouse input from `/dev/tty`, not `sys.stdin` -- `text` may have been read from
-    a pipe (`cat file.md | viewmd -`), in which case stdin itself is already fully drained and
-    disconnected from the keyboard by the time this runs, the same reason external pagers like
-    `less` reopen the controlling terminal for their own input rather than trusting their own
-    stdin. Falls back to a plain, non-interactive render if `/dev/tty` can't be opened at all
-    (no controlling terminal), which should be rare given the caller already checked
-    `sys.stdout.isatty()` before reaching here.
     """
     color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
+    display_name = "(stdin)" if name == "-" else os.path.basename(name)
+    _run(
+        lambda w: _load(text, w, color_kwargs=color_kwargs),
+        display_name,
+        width=width,
+        fallback=lambda: render_markdown(text, width=width, color=color, **color_kwargs),
+    )
+
+
+def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
+    """Page a bare directory listing interactively (VIEWMD-0065's table-of-contents view, no
+    `_Index.md` note present). No heading outline to build a ToC popup from (VIEWMD-0072
+    Non-goals: no per-entry ToC) -- the 't' key is inert and omitted from the keybinding summary,
+    same as any document with no headings of its own; scrolling, search, mouse, resize, and the
+    width toggle all work exactly as for a single document."""
+    from viewmd.render import render_directory_listing
+
+    def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
+        colored = render_directory_listing(dir_path, width=w, color=True).rstrip("\n").split("\n")
+        plain = render_directory_listing(dir_path, width=w, color=False).rstrip("\n").split("\n")
+        return colored, plain, []
+
+    display_name = os.path.basename(os.path.normpath(dir_path)) + "/"
+    _run(
+        loader,
+        display_name,
+        width=width,
+        fallback=lambda: render_directory_listing(dir_path, width=width, color=color),
+    )
+
+
+def run_multi_file(
+    entries: list[tuple[str, str | None]],
+    *,
+    width: int,
+    directory_width: int,
+    color: bool,
+    full_front_matter: bool,
+    toc: bool,
+) -> None:
+    """Page a multi-file concatenation (two or more `path` arguments) interactively. `entries` is
+    `(display_path, text)` per already-resolved path (VIEWMD-0072) -- `text` is the raw Markdown
+    source for a plain file/index note, or `None` for a bare directory listing among the paths
+    (rendered at the fixed `directory_width`, VIEWMD-0071, not affected by the 'w' toggle below,
+    since that default is already the full terminal width in the common case). No heading outline
+    across files (VIEWMD-0072 Non-goals: no per-file ToC) -- continuous scroll only, matching
+    today's behavior."""
+    from viewmd.render import render_multi_file
+
+    def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
+        colored = render_multi_file(entries, width=w, directory_width=directory_width, color=True,
+                                    full_front_matter=full_front_matter, toc=toc)
+        plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
+                                  full_front_matter=full_front_matter, toc=toc)
+        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), []
+
+    display_name = f"{len(entries)} files"
+    _run(
+        loader,
+        display_name,
+        width=width,
+        fallback=lambda: render_multi_file(entries, width=width, directory_width=directory_width,
+                                           color=color, full_front_matter=full_front_matter,
+                                           toc=toc),
+    )
+
+
+def _run(
+    loader,
+    display_name: str,
+    *,
+    width: int,
+    fallback,
+) -> None:
+    """Shared interactive scrolling engine behind `run()`/`run_directory_listing()`/
+    `run_multi_file()` (VIEWMD-0072) -- mouse-wheel scroll, resize handling, search, horizontal
+    scroll, width toggle, help screen, and (when `loader` ever returns a non-empty heading list)
+    the ToC popup. `loader(w)` re-renders content at width `w`, returning (colored lines,
+    plain-twin lines, heading locations) -- called once up front and again on a width toggle or a
+    resize while full-width mode is active.
+
+    Reads keyboard/mouse input from `/dev/tty`, not `sys.stdin` -- the underlying content may have
+    been read from a pipe (`cat file.md | viewmd -`), in which case stdin itself is already fully
+    drained and disconnected from the keyboard by the time this runs, the same reason external
+    pagers like `less` used to reopen the controlling terminal for their own input rather than
+    trusting their own stdin. `fallback()` renders once, plainly, for when `/dev/tty` can't be
+    opened at all (no controlling terminal), which should be rare given the caller already checked
+    `sys.stdout.isatty()` before reaching here.
+    """
     try:
         tty_fd = os.open("/dev/tty", os.O_RDONLY)
     except OSError:
-        print(render_markdown(text, width=width, color=color, **color_kwargs), end="")
+        print(fallback(), end="")
         return
 
-    display_name = "(stdin)" if name == "-" else os.path.basename(name)
     term_w, term_h = shutil.get_terminal_size()
     # The width actually requested (--width), *not* capped to the terminal -- horizontal scroll
     # (`_ansi_slice`) is exactly what makes a wider-than-terminal render viewable, so an oversized
@@ -761,7 +856,7 @@ def run(
     configured_width = width
     width_is_full = configured_width == term_w
     full_width_active = False
-    lines, plain_lines, headings = _load(text, configured_width, color_kwargs=color_kwargs)
+    lines, plain_lines, headings = loader(configured_width)
     body_h = term_h - 2  # bottom two rows reserved: mode line + echo area (Info-style split)
     # Widest rendered line, in columns -- fenced code (VIEWMD-0019) and Mermaid diagrams
     # (VIEWMD-0018) both render `crop=False`, so a line can be wider than either the terminal or
@@ -872,7 +967,8 @@ def run(
             width_toggle = None
             if not width_is_full:
                 width_toggle = f"{configured_width} cols" if full_width_active else "full width"
-            echo_text = _keybind_help(popup_open, width_toggle, bool(last_search_query))
+            echo_text = _keybind_help(popup_open, width_toggle, bool(last_search_query),
+                                      has_headings=bool(headings))
         # `_pad_ansi` always fills exactly `term_w` columns, so there's never real trailing space
         # left to erase -- no `_CLEAR_EOL` here, for the same pending-wrap-cursor reason `visible`
         # only appends one conditionally above.
@@ -899,9 +995,7 @@ def run(
                     if full_width_active:
                         # Full-width mode means "whatever the terminal's width currently is" --
                         # a resize while active has to rewrap, the same as pressing 'w' itself.
-                        lines, plain_lines, headings = _load(
-                            text, term_w, color_kwargs=color_kwargs
-                        )
+                        lines, plain_lines, headings = loader(term_w)
                         max_content_width = _max_content_width(plain_lines)
                     body_h = term_h - 2
                     top = min(top, max(0, len(lines) - body_h))
@@ -976,7 +1070,7 @@ def run(
             else:
                 if ev.kind == "key" and ev.value == "q":
                     break
-                if ev.kind == "key" and ev.value == "t":
+                if ev.kind == "key" and ev.value == "t" and headings:
                     popup_open = True
                     saved_top = top
                     popup_selected = _nearest_heading_index(headings, top)
@@ -1051,9 +1145,7 @@ def run(
                     # line offset, so the toggle lands back in roughly the same place instead of
                     # some arbitrary point mid-paragraph a few lines off from where they were.
                     section = _nearest_heading_index(headings, top)
-                    lines, plain_lines, headings = _load(
-                        text, new_width, color_kwargs=color_kwargs
-                    )
+                    lines, plain_lines, headings = loader(new_width)
                     max_top = max(0, len(lines) - body_h)
                     if headings:
                         top = min(max_top, headings[min(section, len(headings) - 1)].row)

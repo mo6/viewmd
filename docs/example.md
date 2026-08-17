@@ -71,7 +71,7 @@ def render(text: str, *, width: int, color: bool) -> str:
 An ordinary code line longer than the render width stays intact on one line rather than folding
 onto a second (VIEWMD-0019) -- same as a mermaid diagram (VIEWMD-0018). The line below is exactly
 120 characters; at the default 100-column cap it should still render as a single unbroken line,
-scrolling horizontally in the pager (`less -S`) instead of wrapping or being cut off:
+scrolling horizontally in the pager instead of wrapping or being cut off:
 
 ```python
 result = some_function(argument_one, argument_two, argument_three, argument_four, argument_five, argument_six, xxxxxxxx)
