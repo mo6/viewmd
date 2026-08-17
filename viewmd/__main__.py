@@ -157,20 +157,18 @@ def _render_path(path: str, *, width: int, directory_width: int, color: bool,
     """Resolve `path` to its rendered ANSI text.
 
     A plain file (or '-' for stdin) renders as Markdown directly, at `width`. A directory looks up
-    `viewmd.render.INDEX_FILENAME` inside it and renders that file if present (VIEWMD-0065), also
-    at `width`; otherwise it renders a table-of-contents listing of the directory's own entries
-    instead of raising `IsADirectoryError` the way a bare `open()` would, at `directory_width`
-    (VIEWMD-0071). Raises `OSError`/`UnicodeDecodeError` the same as a direct read, for the
-    caller's existing error handling.
+    `viewmd.render.INDEX_FILENAMES` inside it, in priority order, and renders the first match if
+    any is present (VIEWMD-0065, VIEWMD-0074), also at `width`; otherwise it renders a
+    table-of-contents listing of the directory's own entries instead of raising
+    `IsADirectoryError` the way a bare `open()` would, at `directory_width` (VIEWMD-0071). Raises
+    `OSError`/`UnicodeDecodeError` the same as a direct read, for the caller's existing error
+    handling.
     """
-    from viewmd.render import INDEX_FILENAME, render_directory_listing, render_markdown
+    from viewmd.render import render_directory_listing, render_markdown
 
     if path != "-" and os.path.isdir(path):
-        # `INDEX_FILENAME in os.listdir(path)` rather than `os.path.isfile()` on the joined path:
-        # the latter matches case-insensitively on the default macOS/Windows filesystems, but
-        # requirement 2 (VIEWMD-0065) is a case-sensitive match on the exact name.
-        index_path = os.path.join(path, INDEX_FILENAME)
-        if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
+        index_path = _find_index_path(path)
+        if index_path is not None:
             text = _read_input(index_path)
             return render_markdown(text, width=width, color=color,
                                    full_front_matter=full_front_matter, toc=toc)
@@ -191,14 +189,30 @@ def _resolve_document(path: str) -> tuple[str, str] | None:
     heading outline from that itself (`viewmd.interactive_pager._load`). Raises `OSError`/
     `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
     """
-    from viewmd.render import INDEX_FILENAME
-
     if path != "-" and os.path.isdir(path):
-        index_path = os.path.join(path, INDEX_FILENAME)
-        if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
+        index_path = _find_index_path(path)
+        if index_path is not None:
             return _read_input(index_path), index_path
         return None
     return _read_input(path), path
+
+
+def _find_index_path(dir_path: str) -> str | None:
+    """Returns the path to `dir_path`'s index file -- the first of `viewmd.render.INDEX_FILENAMES`
+    present, in priority order -- or `None` if it has none (VIEWMD-0065, VIEWMD-0074).
+
+    Checks `os.listdir()` membership rather than `os.path.isfile()` on the joined path: the
+    latter matches case-insensitively on the default macOS/Windows filesystems, but the match
+    here must be case-sensitive and exact (VIEWMD-0065 requirement 2).
+    """
+    from viewmd.render import INDEX_FILENAMES
+
+    entries = os.listdir(dir_path)
+    for name in INDEX_FILENAMES:
+        candidate = os.path.join(dir_path, name)
+        if name in entries and os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def _read_input(path: str) -> str:
