@@ -5,6 +5,7 @@ import sys
 
 import pytest
 
+import viewmd.render as render
 from viewmd.__main__ import DEFAULT_MAX_WIDTH, _resolve_width, _width_arg, main
 
 
@@ -216,6 +217,51 @@ def test_multi_path_mode_handles_a_directory_among_files(tmp_path, capsys):
     assert rc == 0
     assert "One" in out
     assert "Sub Landing" in out
+
+
+def test_resolve_width_default_max_width_overrides_the_100_cap():
+    assert _resolve_width(None, terminal_width=200, default_max_width=200) == 200
+    assert _resolve_width(None, terminal_width=60, default_max_width=200) == 60
+
+
+def test_directory_listing_defaults_to_full_terminal_width(tmp_path, capsys, monkeypatch):
+    (tmp_path / "a.md").write_text("# A\n")
+    monkeypatch.setattr(
+        "viewmd.__main__.shutil.get_terminal_size", lambda: os.terminal_size((200, 24))
+    )
+    captured = {}
+    orig = render.render_directory_listing
+
+    def spy(dir_path, *, width, color):
+        captured["width"] = width
+        return orig(dir_path, width=width, color=color)
+
+    monkeypatch.setattr("viewmd.render.render_directory_listing", spy)
+
+    rc = main(["--no-pager", "--color", "never", str(tmp_path)])
+
+    assert rc == 0
+    assert captured["width"] == 200
+
+
+def test_directory_listing_explicit_width_overrides_the_full_default(tmp_path, capsys, monkeypatch):
+    (tmp_path / "a.md").write_text("# A\n")
+    monkeypatch.setattr(
+        "viewmd.__main__.shutil.get_terminal_size", lambda: os.terminal_size((200, 24))
+    )
+    captured = {}
+    orig = render.render_directory_listing
+
+    def spy(dir_path, *, width, color):
+        captured["width"] = width
+        return orig(dir_path, width=width, color=color)
+
+    monkeypatch.setattr("viewmd.render.render_directory_listing", spy)
+
+    rc = main(["--no-pager", "--color", "never", "--width", "50", str(tmp_path)])
+
+    assert rc == 0
+    assert captured["width"] == 50
 
 
 def _write_md(tmp_path, text="# Hello\n\nbody text\n"):

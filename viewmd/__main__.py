@@ -33,9 +33,10 @@ def _width_arg(value: str) -> str:
     return value
 
 
-def _resolve_width(width_arg: str | None, terminal_width: int) -> int:
+def _resolve_width(width_arg: str | None, terminal_width: int, *,
+                   default_max_width: int = DEFAULT_MAX_WIDTH) -> int:
     if width_arg is None:
-        return min(DEFAULT_MAX_WIDTH, terminal_width)
+        return min(default_max_width, terminal_width)
     if width_arg == "full":
         return terminal_width
     return int(width_arg)
@@ -84,7 +85,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     color = _resolve_color(coalesce(args.color, cfg.color, "auto"))
-    width = _resolve_width(coalesce(args.width, cfg.width), shutil.get_terminal_size().columns)
+    terminal_width = shutil.get_terminal_size().columns
+    width_arg = coalesce(args.width, cfg.width)
+    width = _resolve_width(width_arg, terminal_width)
+    # A bare directory listing (no --width given, VIEWMD-0071) defaults to the full terminal
+    # width rather than the prose cap: it's a table of entries, not prose to keep line-length-
+    # readable, and the cap only truncates columns a wide terminal has room to show. An explicit
+    # --width/config width still applies exactly as it does to documents.
+    directory_width = _resolve_width(width_arg, terminal_width, default_max_width=terminal_width)
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
     toc = coalesce(args.toc, cfg.toc, True)
 
@@ -112,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         from viewmd.render import render_directory_listing
-        ansi_text = render_directory_listing(path, width=width, color=color)
+        ansi_text = render_directory_listing(path, width=directory_width, color=color)
         from viewmd.pager import display
         display(ansi_text, no_pager=args.no_pager)
         return 0
@@ -123,8 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     parts: list[str] = []
     for path in paths:
         try:
-            ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=full_front_matter, toc=toc)
+            ansi_text = _render_path(path, width=width, directory_width=directory_width,
+                                     color=color, full_front_matter=full_front_matter, toc=toc)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             had_error = True
@@ -144,15 +152,16 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if had_error else 0
 
 
-def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool,
-                 toc: bool) -> str:
+def _render_path(path: str, *, width: int, directory_width: int, color: bool,
+                 full_front_matter: bool, toc: bool) -> str:
     """Resolve `path` to its rendered ANSI text.
 
-    A plain file (or '-' for stdin) renders as Markdown directly. A directory looks up
-    `viewmd.render.INDEX_FILENAME` inside it and renders that file if present (VIEWMD-0065);
-    otherwise it renders a table-of-contents listing of the directory's own entries instead of
-    raising `IsADirectoryError` the way a bare `open()` would. Raises `OSError`/
-    `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
+    A plain file (or '-' for stdin) renders as Markdown directly, at `width`. A directory looks up
+    `viewmd.render.INDEX_FILENAME` inside it and renders that file if present (VIEWMD-0065), also
+    at `width`; otherwise it renders a table-of-contents listing of the directory's own entries
+    instead of raising `IsADirectoryError` the way a bare `open()` would, at `directory_width`
+    (VIEWMD-0071). Raises `OSError`/`UnicodeDecodeError` the same as a direct read, for the
+    caller's existing error handling.
     """
     from viewmd.render import INDEX_FILENAME, render_directory_listing, render_markdown
 
@@ -165,7 +174,7 @@ def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool,
             text = _read_input(index_path)
             return render_markdown(text, width=width, color=color,
                                    full_front_matter=full_front_matter, toc=toc)
-        return render_directory_listing(path, width=width, color=color)
+        return render_directory_listing(path, width=directory_width, color=color)
 
     text = _read_input(path)
     return render_markdown(text, width=width, color=color,
