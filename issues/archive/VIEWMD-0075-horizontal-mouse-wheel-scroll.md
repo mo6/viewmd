@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0075
 title: Support horizontal mouse-wheel/trackpad scroll in the internal pager
-status: in-progress
+status: implemented
 area: [pager]
 effort: low
 created: 2026-08-17
 updated: 2026-08-17
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-17
-commits: []
+commits: [8b4321b]
 related: [VIEWMD-0007, VIEWMD-0067, VIEWMD-0070, VIEWMD-0072]
 supersedes: []
-changelog:
+changelog: "[1.35.0]"
 reason:
 ---
 
