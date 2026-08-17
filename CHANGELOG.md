@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.31.1] — 2026-08-17
+
+- **Fix wide-character (emoji/CJK) misalignment in the interactive pager** (VIEWMD-0070, cli/render): the table-of-contents/help popup and horizontal-scroll cropping now measure column width via `wcwidth`, matching `viewmd/render.py`'s own convention, instead of counting one column per character -- a double-width character (an emoji, most CJK text; Rich's own image-placeholder glyph is a real example) no longer throws the popup's borders off by a column on any row containing one. No behavior change for ordinary single-width content.
+
 ## [1.31.0] — 2026-08-17
 
 - **viewmd's own interactive pager, replacing the default `less` delegation** (VIEWMD-0007, cli/render): viewing a single Markdown document (a file, stdin, or a directory's `_Index.md`) in a terminal now pages into an owned, in-process interactive scrolling loop instead of spawning `less` by default -- mouse-wheel/trackpad scrolling, a table-of-contents popup, forward search with match highlighting, horizontal scrolling with truncation markers for a Mermaid diagram or code block wider than the terminal, a render-width toggle, a mouse-capture toggle (so a plain click-drag can still select text natively), direct terminal-resize handling, and a `?` help screen listing every keybinding. An explicit `$PAGER` override still delegates to that external pager unchanged; viewing multiple files at once or a directory listing without an index file is unchanged too, still `less` by default. See the README's new "Interactive pager" section. A known limitation carried over from this issue's own design notes: a double-width character (an emoji, most CJK text) can misalign the popup's borders, tracked separately as VIEWMD-0070.

@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0070
 title: Interactive pager misaligns wide (emoji/CJK) characters
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: medium
 created: 2026-08-17
 updated: 2026-08-17
 accepted_by: George Moses
 accepted_at: 2026-08-17
-commits: []
+commits: [6c7b0e5, 6479c9a, be0b70c, 4902541]
 related: [VIEWMD-0007]
 supersedes: []
-changelog:
+changelog: "[1.31.1]"
 reason:
 ---
 
