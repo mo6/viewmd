@@ -1,0 +1,67 @@
+---
+id: VIEWMD-0076
+title: Mouse click-to-navigate -- follow a local-file link, click-select ToC/help entries
+status: in-progress
+area: [pager]
+effort: high
+created: 2026-08-17
+updated: 2026-08-17
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-17
+commits: []
+related: [VIEWMD-0006, VIEWMD-0007, VIEWMD-0062, VIEWMD-0075]
+supersedes: []
+changelog:
+reason:
+---
+
+# Mouse click-to-navigate -- follow a local-file link, click-select ToC/help entries
+
+## Summary
+
+Three related mouse-click behaviors in the internal pager, all built on the same underlying mechanism (decoding an SGR mouse left-click press, `Cb=0`, and hit-testing its terminal row/column against on-screen content): (1) clicking a rendered link whose target resolves to an existing local `.md` file navigates the pager to that file, replacing the current view; (2) clicking a row in the open table-of-contents popup selects and confirms it, same as pressing Enter on it; (3) clicking a keybinding row in the open `?` help screen invokes that key's action, same as if the reader had pressed it directly. This is explicitly the "v2" link-navigation and click-to-follow behavior [VIEWMD-0007](VIEWMD-0007-link-navigation.md) deferred (its Non-goals: "Interactive link following... jumping to a link, following its target... are all out of scope for this issue's v1" and "Mouse click-to-confirm a ToC popup selection, or click-to-follow anything... pointer interaction beyond scrolling is v2 territory at the earliest, once link-following exists to click on").
+
+## Motivation / problem
+
+VIEWMD-0006 already renders `[[wikilink]]`s and ordinary Markdown links as visually distinct, real OSC8 hyperlinks (`viewmd/interactive_pager.py`'s `_ANSI_TOKEN_RE`/`_OSC8_CLOSE` already tokenize and track them for horizontal-scroll cropping), but nothing in the pager acts on a click over one -- `_read_event()` currently decodes only wheel-scroll button codes (64/65/66/67/68/69, VIEWMD-0075) and silently drops every other SGR mouse report, including an ordinary left-click press (`Cb=0`), as a no-op. A reader following this project's own `issues/*.md` cross-references, or an Obsidian-style note vault full of `[[wikilinks]]`, has no way to jump to a referenced document without leaving viewmd, finding the file, and reopening it -- exactly the gap VIEWMD-0007's motivation section identified as the long-term reason for link highlighting in the first place. Separately, the ToC popup (VIEWMD-0007) and help screen (VIEWMD-0007) are both keyboard/wheel-only today; once click hit-testing exists for link-following, extending it to "click a popup row to pick it" and "click a keybinding row to run it" is a small, natural extension of the same mechanism rather than a separate feature.
+
+## Requirements
+
+1. MUST parse SGR mouse-report button code 0 with the press suffix (`M`, not the release suffix `m`) in `_read_event()` into a new `Event` kind (e.g. `click`) carrying the report's 1-indexed terminal column/row (`Cx`/`Cy`).
+2. MUST resolve a click's column/row, while viewing the plain document body (no popup/help/search overlay open), to whichever rendered link (if any) the click landed on, accounting for the current vertical scroll (`top`) and horizontal scroll (`left_col`) offsets -- reuse the existing OSC8-tracking tokenizer (`_ansi_slice`'s token walk, `viewmd/interactive_pager.py:346-389`) rather than re-deriving link spans from scratch.
+3. MUST resolve a clicked link's href to a candidate local file path: for a `[[wikilink]]` (rewritten to `wikilink:Target` by `viewmd/wikilinks.py`), resolve `Target` the way Obsidian does for a flat vault -- `Target.md` in the currently-open file's own directory, falling back to a recursive search under that directory if not found directly there; for an ordinary Markdown link, resolve its href as a filesystem path relative to the currently-open file's directory.
+4. MUST navigate to the resolved file and render it in place of the current document (reusing `_load`, matching `run()`'s own single-document rendering path) when the resolved path exists and has a `.md` extension, pushing the file being left onto a back-stack so the reader can return to it.
+5. MUST NOT attempt navigation for a click that doesn't land on a link, whose resolved target doesn't exist, isn't a `.md` file, or is an absolute URL (`http://`, `https://`, `mailto:`, etc.) -- fall through as a no-op for all of these, i.e. this issue's click handling never interferes with a terminal's own native OSC8 click-to-open behavior for non-local links.
+6. MUST let the reader go back to the file they navigated from (a dedicated key, restoring that file's own scroll position), and MUST NOT get stuck unable to return to the file viewmd was originally invoked with.
+7. MUST resolve a click's column/row against the open ToC popup's on-screen box (`_popup_box`/`_overlay`) to whichever entry row (if any) it landed on, and treat it exactly as if that entry were already selected and Enter pressed (jump to that heading, close the popup) -- a click outside the box, or on the box's own border/title row, is a no-op.
+8. MUST resolve a click's column/row against the open `?` help screen (`_help_box`) to whichever keybinding row (if any) it landed on, and invoke that key's action exactly as if the reader had pressed the real key, closing the help screen first -- a click outside the box, on a non-keybinding row (a section header, blank spacer), or on a keybinding this document context makes inert (e.g. `t` with no headings) is a no-op.
+9. MUST NOT change any existing keyboard, wheel-scroll (VIEWMD-0075), or plain-click-drag-selects-text (`m` toggle, VIEWMD-0007) behavior.
+10. MUST NOT change `run_directory_listing()`/`run_multi_file()` behavior beyond what falls out naturally from a shared `_read_event()`/click dispatch -- neither has a heading outline or a single well-defined "current file directory" to resolve a relative link against, so link-following (requirements 2-6) is scoped to `run()`'s single-document case only; ToC-popup click-select (requirement 7) is inert for both anyway (no headings, matching VIEWMD-0072's existing Non-goals), and help-screen click-invoke (requirement 8) still applies to both.
+
+## Non-goals
+
+- Keyboard-driven link navigation (Tab/Shift-Tab to move link focus, Enter to follow, digit-key jump) -- Info's own model for this (see VIEWMD-0007's research note) is deliberately not adopted here; this issue is pointer-driven only, matching what was actually asked for.
+- Following a link to a heading anchor *within* the current document, or to a non-`.md` local file (an image, a `.txt`) -- resolving and rendering those is a separate concern; this issue's local-file resolution (requirement 3) only ever targets another `.md` document.
+- A visited-history *stack* deeper than one level of back/forward, or a persistent history across separate viewmd invocations -- requirement 6's back-stack only needs to get the reader back to where they came from, not implement full multi-level history browsing.
+- Any change to how `viewmd/wikilinks.py` rewrites `[[wikilinks]]` at render time -- this issue only adds *runtime* resolution (click -> file) on top of the existing static rewrite, the rewrite itself is unchanged.
+- Right-click, middle-click, or any modifier-click (Ctrl/Alt/Shift-click) behavior -- only a plain left-click press is in scope.
+- Click-to-follow inside `run_multi_file()`'s per-file link targets across files, or from one concatenated file to another within that view -- out of scope per requirement 10.
+
+## Design notes / links
+
+Directly extends [VIEWMD-0007](VIEWMD-0007-link-navigation.md)'s deferred v2 and reuses [VIEWMD-0006](VIEWMD-0006-wikilink-highlighting.md)'s OSC8 link rendering as-is.
+
+**Resolved by proof-of-concept** (`poc/pager/click_nav_poc.py`, `--self-check`, matching this project's own convention of a PoC ahead of a UI/architecture-shape decision, per VIEWMD-0007's `poc/pager/pager_poc.py` precedent): `_run()` (`viewmd/interactive_pager.py:837`) is built around one fixed `loader(w)` closure and a flat set of loose local variables (`lines`, `plain_lines`, `headings`, `top`, `left_col`, ...) captured once at call time (see `run()`/`run_directory_listing()`/`run_multi_file()`, `:757-834`). The PoC's `_Frame` dataclass pulls exactly that per-document state into one mutable object; `_Session.navigate(href)` resolves the href, and on success pushes the *current* frame onto a `_stack` and replaces `self.frame` with a freshly `_load()`-ed one for the target file; `_Session.go_back()` pops the stack back into `self.frame`. Verified end-to-end against real repository files (`issues/archive/VIEWMD-0072-...md` -> `issues/archive/VIEWMD-0074-...md` -> back), including that scroll position (`top`) survives the round trip exactly, and that a no-op navigate (external URL, missing file) never touches the stack. The real implementation's shape: turn `_run()`'s loose per-document locals into one such frame object, replaced in place by a `navigate`/`go_back` action inside the main loop (a `continue` after swapping, no restructuring of the loop's own draw/event-read shape needed) -- confirming the surrounding scroll/draw/event loop does not need to know or care that a swap happened, which was the actual open question.
+
+The PoC also worked out the click hit-testing (`_link_at`) and href-resolution (`resolve_link_target`) mechanics requirements 2-3 and 5 describe -- `_link_at` reuses `_ANSI_TOKEN_RE`/`_OSC8_CLOSE` (the same OSC8 tokenizer `_ansi_slice` already walks for horizontal-scroll cropping, `:342-343`) rather than a second parser, and `resolve_link_target` implements the wikilink-flat-then-recursive-search and relative-path-with-`.md`-and-existence-check rules verified against real fixture files. The real implementation should reuse these functions near-verbatim (moved into `viewmd/interactive_pager.py` proper) rather than re-deriving them.
+
+Click hit-testing math for requirements 7 and 8 (the ToC popup and help screen, not covered by the PoC) needs the click's absolute terminal row mapped back to a popup-relative row using the same centering math `_overlay` (`:285-335`) already computes for pasting the popup onto the screen -- worth factoring that origin computation out into something both `_overlay` and the new click handler can share, rather than re-deriving it in two places. For requirement 2 (a click on the plain document body, no overlay open), the row maps back via `top + (Cy - 1)`, clamped to the visible body.
+
+## Acceptance / verification
+
+- `python3 poc/pager/click_nav_poc.py --self-check` green -- de-risks the frame-swap architecture, click hit-testing, and href resolution ahead of the real implementation (see Design notes); the real implementation's tests (below) supersede it, the PoC itself is not shipped.
+- `./run-tests.sh` green, including tests for: `_read_event()` decoding a `Cb=0` press into a `click` event with the right column/row and ignoring the release (`m`) variant; link-href-to-local-path resolution for both a wikilink and an ordinary relative Markdown link, including the not-found/non-`.md`/absolute-URL no-op cases (requirements 3, 5); a click landing on/off a rendered link's column span in a document row; a click landing on/off a ToC popup entry row; a click landing on/off a help-screen keybinding row.
+- Manual check: the maintainer clicks a `[[wikilink]]` and an ordinary relative-path link in a real document (e.g. this project's own `issues/*.md` cross-references) and confirms the pager navigates to the target file; confirms the back key returns to the original file at its prior scroll position; clicks a ToC popup entry and confirms it jumps the same as Enter would; clicks a help-screen keybinding row and confirms it performs that key's action.
+
+## Peer review
+
