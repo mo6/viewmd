@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0072
 title: Internal interactive pager for directory listings and multi-file views; drop external pager entirely
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: high
 created: 2026-08-17
 updated: 2026-08-17
 accepted_by: George Moses
 accepted_at: 2026-08-17
-commits: []
+commits: [7c20192]
 related: [VIEWMD-0007, VIEWMD-0071]
 supersedes: []
-changelog:
+changelog: "[1.34.0]"
 reason:
 ---
 

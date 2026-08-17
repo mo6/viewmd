@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.34.0] — 2026-08-17
+
+- **Internal interactive pager for directory listings and multi-file views; external pager dependency dropped entirely** (VIEWMD-0072, cli/render): viewing a bare directory listing (no index file) or more than one path at once now pages through viewmd's own interactive pager -- mouse-wheel scroll, search, resize handling, and the render-width toggle all work the same as for a single document (VIEWMD-0007); the table-of-contents popup and next/previous-heading jump stay single-document-only, since neither case has a heading outline to build one from, and the popup key/hint are simply omitted rather than opening on an empty box. viewmd no longer spawns any external pager process under any circumstance -- no `less` default, and an explicit `$PAGER` override is no longer read or honored either; there is no `subprocess` call left anywhere in `viewmd/pager.py`. `--no-pager`/non-terminal output is unchanged for all three cases. See the README's "Interactive pager" section.
+
 ## [1.33.0] — 2026-08-17
 
 - **Recognize `index.md` and `_index.md` as directory-index filenames alongside `_Index.md`** (VIEWMD-0074, cli/render): viewing a directory now also looks for `index.md` (plain/Jekyll-style) and `_index.md` (Hugo section-index style) when no `_Index.md` is present, checked in that priority order, each still an exact-case match. A directory with only `_Index.md` renders exactly as before; a directory with more than one candidate present renders the earliest match in priority order.
