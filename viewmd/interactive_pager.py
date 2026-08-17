@@ -43,8 +43,9 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
 # Terminal setup/teardown sequences. 1049 = alternate screen buffer (so quitting restores
 # whatever was on screen before, like `less` does); 25 = cursor visibility; 1000+1006 = xterm
 # mouse reporting with SGR (extended, non-ambiguous) coordinate encoding, which also carries
-# wheel-scroll events as synthetic "buttons" 64/65 -- this is the same mechanism VIEWMD-0067
-# leaned on via `less --mouse`, now handled here directly instead of by an external pager.
+# wheel-scroll events as synthetic "buttons" 64/65 (vertical) and 66/67 (horizontal tilt/swipe,
+# VIEWMD-0075) -- this is the same mechanism VIEWMD-0067 leaned on via `less --mouse`, now handled
+# here directly instead of by an external pager.
 #
 # Enabling mouse reporting at all is also what stops a plain click-drag from doing the terminal's
 # own native text selection -- once the app is receiving mouse events, most terminals route every
@@ -439,7 +440,7 @@ def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> st
 
 @dataclass
 class Event:
-    kind: str  # "key" | "wheel_up" | "wheel_down"
+    kind: str  # "key" | "wheel_up" | "wheel_down" | "wheel_left" | "wheel_right"
     value: str = ""
 
 
@@ -473,6 +474,19 @@ def _read_event(fd: int) -> Event:
                 return Event("wheel_up")
             if btn == 65:
                 return Event("wheel_down")
+            if btn == 66:
+                return Event("wheel_left")
+            if btn == 67:
+                return Event("wheel_right")
+            # Shift + vertical wheel (SGR adds 4 for a held Shift): the fallback for terminals
+            # that never send native horizontal-wheel codes 66/67 at all (confirmed on macOS
+            # Terminal.app -- an actual two-finger horizontal trackpad swipe produces nothing
+            # there, not even 66/67) -- Shift+wheel-as-horizontal-scroll is the same convention
+            # browsers and other GUI apps fall back to for the same reason.
+            if btn == 68:
+                return Event("wheel_left")
+            if btn == 69:
+                return Event("wheel_right")
         return Event("key", "")
     arrows = {
         "A": Event("key", "up"),
@@ -1121,9 +1135,9 @@ def _run(
                     top = 0
                 elif ev.kind == "key" and ev.value in ("G", "$"):
                     top = max_top
-                elif ev.kind == "key" and ev.value in ("left", "h"):
+                elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
                     left_col = max(0, left_col - h_step)
-                elif ev.kind == "key" and ev.value in ("right", "l"):
+                elif ev.kind == "wheel_right" or (ev.kind == "key" and ev.value in ("right", "l")):
                     max_left_col = max(0, max_content_width - term_w)
                     left_col = min(max_left_col, left_col + h_step)
                 elif ev.kind == "key" and ev.value == "0":
