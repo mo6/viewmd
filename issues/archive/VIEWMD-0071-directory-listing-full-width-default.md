@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0071
 title: Directory listings default to full terminal width
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: low
 created: 2026-08-17
 updated: 2026-08-17
 accepted_by: George Moses
 accepted_at: 2026-08-17
-commits: []
+commits: [0a09dad]
 related: [VIEWMD-0003]
 supersedes: []
-changelog:
+changelog: "[1.32.0]"
 reason:
 ---
 

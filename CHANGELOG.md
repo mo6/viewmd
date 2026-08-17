@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.32.0] — 2026-08-17
+
+- **Directory listings default to full terminal width** (VIEWMD-0071, cli/render): viewing a directory with no `_Index.md` note and no `--width`/config `width` given now renders its table-of-contents listing at the full detected terminal width, instead of the 100-column prose cap used for Markdown documents -- a wide terminal no longer truncates columns it has room to show. An explicit `--width <n>`, `--width full`, or config-file `width` still applies exactly as before; rendering an actual Markdown document is unchanged.
+
 ## [1.31.1] — 2026-08-17
 
 - **Fix wide-character (emoji/CJK) misalignment in the interactive pager** (VIEWMD-0070, cli/render): the table-of-contents/help popup and horizontal-scroll cropping now measure column width via `wcwidth`, matching `viewmd/render.py`'s own convention, instead of counting one column per character -- a double-width character (an emoji, most CJK text; Rich's own image-placeholder glyph is a real example) no longer throws the popup's borders off by a column on any row containing one. No behavior change for ordinary single-width content.
