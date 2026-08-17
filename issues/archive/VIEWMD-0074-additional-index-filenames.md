@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0074
 title: Recognize index.md and _index.md as directory-index filenames alongside _Index.md
-status: in-progress
+status: implemented
 area: [cli, render]
 effort: low
 created: 2026-08-17
 updated: 2026-08-17
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-17
-commits: []
+commits: [6fbba0c]
 related: [VIEWMD-0065]
 supersedes: []
-changelog:
+changelog: "[1.33.0]"
 reason:
 ---
 

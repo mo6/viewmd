@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.33.0] — 2026-08-17
+
+- **Recognize `index.md` and `_index.md` as directory-index filenames alongside `_Index.md`** (VIEWMD-0074, cli/render): viewing a directory now also looks for `index.md` (plain/Jekyll-style) and `_index.md` (Hugo section-index style) when no `_Index.md` is present, checked in that priority order, each still an exact-case match. A directory with only `_Index.md` renders exactly as before; a directory with more than one candidate present renders the earliest match in priority order.
+
 ## [1.32.0] — 2026-08-17
 
 - **Directory listings default to full terminal width** (VIEWMD-0071, cli/render): viewing a directory with no `_Index.md` note and no `--width`/config `width` given now renders its table-of-contents listing at the full detected terminal width, instead of the 100-column prose cap used for Markdown documents -- a wide terminal no longer truncates columns it has room to show. An explicit `--width <n>`, `--width full`, or config-file `width` still applies exactly as before; rendering an actual Markdown document is unchanged.
