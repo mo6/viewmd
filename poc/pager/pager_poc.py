@@ -21,9 +21,9 @@ says the popup reuses as-is), then drives an interactive scroll loop directly ag
     python3 poc/pager/pager_poc.py path/to/some.md --width 100
 
 The full keybinding reference lives in `_HELP_GROUPS` and is reachable at runtime with `?`
-(`_help_box`) -- an overlay popup the same shape as the ToC one, dismissed by any keypress. A few
-notes tying keys back to the issue's own numbered requirements, not otherwise obvious from the
-help screen itself:
+(`_help_box`) -- an overlay popup the same shape as the ToC one, scrollable (up/down/wheel/j-k) if
+it doesn't fit the screen, closed with Esc/`?`/`q`. A few notes tying keys back to the issue's own
+numbered requirements, not otherwise obvious from the help screen itself:
     up/down, mouse wheel, j/k         scroll the document (requirements 1-2)
     t / up-down-wheel-j-k / Enter     open the ToC popup, move the selection (pre-selecting the
     / Esc-or-t (in popup)             nearest heading to the current scroll position), jump, or
@@ -35,6 +35,11 @@ help screen itself:
                                        offered when those actually differ; a no-op otherwise
     left/right, h/l, 0                horizontal scroll -- for a fenced-code or Mermaid line
                                        (VIEWMD-0018/0019) wider than the terminal itself
+    m                                 toggle mouse capture -- enabling it (the default, for wheel
+                                       scroll) is what stops a plain click-drag from doing the
+                                       terminal's own native text selection; most terminals also
+                                       let a modifier key (Option on macOS, Shift elsewhere)
+                                       bypass that for one drag without toggling anything
 
 Also handles `SIGWINCH` (terminal resize) directly, redrawing at the new size without waiting for
 the next keypress -- via `signal.set_wakeup_fd` waking the main loop's own `select.select`, the
@@ -100,8 +105,17 @@ _DEFAULT_FILE = pathlib.Path(__file__).resolve().parents[2] / "issues" / (
 # mouse reporting with SGR (extended, non-ambiguous) coordinate encoding, which also carries
 # wheel-scroll events as synthetic "buttons" 64/65 -- this is the same mechanism VIEWMD-0067
 # leans on via `less --mouse`, just handled here directly instead of by an external pager.
-_ENTER_SCREEN = "\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h"
-_EXIT_SCREEN = "\x1b[?1000l\x1b[?1006l\x1b[?25h\x1b[?1049l"
+#
+# Enabling mouse reporting at all is also what stops a plain click-drag from doing the terminal's
+# own native text selection -- once the app is receiving mouse events, most terminals route every
+# button press/drag to it instead, not just wheel scroll. The 'm' key (see `run`) toggles
+# `_MOUSE_ON`/`_MOUSE_OFF` independently of the alternate screen so text can still be selected
+# without quitting the pager; most terminals also let a modifier key (Option on macOS, Shift on
+# Linux/Windows terminals) bypass app mouse capture for a single drag without toggling anything.
+_MOUSE_ON = "\x1b[?1000h\x1b[?1006h"
+_MOUSE_OFF = "\x1b[?1000l\x1b[?1006l"
+_ENTER_SCREEN = "\x1b[?1049h\x1b[?25l" + _MOUSE_ON
+_EXIT_SCREEN = _MOUSE_OFF + "\x1b[?25h\x1b[?1049l"
 _HOME = "\x1b[H"
 _CLEAR_EOL = "\x1b[K"
 
@@ -566,11 +580,22 @@ _HELP_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         "Other",
         [
             ("w", "toggle configured width <-> full terminal width"),
+            ("m", "toggle mouse capture -- off lets a drag select text natively"),
             ("?", "show/hide this help"),
             ("q", "quit"),
         ],
     ),
 ]
+
+# Most terminals also let a modifier key bypass mouse capture for a single drag, no toggling
+# needed -- worth surfacing since 'm' off/on is the heavier-handed option.
+_MOUSE_SELECT_TIP = "tip: Option-drag (macOS Terminal/iTerm2) or Shift-drag (most others) selects"
+
+# Help-screen table styling: group headers and key names each get their own bold hue, distinct
+# from each other and from the popup's own blue panel background, so the table reads as three
+# visual tiers (header / key / action) at a glance instead of one flat block of text.
+_HELP_HEADER_STYLE = "\x1b[1;38;5;213m"  # bold pink/magenta
+_HELP_KEY_STYLE = "\x1b[1;38;5;220m"  # bold gold
 
 
 def _keybind_help(
@@ -604,14 +629,31 @@ def _keybind_help(
     return "  ".join(f"{_keycap(key)} {label}" for key, label in pairs)
 
 
-def _help_box(term_w: int, avail_h: int) -> list[str]:
+def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
     """The '?' help screen: every binding from `_HELP_GROUPS`, in a table, overlaid the same way
     as the ToC popup (`_popup_box`/`_overlay`) -- same panel styling, same "freeze the scroll
-    position underneath" behavior, dismissed by any keypress rather than a specific one, since
-    there's nothing to select or confirm here."""
+    position underneath" behavior. Unlike the ToC popup there's nothing to select or confirm, so
+    up/down/wheel/j-k scroll the table itself when it doesn't fit (`scroll`, in row units, clamped
+    here to the valid range) and a dedicated key (Esc/`?`/`q`) closes it instead of "any key".
+
+    Each row is built as (lead, plain_rest, colored_rest): `lead` is the row's own first visible
+    column, kept separate from everything colored after it so a `▲`/`▼` scroll indicator can
+    replace just that one column without touching -- or needing to parse -- any embedded escape
+    codes. Every colored piece is built directly from known plain text here (never sliced out of
+    an already-colored string), so this never risks the "cut mid-span" problem `_overlay`'s
+    docstring describes: padding is always literal trailing spaces appended after the event, the
+    same convention `_crop_row`/`_pad_ansi` use.
+
+    `avail_h` is the caller's budget for the whole box (borders included) via `max_rows = avail_h
+    - 2`, not the full screen body height -- `_overlay` centers the box within whatever body_rows
+    it's given, so passing something less than the true body height here is what keeps a margin of
+    real document visible above and below the box, rather than the box filling the entire screen
+    edge-to-edge whenever the table is long enough to want to. The caller (`draw`) is responsible
+    for that margin decision; this function just fills whatever budget it's handed.
+    """
     key_w = max(len(key) for _, entries in _HELP_GROUPS for key, _ in entries)
     action_w = max(len(action) for _, entries in _HELP_GROUPS for _, action in entries)
-    inner_w = min(key_w + 2 + action_w, term_w - 4)
+    inner_w = min(max(key_w + 2 + action_w, len(_MOUSE_SELECT_TIP)), term_w - 4)
     title = " Keybindings "
     inner_w = max(inner_w, len(title))
     box_w = inner_w + 2
@@ -619,20 +661,41 @@ def _help_box(term_w: int, avail_h: int) -> list[str]:
     def styled(content: str) -> str:
         return f"{_POPUP_BG}{content}{_RESET}"
 
-    box: list[str] = [styled("┌" + title.center(box_w, "─") + "┐")]
-    max_rows = max(3, avail_h - 2)
-    rows_used = 0
-    for group_name, entries in _HELP_GROUPS:
-        if rows_used >= max_rows:
-            break
-        box.append(styled("│" + f" {group_name}".ljust(box_w) + "│"))
-        rows_used += 1
+    def row(lead: str, plain_rest: str, colored_rest: str) -> str:
+        pad = " " * max(0, box_w - 1 - len(plain_rest))
+        return lead + colored_rest + pad
+
+    rows: list[str] = []
+    for gi, (group_name, entries) in enumerate(_HELP_GROUPS):
+        if gi > 0:
+            rows.append(row(" ", "", ""))  # blank line above every header but the first
+        header_rest = f"{group_name}"
+        rows.append(row(" ", header_rest, f"{_HELP_HEADER_STYLE}{header_rest}{_POPUP_BG}"))
         for key, action in entries:
-            if rows_used >= max_rows:
-                break
-            line = f"  {key.ljust(key_w)}  {action}"
-            box.append(styled("│" + line[:inner_w].ljust(box_w) + "│"))
-            rows_used += 1
+            key_text = key.ljust(key_w)
+            action_text = action
+            fixed = f" {key_text}  "
+            if len(fixed) + len(action_text) > inner_w:
+                action_text = action_text[: max(0, inner_w - len(fixed))]
+            plain_rest = f"{key_text}  {action_text}"
+            colored_rest = f"{_HELP_KEY_STYLE}{key_text}{_POPUP_BG}  {action_text}"
+            rows.append(row(" ", plain_rest, colored_rest))
+    rows.append(row(" ", "", ""))
+    rows.append(row(" ", _MOUSE_SELECT_TIP, _MOUSE_SELECT_TIP))
+
+    max_rows = max(3, avail_h - 2)
+    scroll = max(0, min(scroll, max(0, len(rows) - max_rows)))
+    window = rows[scroll : scroll + max_rows]
+    more_above = scroll > 0
+    more_below = scroll + max_rows < len(rows)
+
+    box: list[str] = [styled("┌" + title.center(box_w, "─") + "┐")]
+    for i, colored_row in enumerate(window):
+        if i == 0 and more_above:
+            colored_row = "▲" + colored_row[1:]
+        elif i == len(window) - 1 and more_below:
+            colored_row = "▼" + colored_row[1:]
+        box.append(styled("│" + colored_row + "│"))
     box.append(styled("└" + ("─" * box_w) + "┘"))
     return box
 
@@ -697,10 +760,12 @@ def run(path: pathlib.Path, width: int) -> None:
     popup_selected = 0
     saved_top = 0
     help_open = False
+    help_scroll = 0
     search_active = False
     search_query = ""
     last_search_query = ""
     echo_message: str | None = None
+    mouse_enabled = True
 
     # Resize handling: SIGWINCH's own Python-level handler only needs to exist (its body can be a
     # no-op) so the signal isn't SIG_DFL/SIG_IGN -- `signal.set_wakeup_fd` is what actually makes
@@ -758,7 +823,7 @@ def run(path: pathlib.Path, width: int) -> None:
             overlay_box = (
                 _popup_box(headings, popup_selected, term_w, body_h)
                 if popup_open
-                else _help_box(term_w, body_h)
+                else _help_box(term_w, max(3, body_h - 2), help_scroll)
             )
             visible = _overlay(visible, plain_visible, overlay_box, term_w)
         # `_CLEAR_EOL` only when the row is genuinely shorter than the terminal -- a row cropped
@@ -779,7 +844,10 @@ def run(path: pathlib.Path, width: int) -> None:
         mode_line_text = _mode_line(path.name, len(lines), top, end, term_w, section, left_col)
         mode_line = f"{_MODE_LINE_BG}{mode_line_text}{_RESET}"
         if help_open:
-            echo_text = _keycap("any key") + " close help"
+            echo_text = (
+                f"{_keycap('up/down,wheel,j/k')} scroll  "
+                f"{_keycap('Esc/?/q')} close help"
+            )
         elif search_active:
             # A literal block glyph, not a real cursor position -- the real terminal cursor is
             # hidden for the whole session (`_ENTER_SCREEN`'s `\x1b[?25l`), and any attempt to
@@ -838,10 +906,18 @@ def run(path: pathlib.Path, width: int) -> None:
             # this key produces a new message (search failing again below), it's set again after.
             echo_message = None
             if help_open:
-                # Purely informational -- there's nothing to select or confirm, so any key at all
-                # dismisses it rather than requiring a specific one; the key itself has no other
-                # effect this iteration, matching Info's own "? shows a summary, not a mode".
-                help_open = False
+                # Purely informational -- there's nothing to select or confirm -- but the table
+                # can be taller than the screen, so up/down/wheel/j-k scroll it instead of closing
+                # it; `_help_box`'s own scroll clamp keeps `help_scroll` in range regardless of how
+                # far this pushes it. A dedicated key closes it, matching the ToC popup's Esc/t
+                # rather than the old "any key" -- that would make scrolling impossible.
+                if ev.kind in ("wheel_up",) or (ev.kind == "key" and ev.value in ("up", "k")):
+                    help_scroll = max(0, help_scroll - 1)
+                elif ev.kind in ("wheel_down",) or (ev.kind == "key" and ev.value in ("down", "j")):
+                    help_scroll += 1
+                elif ev.kind == "key" and ev.value in ("esc", "?", "q"):
+                    help_open = False
+                    help_scroll = 0
             elif search_active:
                 if ev.kind == "key" and ev.value == "esc":
                     search_active = False
@@ -890,6 +966,7 @@ def run(path: pathlib.Path, width: int) -> None:
                     popup_selected = _nearest_heading_index(headings, top)
                 elif ev.kind == "key" and ev.value == "?":
                     help_open = True
+                    help_scroll = 0
                 elif ev.kind == "key" and ev.value == "/":
                     search_active = True
                     # Prefilled with the last query, not blank -- Enter alone repeats it, or
@@ -939,6 +1016,15 @@ def run(path: pathlib.Path, width: int) -> None:
                     left_col = min(max_left_col, left_col + h_step)
                 elif ev.kind == "key" and ev.value == "0":
                     left_col = 0
+                elif ev.kind == "key" and ev.value == "m":
+                    mouse_enabled = not mouse_enabled
+                    sys.stdout.write(_MOUSE_ON if mouse_enabled else _MOUSE_OFF)
+                    sys.stdout.flush()
+                    echo_message = (
+                        "Mouse capture on -- wheel scrolls; drag to select text needs 'm' off"
+                        if mouse_enabled
+                        else "Mouse capture off -- drag to select text; 'm' re-enables wheel scroll"
+                    )
                 elif ev.kind == "key" and ev.value == "w" and not width_is_full:
                     full_width_active = not full_width_active
                     new_width = term_w if full_width_active else configured_width
@@ -1110,6 +1196,58 @@ def self_check(path: pathlib.Path, width: int) -> None:
                 raise SystemExit(f"self-check: help screen missing key {key!r}")
     if any(len(_strip_ansi(row)) > 100 for row in help_box):
         raise SystemExit("self-check: help screen row wider than the given term_w")
+    if "Option-drag" not in help_text or "Shift-drag" not in help_text:
+        raise SystemExit("self-check: help screen missing the mouse-selection tip")
+    if _MOUSE_ON == _MOUSE_OFF or "1000h" not in _MOUSE_ON or "1000l" not in _MOUSE_OFF:
+        raise SystemExit("self-check: _MOUSE_ON/_MOUSE_OFF aren't a real enable/disable pair")
+
+    # Every group header (after the first) is styled and has a blank row directly above it; every
+    # key column is styled too -- checked by counting occurrences, since both styles are otherwise
+    # indistinguishable from plain box-drawing/panel-background text once stripped.
+    raw_help_box = help_box
+    header_hits = sum(row.count(_HELP_HEADER_STYLE) for row in raw_help_box)
+    if header_hits != len(_HELP_GROUPS):
+        raise SystemExit(
+            f"self-check: expected {len(_HELP_GROUPS)} styled group headers, found {header_hits}"
+        )
+    key_hits = sum(row.count(_HELP_KEY_STYLE) for row in raw_help_box)
+    total_keys = sum(len(entries) for _, entries in _HELP_GROUPS)
+    if key_hits != total_keys:
+        raise SystemExit(f"self-check: expected {total_keys} styled key columns, found {key_hits}")
+    for i, group_name in enumerate(g for g, _ in _HELP_GROUPS):
+        header_i = next(j for j, row in enumerate(raw_help_box) if group_name in row)
+        prev_inner = _strip_ansi(raw_help_box[header_i - 1]).strip("│").strip()
+        if i > 0 and prev_inner:
+            raise SystemExit(f"self-check: no blank row directly above header {group_name!r}")
+
+    # Scrolling: a box shorter than the full content must show fewer rows than the unclipped one,
+    # with a `▼` indicator (more below, nothing scrolled past yet) at scroll=0, and scrolling
+    # forward must reach a point with a `▲` indicator (something above) with no `▼` past the end.
+    short_box = _help_box(term_w=100, avail_h=12, scroll=0)
+    if len(short_box) >= len(raw_help_box):
+        raise SystemExit("self-check: a too-short avail_h didn't actually clip the help table")
+    if "▼" not in "".join(short_box) or "▲" in "".join(short_box):
+        raise SystemExit("self-check: wrong scroll indicators at the top of the help table")
+    end_box = _help_box(term_w=100, avail_h=12, scroll=1000)
+    if "▲" not in "".join(end_box) or "▼" in "".join(end_box):
+        raise SystemExit("self-check: wrong scroll indicators at the bottom of the help table")
+
+    # Regression check for "the help popup shouldn't use the full vertical height": `draw` must
+    # pass `_help_box` a smaller budget than the real body height (`max(3, body_h - 2)`, not
+    # `body_h`), so `_overlay`'s own centering leaves at least one real document row visible above
+    # and below the box instead of the box spanning edge-to-edge whenever the table is exactly
+    # tall enough to want to. `body_h_sim` is chosen so the *uncapped* table (`raw_help_box`) would
+    # fill the body exactly (`_overlay`'s `top = (len(body_rows) - len(popup)) // 2` gives 0), which
+    # is the specific case this margin has to prevent -- a shorter table would show margin anyway,
+    # by accident, and wouldn't actually exercise the cap.
+    body_h_sim = len(raw_help_box)
+    body_rows_sim = [f"document line {i}" for i in range(body_h_sim)]
+    capped_box = _help_box(term_w=100, avail_h=max(3, body_h_sim - 2))
+    overlaid_sim = _overlay(body_rows_sim, body_rows_sim, capped_box, term_w=100)
+    if "┌" in _strip_ansi(overlaid_sim[0]):
+        raise SystemExit("self-check: help popup used the body's very first row, no top margin")
+    if "└" in _strip_ansi(overlaid_sim[-1]):
+        raise SystemExit("self-check: help popup used the body's very last row, no bottom margin")
 
     # Regression check for the bug that motivated moving most bindings into the help screen: the
     # echo area's own default keybinding summary must stay short enough to survive `_pad_ansi`
