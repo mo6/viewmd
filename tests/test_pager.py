@@ -69,3 +69,79 @@ def test_display_falls_back_to_print_when_pager_missing(monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", fake_run)
     pager.display("hello", no_pager=False)
     assert capsys.readouterr().out == "hello"
+
+
+# --- display_document (VIEWMD-0007) ---------------------------------------------------------
+
+
+def test_display_document_prints_directly_when_not_paging(monkeypatch, capsys):
+    from viewmd.render import render_markdown
+
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: False)
+    text = "# Hello\n\nbody\n"
+    pager.display_document(text, "file.md", no_pager=False, width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_markdown(text, width=80, color=False)
+
+
+def test_display_document_prints_directly_when_no_pager_flag_set(monkeypatch, capsys):
+    from viewmd.render import render_markdown
+
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    text = "# Hello\n\nbody\n"
+    pager.display_document(text, "file.md", no_pager=True, width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_markdown(text, width=80, color=False)
+
+
+def test_display_document_respects_pager_env_override(monkeypatch):
+    from viewmd.render import render_markdown
+
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setenv("PAGER", "cat -A")
+    calls = []
+
+    def fake_run(cmd, input, check):  # noqa: A002
+        calls.append((cmd, input))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    text = "# Hello\n\nbody\n"
+    pager.display_document(text, "file.md", no_pager=False, width=80, color=True)
+    expected = render_markdown(text, width=80, color=True).encode()
+    assert calls == [(["cat", "-A"], expected)]
+
+
+def test_display_document_pager_env_override_falls_back_to_print_when_missing(
+    monkeypatch, capsys
+):
+    from viewmd.render import render_markdown
+
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setenv("PAGER", "nonexistent-pager")
+
+    def fake_run(cmd, input, check):  # noqa: A002
+        raise FileNotFoundError
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    text = "# Hello\n\nbody\n"
+    pager.display_document(text, "file.md", no_pager=False, width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_markdown(text, width=80, color=False)
+
+
+def test_display_document_uses_interactive_pager_by_default(monkeypatch):
+    # VIEWMD-0007: no $PAGER set is the one case that no longer spawns `less` -- viewmd owns the
+    # terminal itself instead.
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    monkeypatch.delenv("PAGER", raising=False)
+    calls = []
+
+    def fake_run(text, name, *, width, color, full_front_matter, toc):
+        calls.append((text, name, width, color, full_front_matter, toc))
+
+    monkeypatch.setattr("viewmd.interactive_pager.run", fake_run)
+    pager.display_document(
+        "# Hi\n", "file.md", no_pager=False, width=80, color=True,
+        full_front_matter=True, toc=False,
+    )
+    assert calls == [("# Hi\n", "file.md", 80, True, True, False)]

@@ -43,7 +43,7 @@ def _resolve_width(width_arg: str | None, terminal_width: int) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="viewmd", description="View a Markdown file in the terminal, paged into less."
+        prog="viewmd", description="View a Markdown file in the terminal, paged interactively."
     )
     parser.add_argument("--version", action="version", version=f"viewmd {__version__}")
     parser.add_argument("path", nargs="*", default=["-"],
@@ -89,12 +89,14 @@ def main(argv: list[str] | None = None) -> int:
     toc = coalesce(args.toc, cfg.toc, True)
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
-    # existing single-file output stays byte-for-byte identical.
+    # existing single-file output stays byte-for-byte identical. Paged interactively (VIEWMD-0007)
+    # when it resolves to one real document (a plain file, stdin, or a directory's index file,
+    # VIEWMD-0065) rather than a synthetic directory-listing table, which has no single document
+    # for a heading outline/search to act on.
     if len(paths) == 1:
         path = paths[0]
         try:
-            ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=full_front_matter, toc=toc)
+            resolved = _resolve_document(path)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             return 1
@@ -102,6 +104,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"viewmd: {path}: not valid UTF-8 ({e})", file=sys.stderr)
             return 1
 
+        if resolved is not None:
+            markdown_text, name = resolved
+            from viewmd.pager import display_document
+            display_document(markdown_text, name, no_pager=args.no_pager, width=width,
+                             color=color, full_front_matter=full_front_matter, toc=toc)
+            return 0
+
+        from viewmd.render import render_directory_listing
+        ansi_text = render_directory_listing(path, width=width, color=color)
         from viewmd.pager import display
         display(ansi_text, no_pager=args.no_pager)
         return 0
@@ -159,6 +170,26 @@ def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool,
     text = _read_input(path)
     return render_markdown(text, width=width, color=color,
                            full_front_matter=full_front_matter, toc=toc)
+
+
+def _resolve_document(path: str) -> tuple[str, str] | None:
+    """Returns `(source_markdown_text, display_name)` for `path` when it resolves to one real
+    document -- a plain file, stdin, or a directory's index file (VIEWMD-0065) -- or `None` for a
+    bare directory listing, which is a synthesized table, not a document with headings/content of
+    its own for `viewmd.pager.display_document`'s interactive pager to page. Mirrors
+    `_render_path`'s own resolution logic exactly, but returns the raw source text instead of an
+    already-rendered string -- the interactive pager needs to derive its own plain-render twin and
+    heading outline from that itself (`viewmd.interactive_pager._load`). Raises `OSError`/
+    `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
+    """
+    from viewmd.render import INDEX_FILENAME
+
+    if path != "-" and os.path.isdir(path):
+        index_path = os.path.join(path, INDEX_FILENAME)
+        if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
+            return _read_input(index_path), index_path
+        return None
+    return _read_input(path), path
 
 
 def _read_input(path: str) -> str:
