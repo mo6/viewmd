@@ -22,6 +22,8 @@ import termios
 import tty
 from dataclasses import dataclass
 
+from wcwidth import wcswidth
+
 from viewmd.render import ViewmdMarkdown, heading_outline, render_markdown
 
 # SGR color codes ("\x1b[...m") and OSC 8 hyperlink wrappers ("\x1b]8;id=..;url\x1b\\", closed by
@@ -120,6 +122,32 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_RE.sub("", s)
 
 
+def _display_width(s: str) -> int:
+    """Terminal column count via `wcwidth.wcswidth` -- matches `viewmd.render`'s own
+    `_display_width` convention, never `len()` (VIEWMD-0070). A negative `wcswidth` result
+    (control/unprintable characters) falls back to `len(s)`, the same fallback `render.py` uses."""
+    width = wcswidth(s)
+    return width if width >= 0 else len(s)
+
+
+def _char_width(ch: str) -> int:
+    """Column width of a single character -- `wcswidth` handles a length-1 string the same as
+    `wcwidth` would, so this reuses `_display_width`'s import rather than a second one. Used by
+    `_ansi_slice`'s column walk, which needs a running per-character width, not a whole-string
+    total."""
+    w = wcswidth(ch)
+    return w if w >= 0 else 1
+
+
+def _wc_ljust(s: str, width: int, fillchar: str = " ") -> str:
+    """`str.ljust`, but padding to `width` *display columns* (`_display_width`), not `width`
+    characters -- needed anywhere padded content can come from arbitrary document text (a ToC
+    entry is a heading, which can contain a wide character) rather than this module's own
+    hardcoded ASCII labels, where plain `str.ljust` already agrees with column count."""
+    pad = max(0, width - _display_width(s))
+    return s + fillchar * pad
+
+
 def _locate_headings(lines: list[str], outline) -> list[HeadingLoc]:
     """Map each VIEWMD-0062 `HeadingOutline` entry to the rendered row it lands on, by scanning
     for the first not-yet-claimed line whose stripped text matches. Headings render on their own
@@ -164,6 +192,14 @@ def _load(
     return colored, plain, _locate_headings(plain, outline)
 
 
+def _max_content_width(plain_lines: list[str]) -> int:
+    """Widest rendered line, in display columns -- fenced code (VIEWMD-0019) and Mermaid diagrams
+    (VIEWMD-0018) both render `crop=False`, so a line can be wider than either the terminal or the
+    configured render width. Recomputed after any reload (`_load`) that could change it: the
+    initial load, a width toggle, and a resize while full-width mode is active."""
+    return max((_display_width(row) for row in plain_lines), default=0)
+
+
 # ---------------------------------------------------------------------------
 # Popup layout (mirrors the issue's mockup: a bordered box overlaid mid-screen)
 # ---------------------------------------------------------------------------
@@ -190,7 +226,11 @@ def _popup_box(headings: list[HeadingLoc], selected: int, term_w: int, avail_h: 
     and the row(s) at the very top/bottom of the box show `▲`/`▼` in the marker column whenever
     there's more content in that direction -- not just at the list's hard edges."""
     entries = [h.text for h in headings]
-    inner_w = min(max((len(e) for e in entries), default=0) + 2, term_w - 4)
+    # `_display_width`, not `len()` -- a heading can contain a wide character (an emoji in
+    # prose, or Rich's own image-placeholder glyph, VIEWMD-0070's motivating case), and sizing
+    # the box from character *count* instead of terminal *columns* would make it too narrow for
+    # its own content once one appears.
+    inner_w = min(max((_display_width(e) for e in entries), default=0) + 2, term_w - 4)
     title = " Table of contents "
     inner_w = max(inner_w, len(title))
     box_w = inner_w + 2
@@ -223,7 +263,7 @@ def _popup_box(headings: list[HeadingLoc], selected: int, term_w: int, avail_h: 
             marker = "▼"
         else:
             marker = " "
-        text = f"{marker}{entry}".ljust(box_w)
+        text = _wc_ljust(f"{marker}{entry}", box_w)
         if i == selected:
             # Brighter background on top of the box's own, not reverse video -- reverse video
             # would swap to the *terminal's* default colors, not the box's, breaking the panel
@@ -251,7 +291,10 @@ def _overlay(
     """
     if not popup:
         return body_rows
-    popup_w = max(len(_strip_ansi(row)) for row in popup)
+    # `_display_width`, not `len()` -- a popup row can contain a wide character now (a heading
+    # entry in `_popup_box`), and `_wc_ljust` pads those to `box_w` *display columns*, which no
+    # longer equals the row's raw character count once one appears (VIEWMD-0070).
+    popup_w = max(_display_width(_strip_ansi(row)) for row in popup)
     left = max(0, (term_w - popup_w) // 2)
     top = max(0, (len(body_rows) - len(popup)) // 2)
     out = list(body_rows)
@@ -263,16 +306,24 @@ def _overlay(
             # its raw character count -- the selected row wraps its whole width in background-
             # color SGR codes (`_popup_box`), which would otherwise push the splice point past
             # where the box actually ends on screen and eat into the row's right-hand text.
-            visible_w = len(_strip_ansi(prow))
-            # Pad only far enough to reach the box's own right edge, never all the way to
-            # `term_w`: padding further than the row's real content (or the box) needs writes
-            # literal space characters over whatever the terminal would otherwise leave alone --
-            # every other row relies on `_CLEAR_EOL` (an erase, not a write) for that instead, and
-            # on terminals where the default background isn't flat black (a background image, a
-            # transparent/tinted profile) an explicit space write paints over it while an erase
-            # doesn't, which would make a popup row's background look like it "disappeared".
-            padded = base.ljust(left + visible_w)
-            out[r] = padded[:left] + prow + padded[left + visible_w:]
+            visible_w = _display_width(_strip_ansi(prow))
+            # `_ansi_slice`, not raw character-index slicing -- `base` is the underlying document
+            # row (`plain_rows`), which can have a wide character anywhere in it (VIEWMD-0070);
+            # cutting it at character offset `left` would land on the wrong terminal column
+            # whenever one appears before that point, the same reason `_ansi_slice` itself exists
+            # rather than a plain `line[start:start+width]`.
+            left_part = _ansi_slice(base, 0, left)
+            # Pad only far enough to reach the box's own left edge, as plain trailing spaces
+            # (never inside a color span, and always appended after real content) -- never all
+            # the way to `term_w`: writing literal space characters past the row's real content
+            # paints over whatever the terminal would otherwise leave alone, where `_CLEAR_EOL`
+            # (an erase, not a write) is what every other row relies on for that instead; on a
+            # terminal whose default background isn't flat black (an image, a transparent/tinted
+            # profile) an explicit space write paints over it while an erase doesn't, which would
+            # make a popup row's background look like it "disappeared".
+            left_part += " " * max(0, left - _display_width(_strip_ansi(left_part)))
+            right_part = _ansi_slice(base, left + visible_w, max(0, term_w - left - visible_w))
+            out[r] = left_part + prow + right_part
     return out
 
 
@@ -298,10 +349,15 @@ def _ansi_slice(line: str, start_col: int, width: int) -> str:
     exactly the "self-contained span" contract `_overlay`'s own docstring establishes, just
     applied to an arbitrary column cut instead of a fixed set of popup-covered rows.
 
-    Assumes one column per character (no `wcwidth`); a CJK/emoji-heavy line would misalign here
-    the same as everywhere else in this module.
+    Column width per character comes from `_char_width` (`wcwidth`, VIEWMD-0070) -- a double-width
+    character (an emoji, most CJK text) whose column span only partially overlaps `[start_col,
+    start_col + width)` can't be rendered half a glyph, so that overlap is padded with plain
+    space(s) instead of emitting it; a character entirely inside or entirely outside the window
+    is unaffected (this is exactly what a single-width character always is, since an integer
+    column boundary can never fall inside a 1-column span -- so ordinary content goes through the
+    identical code path it always did, unchanged).
     """
-    if start_col <= 0 and width >= len(_strip_ansi(line)):
+    if start_col <= 0 and width >= _display_width(_strip_ansi(line)):
         return line  # fast path: nothing is actually being cut
     col = 0
     end_col = start_col + width
@@ -320,13 +376,17 @@ def _ansi_slice(line: str, start_col: int, width: int) -> str:
             if entered:
                 out.append(tok)
             continue
-        if col == start_col and not entered:
+        w = _char_width(tok)
+        span_start, span_end = col, col + w
+        col = span_end
+        if span_end <= start_col or span_start >= end_col:
+            continue  # entirely outside the window -- still advances `col` above, just no output
+        if not entered:
             entered = True
             if active_sgr or active_link:
                 out.append(active_sgr + active_link)
-        if start_col <= col < end_col:
-            out.append(tok)
-        col += 1
+        overlap = min(span_end, end_col) - max(span_start, start_col)
+        out.append(tok if overlap == w else " " * overlap)
         if col >= end_col:
             break
     if entered and (active_sgr or active_link):
@@ -343,8 +403,9 @@ def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> st
     """The horizontal-scroll counterpart to plain `_ansi_slice`: crop `colored_row` to exactly
     `width` columns starting at `left_col`, like `_ansi_slice` does, but additionally reserve the
     row's first/last column for a `‹`/`›` marker whenever content is actually scrolled out of view
-    in that direction -- `plain_len` (the row's real, un-cropped display width) is what decides
-    that, not anything about the cropped result itself.
+    in that direction -- `plain_len` (the row's real, un-cropped display width, via
+    `_display_width`, not `len()` -- VIEWMD-0070) is what decides that, not anything about the
+    cropped result itself.
 
     This is what every visible document row must go through unconditionally, not just when
     `left_col != 0` -- a row wider than `width` prints past the terminal's own edge and the
@@ -451,22 +512,27 @@ def _mode_line(
     else:
         pos = f"{round(100 * end / total)}%"
     col_marker = f" col {left_col + 1} ══" if left_col else ""
+    # `name`/`section` are arbitrary document text (a filename, a heading) and can contain a wide
+    # character (VIEWMD-0070), so every width here is `_display_width`, not `len()`; truncation
+    # goes through `_ansi_slice` (this line carries no ANSI itself, but the same column-aware
+    # walk correctly avoids cutting a wide character in half either way).
     core = f"════ viewmd: {name}, {total} lines ══ {pos} ══{col_marker}"
-    if len(core) >= term_w:
-        return core[:term_w]
-    remaining = term_w - len(core)
+    core_w = _display_width(core)
+    if core_w >= term_w:
+        return _ansi_slice(core, 0, term_w)
+    remaining = term_w - core_w
 
     min_fill = 4
     section_block = ""
     if section and remaining - min_fill > 2:
         max_text_w = remaining - min_fill - 2  # 2 = the block's own leading/trailing space
         text = section
-        if len(text) > max_text_w:
-            text = text[: max(0, max_text_w - 1)] + "…" if max_text_w >= 1 else ""
+        if _display_width(text) > max_text_w:
+            text = _ansi_slice(text, 0, max(0, max_text_w - 1)) + "…" if max_text_w >= 1 else ""
         if text:
             section_block = f" {text} "
 
-    return core + "═" * (remaining - len(section_block)) + section_block
+    return core + "═" * (remaining - _display_width(section_block)) + section_block
 
 
 # The full keybinding reference, grouped for the '?' help screen (`_help_box`) -- the echo area's
@@ -635,10 +701,10 @@ def _pad_ansi(text: str, width: int) -> str:
     width falls back to the plain (uncolored) text instead, since only the echo area's keybind
     summary carries color at all and it's short enough that this path is a rare-terminal-width
     fallback, not something worth building exact colored truncation for."""
-    visible = len(_strip_ansi(text))
+    visible = _display_width(_strip_ansi(text))
     if visible <= width:
         return text + " " * (width - visible)
-    return _strip_ansi(text)[:width]
+    return _ansi_slice(_strip_ansi(text), 0, width)
 
 
 def _search(plain_lines: list[str], query: str, start_after: int) -> int | None:
@@ -700,7 +766,7 @@ def run(
     # Widest rendered line, in columns -- fenced code (VIEWMD-0019) and Mermaid diagrams
     # (VIEWMD-0018) both render `crop=False`, so a line can be wider than either the terminal or
     # the configured render width. `left_col` is how far into that width the view is scrolled.
-    max_content_width = max((len(row) for row in plain_lines), default=0)
+    max_content_width = _max_content_width(plain_lines)
     left_col = 0
     h_step = 8
 
@@ -757,11 +823,12 @@ def run(
             # on `color`, VIEWMD-0043) -- using the mismatched plain-twin length here would make
             # `_crop_row` decide whether more content exists off-screen using a number that
             # doesn't describe the row actually being cropped.
-            visible.append(_crop_row(row, len(_strip_ansi(row)), left_col, term_w))
+            visible.append(_crop_row(row, _display_width(_strip_ansi(row)), left_col, term_w))
         visible += [""] * (body_h - len(visible))
         if popup_open or help_open:
             plain_visible = [
-                _crop_row(row, len(row), left_col, term_w) for row in plain_lines[top:end]
+                _crop_row(row, _display_width(row), left_col, term_w)
+                for row in plain_lines[top:end]
             ]
             plain_visible += [""] * (body_h - len(plain_visible))
             overlay_box = (
@@ -780,7 +847,8 @@ def run(
         # exists to show. Erasing is only needed (and only safe) when there's real blank trailing
         # space to clear, i.e. the row is shorter than `term_w` in the first place.
         visible = [
-            row if len(_strip_ansi(row)) >= term_w else row + _CLEAR_EOL for row in visible
+            row if _display_width(_strip_ansi(row)) >= term_w else row + _CLEAR_EOL
+            for row in visible
         ]
         section = None
         if headings:
@@ -834,7 +902,7 @@ def run(
                         lines, plain_lines, headings = _load(
                             text, term_w, color_kwargs=color_kwargs
                         )
-                        max_content_width = max((len(row) for row in plain_lines), default=0)
+                        max_content_width = _max_content_width(plain_lines)
                     body_h = term_h - 2
                     top = min(top, max(0, len(lines) - body_h))
                     left_col = min(left_col, max(0, max_content_width - term_w))
@@ -991,7 +1059,7 @@ def run(
                         top = min(max_top, headings[min(section, len(headings) - 1)].row)
                     else:
                         top = 0
-                    max_content_width = max((len(row) for row in plain_lines), default=0)
+                    max_content_width = _max_content_width(plain_lines)
                     left_col = min(left_col, max(0, max_content_width - term_w))
             draw()
     finally:

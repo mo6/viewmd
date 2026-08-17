@@ -429,6 +429,85 @@ def test_mouse_on_off_are_a_real_enable_disable_pair():
     assert "1000l" in ip._MOUSE_OFF
 
 
+# --- wide characters (VIEWMD-0070) ------------------------------------------------------------
+
+# Rich's own placeholder glyph for an unrenderable image (`![alt](src)`) -- the exact character
+# that surfaced this bug live, real double-width content rather than a synthetic fixture.
+_WIDE = "🌆"
+
+
+def test_display_width_counts_a_wide_character_as_two():
+    assert ip._display_width(_WIDE) == 2
+    assert ip._display_width("a") == 1
+    assert ip._char_width(_WIDE) == 2
+
+
+def test_wc_ljust_pads_by_display_width_not_character_count():
+    padded = ip._wc_ljust(f"{_WIDE} demo", 10)
+    assert ip._display_width(padded) == 10
+    assert len(padded) < 10  # fewer characters than columns, since the emoji is 2 columns/1 char
+
+
+def test_ansi_slice_wide_character_fully_inside_window():
+    line = f"ab{_WIDE}cd"
+    out = ip._ansi_slice(line, 0, 6)
+    assert out == line
+    assert ip._display_width(out) == 6
+
+
+def test_ansi_slice_pads_a_wide_character_straddling_the_right_edge():
+    line = f"ab{_WIDE}cd"  # columns: a=0 b=1 [wide]=2-3 c=4 d=5
+    out = ip._ansi_slice(line, 0, 3)  # window [0, 3) cuts the wide char in half
+    assert ip._display_width(out) == 3
+    assert out == "ab "  # half the glyph can't render -- padded with a space instead
+
+
+def test_ansi_slice_pads_a_wide_character_straddling_the_left_edge():
+    line = f"ab{_WIDE}cd"
+    out = ip._ansi_slice(line, 3, 3)  # window starts inside the wide char's own column span
+    assert ip._display_width(out) == 3
+    assert out == " cd"
+
+
+def test_crop_row_total_width_unaffected_by_a_wide_character():
+    row = f"{_WIDE} " + "x" * 100
+    plain_len = ip._display_width(row)
+    for left_col in (0, 1, 2, 50):
+        out = ip._crop_row(row, plain_len, left_col=left_col, width=20)
+        assert ip._display_width(ip._strip_ansi(out)) == 20
+
+
+def test_overlay_stays_column_aligned_around_a_wide_character():
+    # Regression: README.md's own "🌆 viewmd demo" image-placeholder line threw off the help
+    # popup's left border in a real terminal -- character-index splicing landed one column short
+    # of where display-column splicing should have cut.
+    body = [f"{_WIDE} viewmd demo" + " " * 88] * 5  # a 100-col-wide row with a wide char at col 0
+    plain = list(body)
+    popup = ["┌────┐", "│ ok │", "└────┘"]
+    out = ip._overlay(body, plain, popup, term_w=100)
+    popup_w = max(ip._display_width(row) for row in popup)
+    left = max(0, (100 - popup_w) // 2)
+    box_top = (len(body) - len(popup)) // 2
+    row = ip._strip_ansi(out[box_top])
+    # The popup's own left border must land at display column `left`, not character index
+    # `left` -- with a width-2 character at column 0, those differ by one.
+    assert ip._display_width(row[: row.index("┌")]) == left
+    assert ip._display_width(row) == 100
+
+
+def test_popup_box_sizes_itself_for_a_heading_containing_a_wide_character():
+    headings = [ip.HeadingLoc(text=f"{_WIDE} Section", level=2, row=0)]
+    box = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    widths = {ip._display_width(ip._strip_ansi(row)) for row in box}
+    assert len(widths) == 1  # every row, borders included, is exactly the same display width
+
+
+def test_mode_line_section_with_a_wide_character_stays_exactly_term_w():
+    for term_w in (20, 40, 80):
+        line = ip._mode_line("f.md", 100, 0, 10, term_w=term_w, section=f"{_WIDE} Intro")
+        assert ip._display_width(line) == term_w
+
+
 # --- run(): non-terminal fallback -------------------------------------------------------------
 
 
