@@ -25,9 +25,12 @@ from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matte
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
 
-# The per-directory landing note viewmd looks for when a `path` argument is a directory
-# (VIEWMD-0065), analogous to Obsidian-style vault index notes.
-INDEX_FILENAME = "_Index.md"
+# The per-directory landing note(s) viewmd looks for when a `path` argument is a directory
+# (VIEWMD-0065), analogous to Obsidian-style vault index notes. Checked in this order -- the
+# original Obsidian-style convention first, then the two lowercase static-site-generator
+# conventions (`index.md`: plain/Jekyll-style; `_index.md`: Hugo section index) -- so a directory
+# with more than one present picks the same file every time (VIEWMD-0074).
+INDEX_FILENAMES = ("_Index.md", "index.md", "_index.md")
 
 
 class ViewmdCodeBlock(CodeBlock):
@@ -595,7 +598,7 @@ def _markdown_title(path: str) -> str:
 
 def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
     """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
-    directory with no `INDEX_FILENAME` note inside it (VIEWMD-0065). Lists immediate
+    directory with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
     subdirectories and Markdown files only (no recursion), subdirectories first then files, each
     alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
     to propagate, matching how an unreadable file is handled elsewhere in this module.

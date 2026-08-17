@@ -48,9 +48,10 @@ preceded by a heading naming its path and separated by a divider, concatenated i
 `less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
 scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
 
-Passing a directory renders its `_Index.md` if one exists (exact case match), exactly as if that
-file had been passed directly; otherwise it renders a table-of-contents listing of the
-directory's immediate entries (subdirectories first, then Markdown files, each alphabetically) —
+Passing a directory renders its index file if one exists — `_Index.md`, `index.md`, or
+`_index.md`, checked in that order (exact case match) — exactly as if that file had been passed
+directly; otherwise it renders a table-of-contents listing of the directory's immediate entries
+(subdirectories first, then Markdown files, each alphabetically) —
 a file's title (from front matter, its first heading, or its filename) and last-modified time,
 one level deep, no recursion. This applies the same way whether the directory is the only `path`
 argument or one of several.
@@ -74,7 +75,7 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 ## Interactive pager
 
-Viewing a single document (a file, stdin, or a directory's `_Index.md`) in a terminal pages into
+Viewing a single document (a file, stdin, or a directory's index file) in a terminal pages into
 viewmd's own interactive pager, not an external `less` process — mouse-wheel/trackpad scrolling
 works the same as `less`, plus a table-of-contents popup, search with match highlighting,
 horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more. Press
@@ -95,7 +96,7 @@ working; most terminals also support a modifier-drag bypass (Option on macOS, Sh
 that needs no toggling. Setting `$PAGER` still delegates to that external pager unchanged, exactly
 as before — only the *default* (no `$PAGER` set) no longer spawns `less`.
 
-Viewing more than one file at once (multiple paths, a directory listing with no `_Index.md`) still
+Viewing more than one file at once (multiple paths, a directory listing with no index file) still
 pages into `less` ($PAGER, default `less -R -F -X --mouse`) as before — the interactive pager's
 table of contents and search are scoped to a single document.
 

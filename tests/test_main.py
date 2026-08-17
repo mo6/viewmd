@@ -188,11 +188,11 @@ def test_unreadable_directory_errors_gracefully(tmp_path, capsys, monkeypatch):
     assert f"viewmd: cannot read {tmp_path}" in captured.err
 
 
-def test_lowercase_index_filename_does_not_match_the_exact_case_index(tmp_path, capsys):
-    # A same-named-but-wrong-case file must not be treated as the index note, even on a
+def test_wrong_case_index_filename_does_not_match_any_exact_case_index(tmp_path, capsys):
+    # A same-named-but-wrong-case file must not be treated as an index note, even on a
     # case-insensitive filesystem (macOS default) where os.path.isfile() alone can't tell them
     # apart -- it must fall through to the directory listing instead.
-    (tmp_path / "_index.md").write_text("# Wrong Case\n")
+    (tmp_path / "_INDEX.MD").write_text("# Wrong Case\n")
 
     rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
     out = capsys.readouterr().out
@@ -200,8 +200,64 @@ def test_lowercase_index_filename_does_not_match_the_exact_case_index(tmp_path, 
     assert rc == 0
     # Falls through to the directory listing (a table row naming the file), rather than being
     # rendered as the index note's own page content.
-    assert "_index.md" in out
+    assert "_INDEX.MD" in out
     assert "╭" in out
+
+
+def test_directory_with_lowercase_index_md_renders_it(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    (tmp_path / "index.md").write_text("# Landing\n\nbody text\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown("# Landing\n\nbody text\n", width=80, color=False)
+
+
+def test_directory_with_lowercase_underscore_index_md_renders_it(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    (tmp_path / "_index.md").write_text("# Landing\n\nbody text\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown("# Landing\n\nbody text\n", width=80, color=False)
+
+
+def test_multiple_index_candidates_prefer_underscore_capital_index_over_index_md(
+    tmp_path, capsys
+):
+    # Not combined with `_index.md` in the same test: on the default case-insensitive macOS
+    # filesystem, `_Index.md` and `_index.md` name the same file, so they can't coexist as
+    # distinct real files here -- test_directory_with_lowercase_underscore_index_md_renders_it
+    # and this test together cover the full three-way priority order.
+    from viewmd.render import render_markdown
+
+    (tmp_path / "_Index.md").write_text("# Preferred\n")
+    (tmp_path / "index.md").write_text("# Second choice\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown("# Preferred\n", width=80, color=False)
+
+
+def test_multiple_index_candidates_prefer_index_md_over_underscore_index_md(tmp_path, capsys):
+    from viewmd.render import render_markdown
+
+    (tmp_path / "index.md").write_text("# Preferred\n")
+    (tmp_path / "_index.md").write_text("# Second choice\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert out == render_markdown("# Preferred\n", width=80, color=False)
 
 
 def test_multi_path_mode_handles_a_directory_among_files(tmp_path, capsys):
