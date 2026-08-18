@@ -242,6 +242,27 @@ def test_markdown_title_ignores_hash_comment_inside_a_code_fence(tmp_path):
     assert _markdown_title(str(path)) == "Real Heading"
 
 
+def test_render_directory_listing_links_subdirectory_rows(tmp_path):
+    (tmp_path / "sub dir").mkdir()
+    (tmp_path / "a.md").write_text("# A\n")
+
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+
+    assert "viewmd-dir:sub%20dir" in colored
+    # Only the subdirectory row is linked -- an `.md` file row carries no href yet
+    # (VIEWMD-0081 Non-goals).
+    assert "viewmd-dir:a.md" not in colored
+
+
+def test_render_directory_listing_no_dir_link_without_color(tmp_path):
+    (tmp_path / "sub").mkdir()
+
+    out = render_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert "viewmd-dir:" not in out
+    assert "sub" in out
+
+
 def test_render_directory_listing_does_not_recurse(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()

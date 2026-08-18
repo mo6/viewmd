@@ -394,6 +394,62 @@ def test_resolve_link_target_rejects_absolute_href(tmp_path):
         outside.unlink()
 
 
+# --- _resolve_dir_target / directory-listing subdirectory click nav (VIEWMD-0081) --------------
+
+
+def test_link_at_decodes_a_dir_anchor_href(tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "sub").mkdir()
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+    line = next(line for line in colored.split("\n") if "sub" in ip._strip_ansi(line))
+    col = _col_of(line, "sub")
+    assert ip._link_at(line, col) == f"{ip._DIR_ANCHOR_SCHEME}sub"
+
+
+def test_resolve_dir_target_resolves_an_existing_subdirectory(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}sub", str(tmp_path)) == str(sub)
+
+
+def test_resolve_dir_target_rejects_a_missing_directory(tmp_path):
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}missing", str(tmp_path)) is None
+
+
+def test_resolve_dir_target_rejects_a_path_that_is_a_file_not_a_directory(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}a.md", str(tmp_path)) is None
+
+
+def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypatch, tmp_path):
+    # VIEWMD-0081: `run_directory_listing()` now passes `doc_dir`/`open_path` to `_run()` (just
+    # like `run()` does for a `.md` file) so a click on a subdirectory row can navigate into it --
+    # this exercises that wiring directly, at the level `_run`'s own click-to-follow logic (itself
+    # untested end-to-end, see VIEWMD-0076's tests above) is invoked at, without needing a real
+    # tty/event loop.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["doc_dir"] = doc_dir
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert captured["doc_dir"] == str(tmp_path)
+    new_loader, new_display_name, new_doc_dir = captured["open_path"](str(sub))
+    assert new_display_name == "sub/"
+    assert new_doc_dir == str(sub)
+    colored, _plain, headings = new_loader(80)
+    assert any("nested.md" in ip._strip_ansi(line) for line in colored)
+    assert headings == []
+
+
 def test_content_col_maps_through_no_scroll():
     # No truncation markers reserved -- screen column is content column, unchanged.
     assert ip._content_col(plain_len=40, left_col=0, width=80, screen_col=5) == 5

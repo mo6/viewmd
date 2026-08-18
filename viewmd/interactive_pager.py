@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from wcwidth import wcswidth
 
 from viewmd.render import (
+    _DIR_ANCHOR_SCHEME,
     _TOC_ANCHOR_SCHEME,
     ViewmdMarkdown,
     heading_outline,
@@ -537,6 +538,21 @@ def _resolve_link_target(href: str, current_dir: str) -> str | None:
     return None
 
 
+def _resolve_dir_target(href: str, current_dir: str) -> str | None:
+    """Resolve a clicked `_DIR_ANCHOR_SCHEME` href (VIEWMD-0081, a directory-listing subdirectory
+    row) to that subdirectory's absolute path, or `None` if it no longer exists -- e.g. removed
+    between the listing being rendered and the row being clicked. `href` is already fully
+    unquoted by `_link_at` by the time it reaches here, so `href[len(scheme):]` needs no second
+    `urllib.parse.unquote` of its own (same reasoning as the ToC branch's rank-prefixed hrefs,
+    below). The name is taken as-is (no `..`/absolute-path rejection like `_resolve_link_target`'s
+    href case) because the href is never derived from document content, only from
+    `os.listdir(current_dir)` at render time (`render_directory_listing`), so it can only ever
+    name an immediate child of `current_dir`."""
+    name = href[len(_DIR_ANCHOR_SCHEME) :]
+    candidate = os.path.join(current_dir, name)
+    return candidate if os.path.isdir(candidate) else None
+
+
 def _popup_origin(popup: list[str], body_h: int, term_w: int) -> tuple[int, int]:
     """The (top, left) terminal-body coordinates `_overlay` centers `popup` at -- factored out
     of `_overlay` itself (VIEWMD-0076) so click hit-testing (`_popup_hit`) can compute the exact
@@ -1033,11 +1049,13 @@ def run(
     """Page `text` (raw Markdown source) interactively. `name` is the display name shown in the
     mode line (typically the source path, or "-" for stdin); only its basename is shown.
 
-    The only one of the three `_run()` entry points that supports click-to-follow a local-file
+    The only one of the three `_run()` entry points that supports click-to-follow a `.md` file
     link (VIEWMD-0076) -- it's the only one with a single well-defined file and directory to
-    resolve a relative link/wikilink against (`run_directory_listing()`/`run_multi_file()` don't,
-    and stdin, `name == "-"`, has no directory either) -- `doc_dir`/`open_path` are left `None`
-    for all of those, which makes a click on a link (and the 'B' back key) a no-op in `_run()`.
+    resolve a relative link/wikilink against (stdin, `name == "-"`, has no directory of its own,
+    so `doc_dir` is `None` and a link click is a no-op there too). `run_directory_listing()`
+    separately wires its own `doc_dir`/`open_path` for subdirectory-row navigation (VIEWMD-0081,
+    not a `.md` link), and `run_multi_file()` still leaves both `None`, making a click on a link
+    (and the 'B' back key) a no-op there.
     """
     color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
     display_name = "(stdin)" if name == "-" else os.path.basename(name)
@@ -1077,20 +1095,39 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
     `_Index.md` note present). No heading outline to build a ToC popup from (VIEWMD-0072
     Non-goals: no per-entry ToC) -- the 't' key is inert and omitted from the keybinding summary,
     same as any document with no headings of its own; scrolling, search, mouse, resize, and the
-    width toggle all work exactly as for a single document."""
+    width toggle all work exactly as for a single document.
+
+    Clicking a subdirectory row navigates into that subdirectory's own listing (VIEWMD-0081) --
+    `doc_dir`/`open_path` are wired the same way `run()` wires them for a `.md` file link, just
+    resolving to a directory instead; the 'B' back key (already part of `_run`'s click-to-follow
+    machinery, VIEWMD-0076) is this feature's way back up to the parent listing, so no separate
+    `..` row is needed. `.md` file rows carry no link yet (VIEWMD-0081 Non-goals) -- clicking one
+    is still a no-op."""
     from viewmd.render import render_directory_listing
 
-    def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
-        colored = render_directory_listing(dir_path, width=w, color=True).rstrip("\n").split("\n")
-        plain = render_directory_listing(dir_path, width=w, color=False).rstrip("\n").split("\n")
-        return colored, plain, []
+    def make_loader(d: str):
+        def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
+            colored = render_directory_listing(d, width=w, color=True).rstrip("\n").split("\n")
+            plain = render_directory_listing(d, width=w, color=False).rstrip("\n").split("\n")
+            return colored, plain, []
+
+        return loader
+
+    def open_path(path: str) -> tuple:
+        # `_resolve_dir_target` already confirmed `path` is a directory that still exists, and
+        # unlike `run()`'s own `open_path` there's no file read that can fail here, so this never
+        # returns `None` -- `_run`'s click handler still checks for `None` since the same code
+        # path is shared with `run()`'s file-opening case.
+        return make_loader(path), os.path.basename(os.path.normpath(path)) + "/", path
 
     display_name = os.path.basename(os.path.normpath(dir_path)) + "/"
     _run(
-        loader,
+        make_loader(dir_path),
         display_name,
         width=width,
         fallback=lambda: render_directory_listing(dir_path, width=width, color=color),
+        doc_dir=dir_path,
+        open_path=open_path,
     )
 
 
@@ -1154,13 +1191,15 @@ def _run(
     opened at all (no controlling terminal), which should be rare given the caller already checked
     `sys.stdout.isatty()` before reaching here.
 
-    `doc_dir`/`open_path` (VIEWMD-0076) enable click-to-follow a local `.md` link: `doc_dir` is
-    the directory the *currently open* document's relative links/wikilinks resolve against, and
-    `open_path(path)` returns a fresh `(loader, display_name, doc_dir)` triple for a resolved
-    target file, ready to swap in as the session's new "current document" -- only `run()` passes
-    these (see its own docstring); `None` for both (the default) makes link-following and the
-    'B' back key inert, matching `run_directory_listing()`/`run_multi_file()`, which have no
-    single file/directory of their own to resolve a relative link against.
+    `doc_dir`/`open_path` (VIEWMD-0076, extended to directories by VIEWMD-0081) enable
+    click-to-follow: `doc_dir` is the directory a click's href resolves against (a `.md` file's
+    relative links/wikilinks for `run()`, a directory listing's own subdirectory rows for
+    `run_directory_listing()`), and `open_path(path)` returns a fresh `(loader, display_name,
+    doc_dir)` triple for the resolved target, ready to swap in as the session's new "current
+    document" -- `run()` and `run_directory_listing()` each pass their own (see their
+    docstrings); `None` for both (the default) makes link-following and the 'B' back key inert,
+    matching `run_multi_file()`, which has no single file/directory of its own to resolve a
+    relative link against.
     """
     try:
         tty_fd = os.open("/dev/tty", os.O_RDONLY)
@@ -1450,9 +1489,11 @@ def _run(
             max_content_width = _max_content_width(plain_lines)
             left_col = min(left_col, max(0, max_content_width - _content_w()))
         elif ev.kind == "key" and ev.value == "B":
-            # Go back to the file navigated *from* (VIEWMD-0076 requirement 6) -- a no-op with
-            # nothing on the stack, including for `run_directory_listing()`/`run_multi_file()`,
-            # which never push anything at all (no `open_path`, see `_run`'s own docstring).
+            # Go back to the document navigated *from* (VIEWMD-0076 requirement 6) -- a no-op
+            # with nothing on the stack. `run_directory_listing()` pushes here too, for a clicked
+            # subdirectory row (VIEWMD-0081), making 'B' its way back up to the parent listing;
+            # only `run_multi_file()` never pushes anything (no `open_path`, see `_run`'s own
+            # docstring).
             if nav_stack:
                 (
                     loader,
@@ -1541,7 +1582,18 @@ def _run(
                                         break
                                     seen += 1
                         elif href is not None and doc_dir is not None and open_path is not None:
-                            target = _resolve_link_target(href, doc_dir)
+                            # VIEWMD-0081: a directory-listing subdirectory row's href is
+                            # unambiguously scheme-tagged (`_DIR_ANCHOR_SCHEME`) rather than an
+                            # ordinary relative path, so it's resolved by `_resolve_dir_target`
+                            # (a directory) instead of `_resolve_link_target` (a `.md` file) --
+                            # the rest of this branch (nav-stack push, loader/doc_dir swap, reset)
+                            # is identical either way, since `open_path` itself returns the same
+                            # `(loader, display_name, doc_dir)` shape for both.
+                            target = (
+                                _resolve_dir_target(href, doc_dir)
+                                if href.startswith(_DIR_ANCHOR_SCHEME)
+                                else _resolve_link_target(href, doc_dir)
+                            )
                             if target is not None:
                                 opened = open_path(target)
                                 if opened is None:

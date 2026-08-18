@@ -349,6 +349,13 @@ _TOC_MAX_ENTRIES = 20
 # pager's own full `HeadingLoc` list once truncation/level-cutting actually kicks in.
 _TOC_ANCHOR_SCHEME = "viewmd-toc:"
 
+# Directory-listing subdirectory row link scheme (VIEWMD-0081), same "inert outside viewmd"
+# precedent as `_TOC_ANCHOR_SCHEME`/`wikilink:` above -- the interactive pager
+# (`viewmd/interactive_pager.py`) recognizes this scheme and resolves it to a subdirectory name
+# relative to the listing's own directory, distinct from `.md` file rows, which carry no link
+# at all yet (VIEWMD-0081 Non-goals).
+_DIR_ANCHOR_SCHEME = "viewmd-dir:"
+
 
 @dataclass(frozen=True)
 class HeadingOutline:
@@ -665,7 +672,14 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
     table.add_column("Modified", no_wrap=True)
 
     for name in dirs:
-        table.add_row(escape(name) + "/", "dir", "", "")
+        # A `Text` cell (rather than the plain, markup-escaped strings the other columns use)
+        # so a real OSC8 link can be layered on via `stylize` -- same pattern as the static ToC
+        # block's own heading links (`_toc_lines`, above). `Text` never parses console markup,
+        # so no `escape()` call is needed here the way the plain-string cells still need one.
+        name_cell = Text(name + "/")
+        href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
+        name_cell.stylize(Style(link=href))
+        table.add_row(name_cell, "dir", "", "")
     for name in files:
         full_path = os.path.join(dir_path, name)
         title = _markdown_title(full_path)
