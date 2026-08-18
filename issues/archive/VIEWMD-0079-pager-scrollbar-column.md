@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0079
 title: Scrollbar column showing visible extent in the interactive pager
-status: in-progress
+status: implemented
 area: [pager]
 effort: medium
 created: 2026-08-18
 updated: 2026-08-18
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-18
-commits: []
+commits: [32a65dd]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.39.0]"
 reason:
 ---
 

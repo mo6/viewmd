@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.39.0] — 2026-08-18
+
+- **Scrollbar column in the interactive pager** (VIEWMD-0079, pager): the pager now reserves a one-character-wide scrollbar column at the left edge of the body, followed by a blank gap column, showing at a glance how much of the document is visible and where the viewport currently sits -- a solid block glyph in the accent color marks the visible ("thumb") range, a lighter shade-glyph in dim grey marks the rest of the document ("track"), so the two stay distinguishable under `--no-color`/a monochrome terminal too, not through color alone. Sized and positioned proportionally, the same way the mode line's own line-range/percentage text is derived, and recomputed on every scroll (arrow keys, mouse wheel, search jump, ToC jump, resize). Clicking anywhere in the scrollbar column jumps the viewport to roughly that proportional position, like dragging a GUI scrollbar's track. Omitted entirely (falling back to today's full-width layout) whenever the whole document already fits on one screen.
+
 ## [1.38.0] — 2026-08-18
 
 - **The echo area's keybinding hint chips are now clickable** (VIEWMD-0078, pager): each keycap chip in the pager's bottom status row (e.g. `t contents`, `? help`, `q quit`) can now be clicked directly to invoke that action, the same as pressing the real key -- no need to open the full `?` help screen first, which VIEWMD-0076 already made click-to-invoke. A click while the echo area is showing something else (the search prompt, a one-shot message) is a no-op.
