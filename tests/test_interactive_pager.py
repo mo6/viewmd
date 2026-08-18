@@ -277,6 +277,31 @@ def test_link_at_decodes_a_wikilink_href():
     assert ip._link_at(line, col) == "wikilink:Target Note"
 
 
+def test_link_at_decodes_a_toc_anchor_href():
+    # VIEWMD-0077: the static ToC block's own entries carry a `viewmd-toc:<rank>:<heading text>`
+    # href (`viewmd/render.py`'s `_toc_lines()`) -- `_link_at` decodes it the same as any other
+    # href, scheme-agnostic; the interactive pager's click dispatch is what treats this scheme
+    # specially (resolved by heading text + rank into `top`, never through `_resolve_link_target`).
+    kw = {**_KW, "toc": True}
+    colored, _plain, _headings = ip._load("# Title\n\n## Section\n", 80, color_kwargs=kw)
+    toc_line = next(line for line in colored if "Section" in ip._strip_ansi(line))
+    col = _col_of(toc_line, "Section")
+    assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:Section"
+
+
+def test_link_at_decodes_a_toc_anchor_href_with_a_percent_looking_heading():
+    # Regression (found in review): _link_at() already fully unquotes an href once -- a click
+    # handler that unquotes it a *second* time would corrupt a heading whose text happens to
+    # contain a literal '%'-looking substring (e.g. quote()-ing "%41" produces "%2541", and a
+    # correct single decode gives back "%41", not a further-decoded "A").
+    kw = {**_KW, "toc": True}
+    heading_text = "Item %41 Spec"
+    colored, _plain, _headings = ip._load(f"# Title\n\n## {heading_text}\n", 80, color_kwargs=kw)
+    toc_line = next(line for line in colored if "Item" in ip._strip_ansi(line))
+    col = _col_of(toc_line, "Item")
+    assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:{heading_text}"
+
+
 def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
     (tmp_path / "B.md").write_text("# B\n")
     assert ip._resolve_link_target("wikilink:B", str(tmp_path)) == str(tmp_path / "B.md")

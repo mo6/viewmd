@@ -32,7 +32,12 @@ from dataclasses import dataclass
 
 from wcwidth import wcswidth
 
-from viewmd.render import ViewmdMarkdown, heading_outline, render_markdown
+from viewmd.render import (
+    _TOC_ANCHOR_SCHEME,
+    ViewmdMarkdown,
+    heading_outline,
+    render_markdown,
+)
 
 # SGR color codes ("\x1b[...m") and OSC 8 hyperlink wrappers ("\x1b]8;id=..;url\x1b\\", closed by
 # a matching "\x1b]8;;\x1b\\") -- Rich emits both for a colored render (VIEWMD-0006 turns
@@ -437,6 +442,13 @@ def _link_at(colored_line: str, col: int) -> str | None:
 
 
 _EXTERNAL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!/[^/])")
+
+# `_TOC_ANCHOR_SCHEME` (VIEWMD-0077): imported from `viewmd.render`, not duplicated here -- the
+# static ToC block's own entries (`_toc_lines()`) use it, and this module's click handler below
+# recognizes it, resolved entirely differently from `wikilink:`/a relative path (by heading text
+# into `top`, never through `_resolve_link_target`, since it never identifies a file). A second,
+# independently-maintained copy of the literal scheme string here would silently stop matching if
+# the two ever drifted apart.
 
 
 def _resolve_link_target(href: str, current_dir: str) -> str | None:
@@ -1335,15 +1347,14 @@ def _run(
                 last_search_query = ""
             else:
                 echo_message = "No previous file to go back to"
-        elif ev.kind == "click" and doc_dir is not None and open_path is not None:
-            # Click-to-follow a local-file link (VIEWMD-0076 requirements 2-6): resolve which
-            # rendered row/column the click landed on, undo horizontal-scroll cropping to get
-            # back to the row's real display column, find whatever link (if any) covers it, and
-            # -- only if its href resolves to an existing local `.md` file -- swap the session
-            # over to that file, after pushing the file being left onto the back-stack. Every
-            # other case (no link under the click, an external URL, a missing/non-.md target)
-            # is a deliberate no-op, so a terminal's own native OSC8 click-to-open still gets a
-            # chance at a link this doesn't resolve (requirement 5).
+        elif ev.kind == "click":
+            # Click hit-testing shared by two features: a same-document anchor jump into the
+            # static table-of-contents block's own entries (VIEWMD-0077, works in any document
+            # context with headings -- doesn't need `doc_dir`), and click-to-follow a local-file
+            # link (VIEWMD-0076 requirements 2-6, `run()`'s single-document case only, gated on
+            # `doc_dir`/`open_path`). Both resolve which rendered row/column the click landed on
+            # the same way: undo horizontal-scroll cropping to get back to the row's real display
+            # column, then find whatever link (if any) covers it.
             body_row = ev.row - 1
             if 0 <= body_row < body_h:
                 doc_row = top + body_row
@@ -1352,7 +1363,38 @@ def _run(
                     content_col = _content_col(plain_len, left_col, term_w, ev.col - 1)
                     if content_col is not None:
                         href = _link_at(lines[doc_row], content_col)
-                        if href is not None:
+                        if href is not None and href.startswith(_TOC_ANCHOR_SCHEME):
+                            # VIEWMD-0077: resolved by heading *text* plus an occurrence rank,
+                            # not position -- the static ToC block can be a level-cut/truncated
+                            # subset of the full outline (`_fit_toc_outline`, `viewmd/render.py`),
+                            # so an index into *that* list wouldn't line up with this pager's own
+                            # full `headings` list once truncation/level-cutting actually kicks
+                            # in. Text alone isn't enough either: two different headings can share
+                            # the exact same text (e.g. `## Overview` under two different
+                            # sections), so the rank (0-indexed count of same-text headings
+                            # already seen, `_toc_occurrence_ranks()` in `viewmd/render.py`) picks
+                            # the *specific* one that was actually clicked, not just the first
+                            # match -- `href[len(scheme):]` is `f"{rank}:{text}"`. `href` is
+                            # already fully unquoted by `_link_at` above, so `target_text` here
+                            # needs no second `urllib.parse.unquote` of its own -- doing that
+                            # would double-decode any heading text that happens to contain a
+                            # literal `%`-looking substring (found in review). No file resolution
+                            # attempted (requirement 4) -- this scheme never identifies a file.
+                            rank_str, _, target_text = href[
+                                len(_TOC_ANCHOR_SCHEME) :
+                            ].partition(":")
+                            try:
+                                target_rank = int(rank_str)
+                            except ValueError:
+                                target_rank = 0
+                            seen = 0
+                            for h in headings:
+                                if h.text == target_text:
+                                    if seen == target_rank:
+                                        top = min(max_top, h.row)
+                                        break
+                                    seen += 1
+                        elif href is not None and doc_dir is not None and open_path is not None:
                             target = _resolve_link_target(href, doc_dir)
                             if target is not None:
                                 opened = open_path(target)

@@ -3,6 +3,7 @@
 import io
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -340,6 +341,13 @@ _TOC_NEST_COLUMNS = 3
 _TOC_LEVELS = {"h1": 1, "h2": 2, "h3": 3}
 # Cap on ToC *entries* (one per included heading), not wrapped terminal rows.
 _TOC_MAX_ENTRIES = 20
+# Same-document anchor-link scheme for the static ToC block's own entries (VIEWMD-0077), mirroring
+# `viewmd/wikilinks.py`'s `wikilink:` precedent -- inert outside viewmd, matching that docstring's
+# own "never opened" convention. The interactive pager (`viewmd/interactive_pager.py`) resolves it
+# by heading *text*, not position: this ToC can be a level-cut/truncated subset of the full
+# outline (`_fit_toc_outline`, below), so an index into *this* list wouldn't line up with the
+# pager's own full `HeadingLoc` list once truncation/level-cutting actually kicks in.
+_TOC_ANCHOR_SCHEME = "viewmd-toc:"
 
 
 @dataclass(frozen=True)
@@ -411,8 +419,28 @@ def _fit_toc_outline(outline: list[HeadingOutline]) -> tuple[list[HeadingOutline
     return selected[:_TOC_MAX_ENTRIES], omitted
 
 
-def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
-    """One bulleted, heading-styled line per outline entry, nested by level."""
+def _toc_occurrence_ranks(full_outline: list[HeadingOutline]) -> dict[int, int]:
+    """Maps `id(heading)` to its 0-indexed occurrence rank among same-*text* entries in
+    `full_outline` (VIEWMD-0077) -- two different headings can share the exact same text (e.g.
+    `## Overview` under two different sections), so a link resolved by text alone would always
+    land on the *first* one no matter which was actually clicked. `full_outline` must be the
+    *un-fitted* `heading_outline()` result (before `_fit_toc_outline` drops/truncates anything) --
+    `viewmd/interactive_pager.py`'s `_locate_headings()` builds its own `headings` list from that
+    same un-fitted outline, in the same order, so a rank computed here lines up with a rank-based
+    lookup there even when the *fitted* ToC block only shows a subset of the full outline."""
+    ranks: dict[int, int] = {}
+    seen: dict[str, int] = {}
+    for h in full_outline:
+        ranks[id(h)] = seen.get(h.text, 0)
+        seen[h.text] = ranks[id(h)] + 1
+    return ranks
+
+
+def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]) -> list[Text]:
+    """One bulleted, heading-styled line per outline entry, nested by level. `outline` is what's
+    actually rendered (post `_fit_toc_outline`); `full_outline` is the un-fitted result, needed
+    only to disambiguate a duplicate heading text's link target (see `_toc_occurrence_ranks`)."""
+    ranks = _toc_occurrence_ranks(full_outline)
     lines: list[Text] = []
     for heading in outline:
         indent = " " * (_TOC_NEST_COLUMNS * (heading.level - 1))
@@ -423,7 +451,18 @@ def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
         # flush-left with nest indent, not the body's centered h1.
         line = Text()
         line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
+        heading_start = len(line)
         line.append(heading.text, style=f"markdown.h{heading.level}")
+        # `stylize`, not folded into the `append` above's own `style=` -- a `Style(link=...)`
+        # carries no color/weight of its own, so layering it on top via a second span leaves the
+        # heading's visible styling completely unchanged (VIEWMD-0077 requirement 2) while still
+        # making Rich emit a real OSC8 hyperlink around just the heading text, not the bullet.
+        # The rank prefix (`<n>:<text>`) only matters for a duplicate heading text -- it's still
+        # included unconditionally (rather than only when actually ambiguous) so the href format
+        # is one predictable shape, not two.
+        rank = ranks.get(id(heading), 0)
+        href = f"{_TOC_ANCHOR_SCHEME}{rank}:{urllib.parse.quote(heading.text)}"
+        line.stylize(Style(link=href), heading_start, len(line))
         lines.append(line)
     return lines
 
@@ -461,11 +500,14 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
 
 
 def _print_toc(
-    console: Console, outline: list[HeadingOutline], omitted: int = 0
+    console: Console,
+    outline: list[HeadingOutline],
+    full_outline: list[HeadingOutline],
+    omitted: int = 0,
 ) -> None:
     if not outline:
         return
-    for line in _toc_lines(outline):
+    for line in _toc_lines(outline, full_outline):
         console.print(line)
     if omitted:
         console.print(f"... {omitted} more")
@@ -538,11 +580,15 @@ def render_markdown(
                 console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
                 console.print()
                 fitted, omitted = _fit_toc_outline(outline[1:])
-                _print_toc(console, fitted, omitted)
+                # `outline` (title included), not `outline[1:]` -- occurrence ranks (VIEWMD-0077)
+                # must be computed against the *same* full list `_locate_headings()`
+                # (`viewmd/interactive_pager.py`) builds its own `headings` from, which also
+                # includes the title.
+                _print_toc(console, fitted, outline, omitted)
                 console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
             else:
                 fitted, omitted = _fit_toc_outline(outline)
-                _print_toc(console, fitted, omitted)
+                _print_toc(console, fitted, outline, omitted)
                 console.print(markdown, crop=False)
             return buffer.getvalue()
     console.print(markdown, crop=False)
