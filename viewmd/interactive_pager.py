@@ -776,7 +776,7 @@ def _keybind_help(
     *,
     has_headings: bool = True,
     has_back: bool = False,
-) -> str:
+) -> tuple[str, list[tuple[int, int, Event | None]]]:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
     for the complete reference (`_HELP_GROUPS`/`_help_box`) rather than trying to cram every
     binding onto one row -- doing that used to silently lose all its keycap coloring on a narrow
@@ -795,22 +795,59 @@ def _keybind_help(
     inert there, same reasoning as the other two omissions. `has_back` (VIEWMD-0076) only
     advertises `B: prev file` once there's actually somewhere to go back to -- i.e. after the
     reader has clicked at least one link to navigate away from where they started; showing it
-    unconditionally would advertise a key that's a no-op for the entire session until then."""
+    unconditionally would advertise a key that's a no-op for the entire session until then.
+
+    Returns `(text, spans)` (VIEWMD-0078): `text` is exactly what pre-VIEWMD-0078 callers got
+    back (requirement 3 -- no visible change), and `spans` is a `(start_col, end_col, Event |
+    None)` triple per chip, 0-indexed and aligned to `text`'s own display columns -- the echo
+    line always starts at column 0 of its terminal row, so a caller resolving a click there needs
+    only a column-range lookup (`_chip_at`), simpler than the help screen's box-relative
+    `_popup_hit`. The `Event` is `None` for a chip with no single unambiguous action to invoke,
+    the same rule and the same reasoning `_HELP_GROUPS`' own third element documents -- currently
+    only the always-ambiguous `popup_open` layout's chips (out of scope per this issue's
+    Non-goals) and the base layout's `up/down,wheel` chip (direction-ambiguous, same as its
+    `_HELP_GROUPS` row)."""
     if popup_open:
-        pairs = [("up/down,wheel,j/k", "move"), ("Enter", "jump"), ("Esc/t", "cancel")]
+        pairs: list[tuple[str, str, Event | None]] = [
+            ("up/down,wheel,j/k", "move", None),
+            ("Enter", "jump", None),
+            ("Esc/t", "cancel", None),
+        ]
     else:
-        pairs = [("up/down,wheel", "scroll"), ("/", "search")]
+        pairs = [("up/down,wheel", "scroll", None), ("/", "search", Event("key", "/"))]
         if has_headings:
-            pairs.append(("t", "contents"))
+            pairs.append(("t", "contents", Event("key", "t")))
         if has_back:
-            pairs.append(("B", "prev file"))
+            pairs.append(("B", "prev file", Event("key", "B")))
         if width_toggle:
-            pairs.append(("w", width_toggle))
+            pairs.append(("w", width_toggle, Event("key", "w")))
         if highlight_active:
-            pairs.append(("Esc", "clear hl"))
-        pairs.append(("?", "help"))
-    pairs.append(("q", "quit"))
-    return "  ".join(f"{_keycap(key)} {label}" for key, label in pairs)
+            pairs.append(("Esc", "clear hl", Event("key", "esc")))
+        pairs.append(("?", "help", Event("key", "?")))
+    pairs.append(("q", "quit", Event("key", "q")))
+
+    parts: list[str] = []
+    spans: list[tuple[int, int, Event | None]] = []
+    col = 0
+    for i, (key, label, invoke) in enumerate(pairs):
+        if i > 0:
+            parts.append("  ")
+            col += 2
+        parts.append(f"{_keycap(key)} {label}")
+        chip_len = len(key) + 1 + len(label)
+        spans.append((col, col + chip_len, invoke))
+        col += chip_len
+    return "".join(parts), spans
+
+
+def _chip_at(spans: list[tuple[int, int, Event | None]], col: int) -> Event | None:
+    """The chip (if any) among `_keybind_help`'s own `spans` that 0-indexed column `col` falls
+    inside -- the echo-area counterpart (VIEWMD-0078) to the help screen's box-relative
+    `_popup_hit`, trivial here since the echo line always starts at column 0 of its row."""
+    for start, end, invoke in spans:
+        if start <= col < end:
+            return invoke
+    return None
 
 
 def _help_box(
@@ -1133,6 +1170,22 @@ def _run(
     previous_winch_handler = signal.getsignal(signal.SIGWINCH)
     signal.signal(signal.SIGWINCH, lambda signum, frame: None)
 
+    def _echo_hint() -> tuple[str, list[tuple[int, int, Event | None]]]:
+        """The echo area's default keybinding-hint text plus each chip's clickable column span
+        (VIEWMD-0078) -- shared by `draw()` (which only needs the text) and the main loop's echo-
+        row click handling below (which needs the spans), so `width_toggle`'s derivation isn't
+        duplicated between the two and can't drift out of sync."""
+        width_toggle = None
+        if not width_is_full:
+            width_toggle = f"{configured_width} cols" if full_width_active else "full width"
+        return _keybind_help(
+            popup_open,
+            width_toggle,
+            bool(last_search_query),
+            has_headings=bool(headings),
+            has_back=bool(nav_stack),
+        )
+
     def draw() -> None:
         end = min(top + body_h, len(lines))
         # A row containing the active search term is rebuilt from its plain twin with the match
@@ -1204,11 +1257,7 @@ def _run(
         elif echo_message:
             echo_text = echo_message
         else:
-            width_toggle = None
-            if not width_is_full:
-                width_toggle = f"{configured_width} cols" if full_width_active else "full width"
-            echo_text = _keybind_help(popup_open, width_toggle, bool(last_search_query),
-                                      has_headings=bool(headings), has_back=bool(nav_stack))
+            echo_text, _ = _echo_hint()
         # `_pad_ansi` always fills exactly `term_w` columns, so there's never real trailing space
         # left to erase -- no `_CLEAR_EOL` here, for the same pending-wrap-cursor reason `visible`
         # only appends one conditionally above.
@@ -1462,6 +1511,11 @@ def _run(
                 continue
             ev = _read_event(tty_fd)
             max_top = max(0, len(lines) - body_h)
+            # Captured before `echo_message` is cleared below (VIEWMD-0078 requirement 4): the
+            # echo-row click handling in the base `else` branch needs to know whether the row this
+            # click landed on was actually showing the default keybinding hint at the moment of
+            # the click, not whatever it reverts to for *this* event.
+            echo_showing_default_hint = not help_open and not search_active and echo_message is None
             # Any keypress clears a prior one-shot echo-area message (e.g. "Search failed") back
             # to the keybinding summary, exactly like Info's echo area reverting to blank -- if
             # this key produces a new message (search failing again below), it's set again after.
@@ -1549,7 +1603,24 @@ def _run(
                             top = min(max_top, headings[popup_selected].row)
                             popup_open = False
             else:
-                if _dispatch_base(ev):
+                # Echo-area click-invoke (VIEWMD-0078): the echo area is the terminal's last row
+                # (`body_h` rows of content, then the mode line, then this one) -- resolve which
+                # chip (if any) `_echo_hint`'s own spans say the click landed on, and feed its
+                # invoke `Event` through the same base dispatch a real keypress goes through,
+                # exactly like the help screen's own click-invoke does. Only applies while the
+                # echo area was actually showing the default hint at click time (requirement 4) --
+                # `popup_open` is always `False` here, so this can never fire against the popup-
+                # layout hint's own (deliberately non-invocable) chips.
+                if (
+                    ev.kind == "click"
+                    and echo_showing_default_hint
+                    and ev.row - 1 == body_h + 1
+                ):
+                    _, spans = _echo_hint()
+                    invoke = _chip_at(spans, ev.col - 1)
+                    if invoke is not None and _dispatch_base(invoke):
+                        break
+                elif _dispatch_base(ev):
                     break
             draw()
     finally:

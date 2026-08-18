@@ -506,13 +506,13 @@ def test_mode_line_drops_section_when_no_room_at_all():
 
 def test_keybind_help_fits_comfortably_and_stays_colored():
     for popup_open in (False, True):
-        line = ip._keybind_help(popup_open, "full width", True)
+        line, _spans = ip._keybind_help(popup_open, "full width", True)
         assert len(ip._strip_ansi(line)) <= 90
         assert ip._KEYCAP_BG in line
 
 
 def test_keybind_help_omits_width_toggle_and_highlight_hints_when_not_applicable():
-    line = ip._keybind_help(False, None, False)
+    line, _spans = ip._keybind_help(False, None, False)
     assert "full width" not in ip._strip_ansi(line)
     assert "clear hl" not in ip._strip_ansi(line)
 
@@ -520,24 +520,99 @@ def test_keybind_help_omits_width_toggle_and_highlight_hints_when_not_applicable
 def test_keybind_help_omits_contents_hint_without_headings():
     # VIEWMD-0072: a directory listing/multi-file view has no heading outline, so 't' is inert --
     # not advertised in the echo-area default hint.
-    line = ip._keybind_help(False, None, False, has_headings=False)
+    line, _spans = ip._keybind_help(False, None, False, has_headings=False)
     assert "contents" not in ip._strip_ansi(line)
 
 
 def test_keybind_help_shows_contents_hint_with_headings_by_default():
-    line = ip._keybind_help(False, None, False)
+    line, _spans = ip._keybind_help(False, None, False)
     assert "contents" in ip._strip_ansi(line)
 
 
 def test_keybind_help_omits_prev_file_hint_before_any_navigation():
-    line = ip._keybind_help(False, None, False)
+    line, _spans = ip._keybind_help(False, None, False)
     assert "prev file" not in ip._strip_ansi(line)
 
 
 def test_keybind_help_shows_prev_file_hint_once_has_back_is_true():
     # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to.
-    line = ip._keybind_help(False, None, False, has_back=True)
+    line, _spans = ip._keybind_help(False, None, False, has_back=True)
     assert "prev file" in ip._strip_ansi(line)
+
+
+# --- _keybind_help spans / _chip_at (VIEWMD-0078) -------------------------------------------
+
+
+def test_keybind_help_every_chip_has_a_resolvable_span():
+    # Requirement 2/acceptance: every chip `_keybind_help()` can render, in both layouts, has a
+    # span that covers at least one column and doesn't overlap its neighbors.
+    for popup_open in (False, True):
+        for width_toggle, highlight_active, has_headings, has_back in (
+            (None, False, True, False),
+            ("full width", True, True, True),
+            (None, False, False, False),
+        ):
+            _text, spans = ip._keybind_help(
+                popup_open,
+                width_toggle,
+                highlight_active,
+                has_headings=has_headings,
+                has_back=has_back,
+            )
+            assert spans
+            prev_end = 0
+            for start, end, _invoke in spans:
+                assert start >= prev_end
+                assert end > start
+                prev_end = end
+
+
+def test_keybind_help_base_layout_chip_invokes_match_their_key():
+    _text, spans = ip._keybind_help(
+        False, "full width", True, has_headings=True, has_back=True
+    )
+    invokes = {inv.value: inv for _s, _e, inv in spans if inv is not None}
+    assert invokes["/"] == ip.Event("key", "/")
+    assert invokes["t"] == ip.Event("key", "t")
+    assert invokes["B"] == ip.Event("key", "B")
+    assert invokes["w"] == ip.Event("key", "w")
+    assert invokes["esc"] == ip.Event("key", "esc")
+    assert invokes["?"] == ip.Event("key", "?")
+    assert invokes["q"] == ip.Event("key", "q")
+    # "scroll" (up/down,wheel) has no single unambiguous direction, same as its `_HELP_GROUPS`
+    # row -- its span is the first one and carries no invoke.
+    assert spans[0][2] is None
+
+
+def test_keybind_help_popup_layout_chips_have_no_ambiguous_invoke():
+    # Non-goal: the popup-open echo hint's move/jump/cancel chips share the same "no single
+    # unambiguous action" rule as their `_HELP_GROUPS` counterparts -- only the trailing `q`
+    # chip (always appended, popup or not) carries an invoke; the main loop never reaches the
+    # echo-row click handler while `popup_open` is true anyway (it has its own click handling
+    # for the ToC selection instead), so none of these chips are actually clickable in practice.
+    _text, spans = ip._keybind_help(True)
+    assert [invoke for _start, _end, invoke in spans[:-1]] == [None, None, None]
+    assert spans[-1][2] == ip.Event("key", "q")
+
+
+def test_chip_at_resolves_column_to_the_right_chip():
+    text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    plain = ip._strip_ansi(text)
+    t_col = plain.index("t contents")
+    assert ip._chip_at(spans, t_col) == ip.Event("key", "t")
+    q_col = plain.rindex("q quit")
+    assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+
+
+def test_chip_at_returns_none_between_chips_and_out_of_range():
+    text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    plain = ip._strip_ansi(text)
+    assert ip._chip_at(spans, -1) is None
+    assert ip._chip_at(spans, len(plain) + 5) is None
+    # The two literal spaces joining every pair of chips fall in no span.
+    gap_col = spans[0][1]
+    assert plain[gap_col] == " "
+    assert ip._chip_at(spans, gap_col) is None
 
 
 def test_pad_ansi_pads_with_plain_trailing_spaces():
