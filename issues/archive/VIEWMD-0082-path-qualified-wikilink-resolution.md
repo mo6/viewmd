@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0082
 title: Click-to-follow fails for a path-qualified wikilink target outside the vault root
-status: in-progress
+status: implemented
 area: [pager]
 effort: low
 created: 2026-08-18
 updated: 2026-08-18
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-18
-commits: []
+commits: [d48cca6]
 related: [VIEWMD-0076]
 supersedes: []
-changelog:
+changelog: "[1.40.1]"
 reason:
 ---
 

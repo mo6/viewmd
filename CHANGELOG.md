@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.40.1] — 2026-08-18
+
+- **Fix click-to-follow for a path-qualified wikilink target outside the vault root** (VIEWMD-0082, pager): a `[[Target|Display]]` wikilink whose target is a full vault-relative path (Obsidian's own disambiguation form, used when two notes share a name) now resolves correctly when the linking note isn't itself sitting at the vault root -- resolution now walks upward from the linking note's own directory through each ancestor, nearest first, instead of only checking directly relative to that directory. A bare (no `/`) wikilink target's resolution is unchanged.
+
 ## [1.40.0] — 2026-08-18
 
 - **Clickable subdirectory rows in the directory listing pager** (VIEWMD-0081, pager/render): a subdirectory row in the interactive directory listing view now carries a real hyperlink; clicking it navigates the pager into that subdirectory's own listing, replacing the current view. The existing `B` back key (VIEWMD-0076) returns to the parent listing, reusing the same back-stack `run()` already uses for file links -- no separate `..` row needed. `.md` file rows are unchanged, still not independently clickable.
