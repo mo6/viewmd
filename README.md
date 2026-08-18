@@ -87,13 +87,21 @@ space / b               page down / back up                /          search for
 g / G                   jump to top / bottom                N          repeat the last search
 n / p                   jump to next / previous heading*     w         toggle full terminal width
 left/right, h/l         scroll sideways (wide content)        m        toggle mouse capture
+click a link             follow it, if local†                 B        go back†
 q                       quit
 ```
 
 Toggling mouse capture off (`m`) lets a plain click-drag select text the normal way — enabling it
 (the default, needed for wheel scroll) is what stops the terminal's own native text selection from
 working; most terminals also support a modifier-drag bypass (Option on macOS, Shift elsewhere)
-that needs no toggling.
+that needs no toggling. Horizontal scroll also works via a horizontal wheel/trackpad swipe on
+terminals that report it natively; on ones that don't (macOS Terminal.app, notably), hold Shift
+while scrolling the ordinary wheel instead.
+
+Clicking a link (a `[[wikilink]]` or an ordinary Markdown link) that resolves to an existing local
+`.md` file navigates the pager to that file in place; `B` goes back to the file you navigated from.
+Clicking a row in the table-of-contents popup jumps to it, same as Enter; clicking a keybinding row
+in the `?` help screen performs that key's action directly.
 
 \* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
 they're only available for a single document; viewing more than one file at once or a bare
@@ -101,6 +109,10 @@ directory listing pages the same way — mouse scroll, search, resize, the width
 it — just without those two, since there's no per-file/per-entry heading structure to build a
 table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
 it's one long continuous scroll through every file in the order given.
+
+† Click-to-follow and `B` are likewise single-document-only — a directory listing or multi-file
+view has no single current file/directory to resolve a relative link against, so a click on a link
+and `B` are both inert there.
 
 ## Configuration file
 
