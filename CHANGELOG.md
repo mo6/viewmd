@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.38.0] — 2026-08-18
+
+- **The echo area's keybinding hint chips are now clickable** (VIEWMD-0078, pager): each keycap chip in the pager's bottom status row (e.g. `t contents`, `? help`, `q quit`) can now be clicked directly to invoke that action, the same as pressing the real key -- no need to open the full `?` help screen first, which VIEWMD-0076 already made click-to-invoke. A click while the echo area is showing something else (the search prompt, a one-shot message) is a no-op.
+
 ## [1.37.0] — 2026-08-18
 
 - **Static table-of-contents entries are now clickable anchor links** (VIEWMD-0077, render/pager): each entry in the static table-of-contents block printed at the top of a document now carries a real hyperlink to its own heading, with no change to its visible appearance. Clicking one in the interactive pager scrolls straight to that heading, the same as picking it from the `t` popup already does. Correctly disambiguates two headings that share the exact same text.
