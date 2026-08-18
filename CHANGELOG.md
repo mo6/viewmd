@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.37.0] — 2026-08-18
+
+- **Static table-of-contents entries are now clickable anchor links** (VIEWMD-0077, render/pager): each entry in the static table-of-contents block printed at the top of a document now carries a real hyperlink to its own heading, with no change to its visible appearance. Clicking one in the interactive pager scrolls straight to that heading, the same as picking it from the `t` popup already does. Correctly disambiguates two headings that share the exact same text.
+
 ## [1.36.0] — 2026-08-18
 
 - **Mouse click-to-navigate in the interactive pager** (VIEWMD-0076, pager): clicking a rendered link (a `[[wikilink]]` or an ordinary Markdown link) whose target resolves to an existing local `.md` file now navigates the pager to that file in place; a new `B` key (with an echo-area hint once there's somewhere to go back to) returns to the file navigated from, at its prior scroll position. Clicking a row in the table-of-contents popup (`t`) now selects and jumps to it, same as Enter; clicking a keybinding row in the `?` help screen now performs that key's action directly. All three build on the same click-decoding and hit-testing mechanism, extending [1.31.0]'s interactive pager past its original scroll-only mouse support -- this was v1's deliberately deferred "v2".

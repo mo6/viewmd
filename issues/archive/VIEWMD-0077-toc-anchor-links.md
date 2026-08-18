@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0077
 title: Make the static table-of-contents block's entries clickable same-document anchor links
-status: in-progress
+status: implemented
 area: [render, pager]
 effort: medium
 created: 2026-08-17
 updated: 2026-08-18
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-18
-commits: []
+commits: [691da8b]
 related: [VIEWMD-0062, VIEWMD-0076]
 supersedes: []
-changelog:
+changelog: "[1.37.0]"
 reason:
 ---
 
