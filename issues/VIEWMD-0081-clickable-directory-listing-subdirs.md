@@ -95,3 +95,6 @@ aware branch (or a sibling resolver) rather than reuse as-is.
 
 ## Peer review
 
+- **code-review agent** (agent), 2026-08-18: one finding, a stale comment on the `'B'` back-key
+  branch (`viewmd/interactive_pager.py`) still claiming `run_directory_listing()` never pushes
+  onto `nav_stack` -- no longer true once a subdirectory-row click pushes there. Fixed inline.
