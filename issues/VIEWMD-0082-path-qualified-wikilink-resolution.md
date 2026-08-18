@@ -98,3 +98,9 @@ exists on disk at the expected path from that root.
 
 ## Peer review
 
+- **code-review agent** (agent), 2026-08-18: one finding, the new ancestor-walk branch built
+  `os.path.join(ancestor, f"{target}.md")` from a document-controlled `target` without rejecting
+  an absolute or `..`-escaping target, letting a crafted `[[/etc/passwd|x]]`-style wikilink
+  resolve (and then open) any `.md`-suffixed path reachable on disk -- the same class of escape
+  the non-wikilink branch already guards against. Fixed inline (reject `os.path.isabs(target)` or
+  any `..` path segment before the ancestor walk), with regression tests added.

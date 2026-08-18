@@ -368,6 +368,69 @@ def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
     assert ip._resolve_link_target("wikilink:NoSuchDoc", str(tmp_path)) is None
 
 
+# --- path-qualified wikilink target resolution (VIEWMD-0082) -----------------------------------
+
+
+def test_resolve_link_target_path_qualified_wikilink_from_vault_root(tmp_path):
+    # Already-working case (a path-qualified target resolves directly when current_dir *is* the
+    # vault root) -- MUST stay unaffected by the ancestor-walk added for the nested case below.
+    sub = tmp_path / "Projects" / "Garden" / "Notes"
+    sub.mkdir(parents=True)
+    (sub / "_Index.md").write_text("# Notes\n")
+    target = "wikilink:Projects/Garden/Notes/_Index"
+    assert ip._resolve_link_target(target, str(tmp_path)) == str(sub / "_Index.md")
+
+
+def test_resolve_link_target_path_qualified_wikilink_from_nested_note(tmp_path):
+    # The reported bug: the linking note lives several levels below the vault root (here, inside
+    # the very folder the target names), so the target can't be found relative to current_dir
+    # directly -- it must be found by walking upward until an ancestor matches.
+    sub = tmp_path / "Projects" / "Garden" / "Notes"
+    sub.mkdir(parents=True)
+    (sub / "_Index.md").write_text("# Notes\n")
+    target = "wikilink:Projects/Garden/Notes/_Index"
+    assert ip._resolve_link_target(target, str(sub)) == str(sub / "_Index.md")
+    deeper = tmp_path / "Projects" / "Garden" / "Notes" / "Seedlings"
+    deeper.mkdir()
+    assert ip._resolve_link_target(target, str(deeper)) == str(sub / "_Index.md")
+
+
+def test_resolve_link_target_path_qualified_wikilink_no_match_anywhere(tmp_path):
+    sub = tmp_path / "a" / "b"
+    sub.mkdir(parents=True)
+    assert ip._resolve_link_target("wikilink:no/such/note", str(sub)) is None
+
+
+def test_resolve_link_target_rejects_absolute_path_qualified_wikilink(tmp_path):
+    # Regression (found in review): os.path.join(ancestor, target) silently discards `ancestor`
+    # for an absolute `target` -- a crafted `[[/etc/passwd|x]]` MUST NOT resolve to any absolute
+    # path reachable on disk, the same guard the non-wikilink branch below already has.
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    target_without_extension = str(outside)[: -len(".md")]
+    href = f"wikilink:{target_without_extension}"
+    try:
+        assert ip._resolve_link_target(href, str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+def test_resolve_link_target_rejects_dotdot_escaping_path_qualified_wikilink(tmp_path):
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    try:
+        assert ip._resolve_link_target("wikilink:../outside", str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+def test_resolve_link_target_bare_wikilink_unaffected_by_ancestor_walk(tmp_path):
+    # Requirement 2: a bare (no "/") target's own direct-then-os.walk resolution is unchanged --
+    # this exercises the exact scenario the ancestor-walk branch must not intercept.
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("wikilink:B", str(tmp_path)) == str(tmp_path / "B.md")
+
+
 def test_resolve_link_target_relative_markdown_link(tmp_path):
     (tmp_path / "B.md").write_text("# B\n")
     assert ip._resolve_link_target("B.md", str(tmp_path)) == str(tmp_path / "B.md")

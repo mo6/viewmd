@@ -511,10 +511,38 @@ def _resolve_link_target(href: str, current_dir: str) -> str | None:
 
     A `wikilink:Target` href (`viewmd/wikilinks.py`'s static rewrite of `[[Target]]`) resolves
     the way Obsidian does for a flat vault: `Target.md` directly in `current_dir` first, falling
-    back to a recursive search under `current_dir` if not found there. An ordinary link's href is
-    resolved as a filesystem path relative to `current_dir` directly, no search."""
+    back to a recursive search under `current_dir` if not found there. A path-qualified target
+    (containing `/` -- Obsidian's own disambiguation form, e.g.
+    `[[Projects/Garden/Notes/_Index|Notes]]`) is instead resolved by walking upward from
+    `current_dir` through each ancestor directory, nearest first, trying `f"{target}.md"`
+    relative to each --
+    the flat-vault direct/`os.walk` strategy above can't help here even when `current_dir` *is*
+    the vault root (`os.walk` only ever collects bare filenames, never matching a target
+    containing `/`), and viewmd has no separate notion of "the vault root" to resolve a
+    vault-relative path against directly (VIEWMD-0082). An ordinary link's href is resolved as a
+    filesystem path relative to `current_dir` directly, no search."""
     if href.startswith("wikilink:"):
         target = href[len("wikilink:") :]
+        if "/" in target:
+            # A `target` containing `/` comes straight from document content (an author-supplied
+            # wikilink), the same reason the non-wikilink branch below rejects an absolute or
+            # `..`-escaping href -- MUST reject one here too, or `os.path.join(ancestor,
+            # f"{target}.md")` would silently discard `ancestor` for an absolute `target`
+            # (`os.path.join("/a", "/etc/passwd.md") == "/etc/passwd.md"`) or climb out of the
+            # ancestor-walk's own tree via `..`, letting a crafted `[[/etc/passwd|x]]` resolve
+            # (and then open, VIEWMD-0076) any `.md`-suffixed path reachable on disk (found in
+            # review).
+            if os.path.isabs(target) or any(part == ".." for part in target.split("/")):
+                return None
+            ancestor = current_dir
+            while True:
+                candidate = os.path.join(ancestor, f"{target}.md")
+                if os.path.isfile(candidate):
+                    return candidate
+                parent = os.path.dirname(ancestor)
+                if parent == ancestor:
+                    return None
+                ancestor = parent
         direct = os.path.join(current_dir, f"{target}.md")
         if os.path.isfile(direct):
             return direct
