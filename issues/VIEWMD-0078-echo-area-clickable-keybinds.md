@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0078
 title: Make the echo-area's short keybinding hint chips clickable
-status: proposed
+status: in-progress
 area: [pager]
 effort: medium
 created: 2026-08-17
-updated: 2026-08-17
-accepted_by:
-accepted_at:
+updated: 2026-08-18
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-18
 commits: []
 related: [VIEWMD-0076]
 supersedes: []
