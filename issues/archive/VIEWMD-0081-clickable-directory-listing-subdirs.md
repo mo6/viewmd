@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0081
 title: Make subdirectories clickable in the directory listing pager
-status: in-progress
+status: implemented
 area: [pager, render]
 effort: medium
 created: 2026-08-18
 updated: 2026-08-18
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-18
-commits: []
+commits: [8f85df3]
 related: [VIEWMD-0076]
 supersedes: []
-changelog:
+changelog: "[1.40.0]"
 reason:
 ---
 

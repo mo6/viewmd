@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.40.0] — 2026-08-18
+
+- **Clickable subdirectory rows in the directory listing pager** (VIEWMD-0081, pager/render): a subdirectory row in the interactive directory listing view now carries a real hyperlink; clicking it navigates the pager into that subdirectory's own listing, replacing the current view. The existing `B` back key (VIEWMD-0076) returns to the parent listing, reusing the same back-stack `run()` already uses for file links -- no separate `..` row needed. `.md` file rows are unchanged, still not independently clickable.
+
 ## [1.39.0] — 2026-08-18
 
 - **Scrollbar column in the interactive pager** (VIEWMD-0079, pager): the pager now reserves a one-character-wide scrollbar column at the left edge of the body, followed by a blank gap column, showing at a glance how much of the document is visible and where the viewport currently sits -- a solid block glyph in the accent color marks the visible ("thumb") range, a lighter shade-glyph in dim grey marks the rest of the document ("track"), so the two stay distinguishable under `--no-color`/a monochrome terminal too, not through color alone. Sized and positioned proportionally, the same way the mode line's own line-range/percentage text is derived, and recomputed on every scroll (arrow keys, mouse wheel, search jump, ToC jump, resize). Clicking anywhere in the scrollbar column jumps the viewport to roughly that proportional position, like dragging a GUI scrollbar's track. Omitted entirely (falling back to today's full-width layout) whenever the whole document already fits on one screen.
