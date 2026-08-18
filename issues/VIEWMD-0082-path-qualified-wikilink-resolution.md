@@ -20,7 +20,7 @@ reason:
 ## Summary
 
 A `[[Target|Display]]` wikilink whose target is a full vault-relative path (Obsidian's own
-disambiguation form, e.g. `[[2 Areas/Mannetje Vrouwtje/Columns/_Index|Columns]]`) fails to
+disambiguation form, e.g. `[[Projects/Garden/Notes/_Index|Notes]]`) fails to
 click-navigate whenever the note containing the link isn't itself sitting at the vault root --
 `_resolve_link_target`'s wikilink branch resolves the path relative to the *linking note's own
 directory*, not the vault root, so the join produces a nonexistent path and the click is a silent
@@ -32,9 +32,9 @@ no-op.
 resolving "the way Obsidian does for a flat vault": try `f"{target}.md"` directly in `current_dir`
 (the linking document's own directory), then fall back to a recursive `os.walk(current_dir)`
 search for a file whose *basename* matches `f"{target}.md"`. That works for a bare note name
-(`[[Columns]]`), but Obsidian doesn't always emit a bare name -- when two notes share a name, or a
+(`[[Notes]]`), but Obsidian doesn't always emit a bare name -- when two notes share a name, or a
 user has "always use full path" configured, it links via the note's full vault-relative path
-instead (`[[2 Areas/Mannetje Vrouwtje/Columns/_Index|Columns]]`). For a target containing `/`:
+instead (`[[Projects/Garden/Notes/_Index|Notes]]`). For a target containing `/`:
 
 - The "direct" `os.path.join(current_dir, f"{target}.md")` check only succeeds when
   `current_dir` happens to *be* the vault root -- for a linking note anywhere else in the tree
@@ -59,7 +59,7 @@ from a broken/missing link.
    ancestor, trying `os.path.join(ancestor, f"{target}.md")` at each level, succeeds once it
    reaches the vault root.
 2. MUST NOT change resolution of a bare (no `/`) wikilink target -- the existing direct-then-
-   `os.walk` behavior for `[[Columns]]`-style targets is unaffected.
+   `os.walk` behavior for `[[Notes]]`-style targets is unaffected.
 3. MUST NOT change resolution of an ordinary (non-`wikilink:`) relative Markdown link href --
    `_resolve_link_target`'s non-wikilink branch is out of scope.
 4. MUST bound the upward search so it cannot walk past the filesystem root or loop -- stop once
@@ -82,7 +82,7 @@ from a broken/missing link.
 ## Design notes / links
 
 `_resolve_link_target()`, `viewmd/interactive_pager.py:511-524`. Reproduced directly: `_load()` +
-`_link_at()` confirm the href (`wikilink:2 Areas/Mannetje Vrouwtje/Columns/_Index`, correctly
+`_link_at()` confirm the href (`wikilink:Projects/Garden/Notes/_Index`, correctly
 percent-decoded) is present and clickable-looking; `_resolve_link_target(href, nested_doc_dir)`
 returns `None` whenever `nested_doc_dir` isn't the exact vault root, even though the target file
 exists on disk at the expected path from that root.
