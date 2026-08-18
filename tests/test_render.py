@@ -8,7 +8,7 @@ from viewmd.render import (
     render_markdown,
 )
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
 
 
 def strip_ansi(text: str) -> str:
@@ -616,6 +616,44 @@ def test_toc_entries_use_the_same_heading_styles_as_the_body():
     assert body_h3 and "\x1b[1;35mNested\x1b[0m" in body_h3[0]
     # Title is not repeated below the ToC.
     assert not any("Hello" in strip_ansi(line) for line in lines[1:])
+
+
+def test_toc_entries_are_osc8_links_to_their_own_heading():
+    # VIEWMD-0077: each ToC entry carries a real OSC8 hyperlink around just its heading text
+    # (not the bullet), targeting the viewmd-toc: scheme by occurrence-rank + heading text.
+    md = "# Title\n\n## Section\n\n### Nested\n"
+    colored = render_markdown(md, width=80, color=True)
+    assert "\x1b]8;" in colored
+    assert "viewmd-toc:0:Section" in colored
+    assert "viewmd-toc:0:Nested" in colored
+    # The bullet marker itself is not wrapped in the link -- only the heading text.
+    bullet_line = next(line for line in colored.splitlines() if "Section" in line)
+    link_start = bullet_line.index("\x1b]8;")
+    assert "•" not in bullet_line[link_start:]
+
+
+def test_toc_duplicate_heading_text_gets_distinct_ranked_hrefs():
+    # Regression (found in review): two different headings sharing the exact same text must not
+    # both link to the same "first match wins" target -- each gets its own occurrence rank.
+    md = "# Title\n\n## Overview\n\nfirst\n\n## Details\n\nmid\n\n## Overview\n\nsecond\n"
+    colored = render_markdown(md, width=80, color=True)
+    assert "viewmd-toc:0:Overview" in colored
+    assert "viewmd-toc:1:Overview" in colored
+
+
+def test_toc_entries_visible_text_unchanged_by_the_link_wrapper():
+    # VIEWMD-0077 requirement 2: the OSC8 wrapper must not change the entry's own visible
+    # text/styling -- diffing everything except the OSC8 bytes against the pre-link rendering.
+    md = "# Title\n\n## Section\n\n### Nested\n"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    assert strip_ansi(colored) == plain
+
+
+def test_toc_anchor_scheme_not_present_when_toc_is_off():
+    md = "# Title\n\n## Section\n"
+    colored = render_markdown(md, width=80, color=True, toc=False)
+    assert "viewmd-toc:" not in colored
 
 
 def test_toc_uses_plain_text_of_inline_markup_in_headings():
