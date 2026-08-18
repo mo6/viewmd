@@ -86,6 +86,17 @@ _KEYCAP_BG = "\x1b[48;5;178;38;5;16;1m"
 # Search-match highlight: classic find-in-page yellow, bold black text.
 _SEARCH_HIGHLIGHT_BG = "\x1b[48;5;226;38;5;16;1m"
 _RESET = "\x1b[0m"
+# Scrollbar column (VIEWMD-0079): thumb (visible range) vs. track (rest of document) get both a
+# distinct glyph *and* a distinct color from each other, so the two stay distinguishable under
+# `--no-color`/a monochrome terminal too, not through color alone -- the same teal accent
+# `_MODE_LINE_BG` already uses for the thumb, paired with a plain dim grey for the track.
+_SCROLLBAR_THUMB_STYLE = "\x1b[38;5;30m"
+_SCROLLBAR_TRACK_STYLE = "\x1b[38;5;238m"
+_SCROLLBAR_THUMB_GLYPH = "█"  # full block
+_SCROLLBAR_TRACK_GLYPH = "░"  # light shade
+_SCROLLBAR_W = 1
+_SCROLLBAR_GAP_W = 1
+_SCROLLBAR_RESERVED_W = _SCROLLBAR_W + _SCROLLBAR_GAP_W
 
 
 def _keycap(key: str) -> str:
@@ -212,6 +223,47 @@ def _max_content_width(plain_lines: list[str]) -> int:
     configured render width. Recomputed after any reload (`_load`) that could change it: the
     initial load, a width toggle, and a resize while full-width mode is active."""
     return max((_display_width(row) for row in plain_lines), default=0)
+
+
+def _scrollbar_reserved(total_lines: int, body_h: int) -> int:
+    """Columns to reserve at the left edge of every body row for the scrollbar-plus-gap
+    (VIEWMD-0079): `_SCROLLBAR_RESERVED_W` (scrollbar cell + one blank gap cell) whenever the
+    document doesn't fit within `body_h` rows and there's actually something to scroll, `0`
+    (falling back to today's full-width layout) when it does."""
+    return _SCROLLBAR_RESERVED_W if total_lines > body_h else 0
+
+
+def _scrollbar_thumb_range(total_lines: int, body_h: int, top: int) -> tuple[int, int]:
+    """The `[start, end)` row range, within the `body_h`-row scrollbar column, that the thumb
+    (visible-range indicator) occupies -- proportionally sized to how much of `total_lines` is
+    visible at once (`body_h / total_lines`) and positioned proportionally to how far scrolled
+    `top` is, mirroring `_mode_line`'s own percentage/line-range math. Only meaningful when
+    `_scrollbar_reserved(total_lines, body_h)` is non-zero -- callers must check that first."""
+    thumb_h = min(body_h, max(1, round(body_h * body_h / total_lines)))
+    max_top = max(1, total_lines - body_h)
+    thumb_start = round((body_h - thumb_h) * top / max_top)
+    thumb_start = max(0, min(thumb_start, body_h - thumb_h))
+    return thumb_start, thumb_start + thumb_h
+
+
+def _scrollbar_prefix(total_lines: int, body_h: int, top: int, *, colored: bool) -> list[str]:
+    """One `_SCROLLBAR_RESERVED_W`-wide prefix string per row of the `body_h`-row body, ready to
+    prepend to each already-cropped content row -- the thumb glyph/color for rows the thumb
+    covers, the track glyph/color everywhere else, each followed by one blank gap column
+    (VIEWMD-0079 requirement 1). `colored` is `False` for the plain (`color=False`) twin rows
+    `_overlay` needs (`draw()`'s `plain_visible`), matching how every other rendered row already
+    carries a plain-text counterpart."""
+    thumb_start, thumb_end = _scrollbar_thumb_range(total_lines, body_h, top)
+    out = []
+    for i in range(body_h):
+        thumb = thumb_start <= i < thumb_end
+        glyph = _SCROLLBAR_THUMB_GLYPH if thumb else _SCROLLBAR_TRACK_GLYPH
+        if not colored:
+            out.append(glyph + " ")
+            continue
+        style = _SCROLLBAR_THUMB_STYLE if thumb else _SCROLLBAR_TRACK_STYLE
+        out.append(f"{style}{glyph}{_RESET} ")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1186,7 +1238,16 @@ def _run(
             has_back=bool(nav_stack),
         )
 
+    def _content_w() -> int:
+        """Usable content width for cropping/horizontal-scroll math (VIEWMD-0079) -- `term_w`
+        minus whatever the scrollbar column (plus its gap) currently reserves, re-derived from
+        `lines`/`body_h` every call so it's always current, the same reasoning `max_top` gets
+        recomputed fresh at the top of `_dispatch_base` rather than cached."""
+        return term_w - _scrollbar_reserved(len(lines), body_h)
+
     def draw() -> None:
+        reserved = _scrollbar_reserved(len(lines), body_h)
+        cw = term_w - reserved
         end = min(top + body_h, len(lines))
         # A row containing the active search term is rebuilt from its plain twin with the match
         # highlighted (see `_highlight_matches`); every other row keeps its real color untouched.
@@ -1211,14 +1272,33 @@ def _run(
             # on `color`, VIEWMD-0043) -- using the mismatched plain-twin length here would make
             # `_crop_row` decide whether more content exists off-screen using a number that
             # doesn't describe the row actually being cropped.
-            visible.append(_crop_row(row, _display_width(_strip_ansi(row)), left_col, term_w))
+            #
+            # `.rstrip(" ")` before measuring: `render_markdown` (Rich) right-pads ordinary rows
+            # with plain spaces out to the full requested render width, which isn't real content
+            # -- counting it as "real" would make `_crop_row` raise a `›` truncation marker on
+            # nearly every row whenever the render width and the pager's own content viewport
+            # (`cw`, narrower than `term_w` once the scrollbar column is reserved, VIEWMD-0079)
+            # are close enough that only the padding spills past `cw` (found in review).
+            visible.append(
+                _crop_row(row, _display_width(_strip_ansi(row).rstrip(" ")), left_col, cw)
+            )
         visible += [""] * (body_h - len(visible))
+        # Prepend the scrollbar-plus-gap prefix (VIEWMD-0079) to every body row once content is
+        # already cropped to `cw` -- `visible` is always exactly `body_h` rows by this point
+        # (either from the loop above, or the padding just added), one prefix cell per row index,
+        # so no `top`-relative offset is needed: row `i` here already *is* on-screen row `i`.
+        if reserved:
+            prefix = _scrollbar_prefix(len(lines), body_h, top, colored=True)
+            visible = [prefix[i] + visible[i] for i in range(body_h)]
         if popup_open or help_open:
             plain_visible = [
-                _crop_row(row, _display_width(row), left_col, term_w)
+                _crop_row(row, _display_width(row.rstrip(" ")), left_col, cw)
                 for row in plain_lines[top:end]
             ]
             plain_visible += [""] * (body_h - len(plain_visible))
+            if reserved:
+                plain_prefix = _scrollbar_prefix(len(lines), body_h, top, colored=False)
+                plain_visible = [plain_prefix[i] + plain_visible[i] for i in range(body_h)]
             overlay_box = (
                 _popup_box(headings, popup_selected, term_w, body_h)[0]
                 if popup_open
@@ -1340,7 +1420,7 @@ def _run(
         elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
             left_col = max(0, left_col - h_step)
         elif ev.kind == "wheel_right" or (ev.kind == "key" and ev.value in ("right", "l")):
-            max_left_col = max(0, max_content_width - term_w)
+            max_left_col = max(0, max_content_width - _content_w())
             left_col = min(max_left_col, left_col + h_step)
         elif ev.kind == "key" and ev.value == "0":
             left_col = 0
@@ -1368,7 +1448,7 @@ def _run(
             else:
                 top = 0
             max_content_width = _max_content_width(plain_lines)
-            left_col = min(left_col, max(0, max_content_width - term_w))
+            left_col = min(left_col, max(0, max_content_width - _content_w()))
         elif ev.kind == "key" and ev.value == "B":
             # Go back to the file navigated *from* (VIEWMD-0076 requirement 6) -- a no-op with
             # nothing on the stack, including for `run_directory_listing()`/`run_multi_file()`,
@@ -1387,7 +1467,7 @@ def _run(
                 max_content_width = _max_content_width(plain_lines)
                 new_max_top = max(0, len(lines) - body_h)
                 top = min(saved_doc_top, new_max_top)
-                left_col = min(saved_doc_left, max(0, max_content_width - term_w))
+                left_col = min(saved_doc_left, max(0, max_content_width - _content_w()))
                 popup_selected = 0
                 # Same reasoning as the click-navigate branch below: a search highlight/query
                 # from the file being left behind doesn't describe the one being returned to.
@@ -1396,6 +1476,20 @@ def _run(
                 last_search_query = ""
             else:
                 echo_message = "No previous file to go back to"
+        elif (
+            ev.kind == "click"
+            and _scrollbar_reserved(len(lines), body_h)
+            and ev.col - 1 == 0
+            and 0 <= ev.row - 1 < body_h
+        ):
+            # Click-to-scroll on the scrollbar column itself (VIEWMD-0079 requirement 7): jump
+            # the viewport to roughly the proportional position the click landed at, the same way
+            # dragging a GUI scrollbar's track would -- `body_row / (body_h - 1)` is 0 at the
+            # column's top row and 1 at its bottom row, so scaling `max_top` by that fraction
+            # lands `top` at the matching proportion of the document.
+            body_row = ev.row - 1
+            frac = body_row / max(1, body_h - 1)
+            top = min(max_top, max(0, round(frac * max_top)))
         elif ev.kind == "click":
             # Click hit-testing shared by two features: a same-document anchor jump into the
             # static table-of-contents block's own entries (VIEWMD-0077, works in any document
@@ -1405,11 +1499,14 @@ def _run(
             # the same way: undo horizontal-scroll cropping to get back to the row's real display
             # column, then find whatever link (if any) covers it.
             body_row = ev.row - 1
-            if 0 <= body_row < body_h:
+            reserved = _scrollbar_reserved(len(lines), body_h)
+            if 0 <= body_row < body_h and ev.col - 1 >= reserved:
                 doc_row = top + body_row
                 if 0 <= doc_row < len(lines):
                     plain_len = _display_width(_strip_ansi(lines[doc_row]))
-                    content_col = _content_col(plain_len, left_col, term_w, ev.col - 1)
+                    content_col = _content_col(
+                        plain_len, left_col, _content_w(), ev.col - 1 - reserved
+                    )
                     if content_col is not None:
                         href = _link_at(lines[doc_row], content_col)
                         if href is not None and href.startswith(_TOC_ANCHOR_SCHEME):
@@ -1503,7 +1600,7 @@ def _run(
                         max_content_width = _max_content_width(plain_lines)
                     body_h = term_h - 2
                     top = min(top, max(0, len(lines) - body_h))
-                    left_col = min(left_col, max(0, max_content_width - term_w))
+                    left_col = min(left_col, max(0, max_content_width - _content_w()))
                     popup_selected = min(popup_selected, max(0, len(headings) - 1))
                 draw()
                 continue

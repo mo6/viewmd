@@ -83,3 +83,6 @@ The thumb (`█`, e.g. rendered in the accent color already used for headings/mo
 
 ## Peer review
 
+- **code-review agent** (agent), 2026-08-18: found one severe, highly-reproducible bug -- shrinking the content crop width by the scrollbar's reserved 2 columns without accounting for `render_markdown`'s (Rich's) own right-padding of every line out to the full render width made `_crop_row` mistake that padding for real off-screen content, stamping a false `›` truncation marker on nearly every row whenever the render width and the viewport were close enough (the common case: terminal ≤100 columns, or full-width mode). Fixed inline: `draw()`'s two `_crop_row` call sites now measure a row's "real" width after `.rstrip(" ")`, so trailing Rich padding no longer counts as content; re-verified against the review's own 80-column/`CHANGELOG.md` repro (no false markers) and `./run-tests.sh` stayed green. Also flagged `issues/VIEWMD-0080-...md` as apparently deleted -- false alarm, the file is untracked in the primary checkout (created by a sibling worktree session), invisible to this worktree by design, not touched by this change.
+- **George Moses** (maintainer), 2026-08-18: accepted, approved to land.
+

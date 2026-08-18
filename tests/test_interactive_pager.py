@@ -233,6 +233,62 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     assert "›" in wrong
 
 
+# --- scrollbar column (VIEWMD-0079) -------------------------------------------------------------
+
+
+def test_scrollbar_reserved_zero_when_document_fits():
+    assert ip._scrollbar_reserved(total_lines=20, body_h=20) == 0
+    assert ip._scrollbar_reserved(total_lines=5, body_h=20) == 0
+
+
+def test_scrollbar_reserved_when_document_overflows():
+    assert ip._scrollbar_reserved(total_lines=100, body_h=20) == ip._SCROLLBAR_RESERVED_W
+    assert ip._SCROLLBAR_RESERVED_W == 2
+
+
+def test_scrollbar_thumb_range_at_top():
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=20, top=0)
+    assert start == 0
+    assert end > start
+
+
+def test_scrollbar_thumb_range_at_bottom():
+    max_top = 100 - 20
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=20, top=max_top)
+    assert end == 20
+
+
+def test_scrollbar_thumb_range_proportional_midway():
+    # Viewing half the document (50/100 rows visible) should occupy roughly half the column.
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=50, top=25)
+    assert end - start >= 20  # not the whole column, but a substantial chunk
+    assert 0 < start < end < 50
+
+
+def test_scrollbar_thumb_range_never_exceeds_body_h():
+    start, end = ip._scrollbar_thumb_range(total_lines=21, body_h=20, top=0)
+    assert 0 <= start < end <= 20
+
+
+def test_scrollbar_prefix_colored_marks_thumb_and_track_distinctly():
+    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=True)
+    assert len(prefix) == 10
+    thumb_start, thumb_end = ip._scrollbar_thumb_range(100, 10, 0)
+    for i, cell in enumerate(prefix):
+        is_thumb = thumb_start <= i < thumb_end
+        glyph = ip._SCROLLBAR_THUMB_GLYPH if is_thumb else ip._SCROLLBAR_TRACK_GLYPH
+        assert glyph in cell
+        assert "\x1b[" in cell  # colored
+
+
+def test_scrollbar_prefix_plain_has_no_color_but_keeps_glyphs():
+    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=False)
+    assert len(prefix) == 10
+    for cell in prefix:
+        assert "\x1b[" not in cell
+        assert ip._SCROLLBAR_THUMB_GLYPH in cell or ip._SCROLLBAR_TRACK_GLYPH in cell
+
+
 # --- _link_at / _resolve_link_target / _content_col (VIEWMD-0076) ------------------------------
 
 
