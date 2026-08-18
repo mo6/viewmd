@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0076
 title: Mouse click-to-navigate -- follow a local-file link, click-select ToC/help entries
-status: in-progress
+status: implemented
 area: [pager]
 effort: high
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-18
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-17
-commits: []
+commits: [aa8417f]
 related: [VIEWMD-0006, VIEWMD-0007, VIEWMD-0062, VIEWMD-0075]
 supersedes: []
-changelog:
+changelog: "[1.36.0]"
 reason:
 ---
 

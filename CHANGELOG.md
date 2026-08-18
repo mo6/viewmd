@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.36.0] — 2026-08-18
+
+- **Mouse click-to-navigate in the interactive pager** (VIEWMD-0076, pager): clicking a rendered link (a `[[wikilink]]` or an ordinary Markdown link) whose target resolves to an existing local `.md` file now navigates the pager to that file in place; a new `B` key (with an echo-area hint once there's somewhere to go back to) returns to the file navigated from, at its prior scroll position. Clicking a row in the table-of-contents popup (`t`) now selects and jumps to it, same as Enter; clicking a keybinding row in the `?` help screen now performs that key's action directly. All three build on the same click-decoding and hit-testing mechanism, extending [1.31.0]'s interactive pager past its original scroll-only mouse support -- this was v1's deliberately deferred "v2".
+
 ## [1.35.0] — 2026-08-17
 
 - **Horizontal mouse-wheel/trackpad scroll in the interactive pager** (VIEWMD-0075, pager): a horizontal scroll gesture now pans content wider than the terminal, the same distance per step as the existing `h`/`l` keys. Terminals that report native horizontal-wheel SGR mouse codes (e.g. iTerm2, Kitty) work directly; on terminals that don't (confirmed on macOS Terminal.app, which never sends the native codes even for a genuine trackpad swipe), holding Shift while scrolling the ordinary vertical wheel pans horizontally instead, the same fallback convention other GUI apps use for the same gap.
