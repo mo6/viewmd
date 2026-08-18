@@ -50,3 +50,5 @@ Directly follows [VIEWMD-0076](VIEWMD-0076-mouse-click-navigation.md), reusing i
 
 ## Peer review
 
+- (agent, independent) Verified `_keybind_help()`'s new `(text, spans)` column-span arithmetic against 48 parameter combinations (all spans matched their chip's exact text, no drift/overlap); mechanically reconstructed the old `"  ".join(...)` output across the same 48 combinations and diffed byte-for-byte against the new output (requirement 3, all match); confirmed `echo_showing_default_hint` is captured before `echo_message` is cleared later in the same loop iteration (requirement 4); confirmed the echo row's `ev.row - 1 == body_h + 1` coordinate math against the existing document-click convention; checked narrow-terminal truncation, zero-chips (impossible, `q` always appended), and click-in-gap edge cases; confirmed test coverage is meaningful, not tautological, and matches VIEWMD-0076's own precedent for what's unit- vs. loop-tested. `./run-tests.sh` green (1062 passed, ruff/pip-audit/issues clean). No bugs found.
+
