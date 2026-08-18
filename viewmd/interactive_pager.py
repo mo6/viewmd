@@ -27,6 +27,7 @@ import signal
 import sys
 import termios
 import tty
+import urllib.parse
 from dataclasses import dataclass
 
 from wcwidth import wcswidth
@@ -228,11 +229,15 @@ def _nearest_heading_index(headings: list[HeadingLoc], top: int) -> int:
     return idx
 
 
-def _popup_box(headings: list[HeadingLoc], selected: int, term_w: int, avail_h: int) -> list[str]:
-    """When there are more headings than fit, the window scrolls to keep `selected` roughly
-    centered (clamped at the top/bottom of the list rather than overscrolling past either end),
-    and the row(s) at the very top/bottom of the box show `▲`/`▼` in the marker column whenever
-    there's more content in that direction -- not just at the list's hard edges."""
+def _popup_box(
+    headings: list[HeadingLoc], selected: int, term_w: int, avail_h: int
+) -> tuple[list[str], int]:
+    """Returns (box lines, scroll offset). When there are more headings than fit, the window
+    scrolls to keep `selected` roughly centered (clamped at the top/bottom of the list rather
+    than overscrolling past either end), and the row(s) at the very top/bottom of the box show
+    `▲`/`▼` in the marker column whenever there's more content in that direction -- not just at
+    the list's hard edges. `scroll` (VIEWMD-0076) is what a caller needs to map a clicked content
+    row (`_popup_hit`) back to a heading index: `scroll + content_row`."""
     entries = [h.text for h in headings]
     # `_display_width`, not `len()` -- a heading can contain a wide character (an emoji in
     # prose, or Rich's own image-placeholder glyph, VIEWMD-0070's motivating case), and sizing
@@ -279,7 +284,7 @@ def _popup_box(headings: list[HeadingLoc], selected: int, term_w: int, avail_h: 
             text = f"{_POPUP_SELECTED_BG}{text}{_POPUP_BG}"
         box.append(styled("│" + text + "│"))
     box.append(styled("└" + ("─" * box_w) + "┘"))
-    return box
+    return box, scroll
 
 
 def _overlay(
@@ -299,12 +304,11 @@ def _overlay(
     """
     if not popup:
         return body_rows
-    # `_display_width`, not `len()` -- a popup row can contain a wide character now (a heading
-    # entry in `_popup_box`), and `_wc_ljust` pads those to `box_w` *display columns*, which no
-    # longer equals the row's raw character count once one appears (VIEWMD-0070).
-    popup_w = max(_display_width(_strip_ansi(row)) for row in popup)
-    left = max(0, (term_w - popup_w) // 2)
-    top = max(0, (len(body_rows) - len(popup)) // 2)
+    # `_popup_origin`, not a from-scratch (top, left) computation -- click hit-testing
+    # (`_popup_hit`, VIEWMD-0076) needs the exact same origin this splice uses (it also handles
+    # the `_display_width`-not-`len()` wide-character concern VIEWMD-0070 raised here originally,
+    # since a popup row can contain one -- a heading entry in `_popup_box`), so both share it.
+    top, left = _popup_origin(popup, len(body_rows), term_w)
     out = list(body_rows)
     for i, prow in enumerate(popup):
         r = top + i
@@ -402,6 +406,116 @@ def _ansi_slice(line: str, start_col: int, width: int) -> str:
     return "".join(out)
 
 
+# OSC8 open token body is "id=<n>;<href>" (or ";<href>" with no id) -- group(1) captures
+# everything after the first ";", href included, still URL-encoded (Rich percent-encodes a
+# wikilink target's spaces, e.g. `wikilink:Target%20Note`).
+_OSC8_OPEN_RE = re.compile(r"\x1b\]8;[^;]*;(.*)\x1b\\$")
+
+
+def _link_at(colored_line: str, col: int) -> str | None:
+    """The href of whatever OSC8-wrapped link span covers display column `col` of
+    `colored_line` (VIEWMD-0076's click-to-follow), or `None` if that column isn't inside a
+    link -- reuses the same token walk `_ansi_slice` does for horizontal-scroll cropping rather
+    than a second parser, see `poc/pager/click_nav_poc.py` where this was prototyped."""
+    active_link: str | None = None
+    c = 0
+    for tok in _ANSI_TOKEN_RE.findall(colored_line):
+        if tok.startswith("\x1b]"):
+            if tok == _OSC8_CLOSE:
+                active_link = None
+            else:
+                m = _OSC8_OPEN_RE.match(tok)
+                active_link = urllib.parse.unquote(m.group(1)) if m else None
+            continue
+        if tok.startswith("\x1b["):
+            continue
+        w = _char_width(tok)
+        if c <= col < c + w:
+            return active_link
+        c += w
+    return None
+
+
+_EXTERNAL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!/[^/])")
+
+
+def _resolve_link_target(href: str, current_dir: str) -> str | None:
+    """Resolve a clicked link's href to an existing local `.md` file's path, or `None` if it
+    isn't one -- an external URL/scheme, a missing file, or a non-`.md` target (VIEWMD-0076
+    requirements 3 and 5).
+
+    A `wikilink:Target` href (`viewmd/wikilinks.py`'s static rewrite of `[[Target]]`) resolves
+    the way Obsidian does for a flat vault: `Target.md` directly in `current_dir` first, falling
+    back to a recursive search under `current_dir` if not found there. An ordinary link's href is
+    resolved as a filesystem path relative to `current_dir` directly, no search."""
+    if href.startswith("wikilink:"):
+        target = href[len("wikilink:") :]
+        direct = os.path.join(current_dir, f"{target}.md")
+        if os.path.isfile(direct):
+            return direct
+        for root, _dirs, files in os.walk(current_dir):
+            if f"{target}.md" in files:
+                return os.path.join(root, f"{target}.md")
+        return None
+    if href.startswith(("http://", "https://", "mailto:")) or (
+        _EXTERNAL_SCHEME_RE.match(href) and "://" in href
+    ):
+        return None
+    # An absolute href isn't "a filesystem path relative to `current_dir`" at all -- MUST reject
+    # it explicitly rather than let `os.path.join` silently discard `current_dir` and resolve the
+    # href as-is (`os.path.join(a, "/etc/hosts.md") == "/etc/hosts.md"`), which would let a click
+    # navigate anywhere reachable on disk instead of only within the document's own directory.
+    if os.path.isabs(href):
+        return None
+    candidate = os.path.normpath(os.path.join(current_dir, href))
+    if os.path.isfile(candidate) and candidate.lower().endswith(".md"):
+        return candidate
+    return None
+
+
+def _popup_origin(popup: list[str], body_h: int, term_w: int) -> tuple[int, int]:
+    """The (top, left) terminal-body coordinates `_overlay` centers `popup` at -- factored out
+    of `_overlay` itself (VIEWMD-0076) so click hit-testing (`_popup_hit`) can compute the exact
+    same rectangle a click needs to land inside, rather than re-deriving it a second time."""
+    if not popup:
+        return 0, 0
+    popup_w = max(_display_width(_strip_ansi(row)) for row in popup)
+    left = max(0, (term_w - popup_w) // 2)
+    top = max(0, (body_h - len(popup)) // 2)
+    return top, left
+
+
+def _popup_hit(popup: list[str], body_h: int, term_w: int, col0: int, row0: int) -> int | None:
+    """0-indexed content-row index within `popup` (excluding its own border/title rows) that
+    0-indexed body coordinates `(col0, row0)` land on, or `None` if they fall outside the box
+    entirely or on a border/title row -- shared by the ToC popup (`_popup_box`) and the help
+    screen (`_help_box`), which both share the same bordered-box shape (VIEWMD-0076)."""
+    if not popup:
+        return None
+    top, left = _popup_origin(popup, body_h, term_w)
+    popup_w = max(_display_width(_strip_ansi(row)) for row in popup)
+    if not (top <= row0 < top + len(popup) and left <= col0 < left + popup_w):
+        return None
+    content_row = row0 - top - 1
+    if content_row < 0 or content_row > len(popup) - 3:
+        return None
+    return content_row
+
+
+def _content_col(plain_len: int, left_col: int, width: int, screen_col: int) -> int | None:
+    """The original (pre-horizontal-scroll) display column a 0-indexed on-screen column
+    `screen_col` corresponds to, mirroring `_crop_row`'s own left/right-marker reservation --
+    `None` if `screen_col` landed on a `‹`/`›` truncation marker rather than real content
+    (VIEWMD-0076's click hit-testing has to undo the same cropping `_crop_row` applied)."""
+    left_more = left_col > 0
+    right_more = plain_len > left_col + width
+    inner_width = width - (1 if left_more else 0) - (1 if right_more else 0)
+    start = 1 if left_more else 0
+    if screen_col < start or screen_col >= start + inner_width:
+        return None
+    return left_col + (screen_col - start)
+
+
 # Truncation-edge markers: a distinct bold orange, not reused from any other chip (search
 # highlight, keycaps, popup selection), so "there's more this way" reads as its own thing.
 _TRUNCATION_STYLE = "\x1b[1;38;5;214m"
@@ -440,8 +554,10 @@ def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> st
 
 @dataclass
 class Event:
-    kind: str  # "key" | "wheel_up" | "wheel_down" | "wheel_left" | "wheel_right"
+    kind: str  # "key" | "wheel_up" | "wheel_down" | "wheel_left" | "wheel_right" | "click"
     value: str = ""
+    col: int = 0  # 1-indexed terminal column ("click" only, from the SGR report's Cx)
+    row: int = 0  # 1-indexed terminal row ("click" only, from the SGR report's Cy)
 
 
 def _read_event(fd: int) -> Event:
@@ -487,6 +603,12 @@ def _read_event(fd: int) -> Event:
                 return Event("wheel_left")
             if btn == 69:
                 return Event("wheel_right")
+            # A plain (unmodified) left-click press (VIEWMD-0076) -- the release ('m') is ignored,
+            # and any modifier-click (Ctrl/Alt/Shift, which SGR encodes into `btn` the same way it
+            # does for the Shift+wheel fallback above) deliberately does not match `btn == 0`
+            # exactly, matching this issue's Non-goals (modifier-click is out of scope).
+            if btn == 0 and m.group(4) == "M":
+                return Event("click", col=int(m.group(2)), row=int(m.group(3)))
         return Event("key", "")
     arrows = {
         "A": Event("key", "up"),
@@ -559,45 +681,67 @@ def _mode_line(
 # The full keybinding reference, grouped for the '?' help screen (`_help_box`) -- the echo area's
 # own default content (`_keybind_help`) only ever shows a short subset of this, pointing at '?'
 # for the rest, so it always fits on one line regardless of terminal width.
-_HELP_GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
+#
+# Each entry's third element (VIEWMD-0076) is the single `Event` clicking that row in the help
+# screen synthesizes -- fed through the same base-state dispatch (`_dispatch_base`) a real
+# keypress goes through, so a click behaves exactly like pressing that key, inert cases (e.g. `t`
+# with no headings) included for free. `None` marks a row with no single unambiguous action to
+# invoke -- either it names two different keys doing two different things ("n / p": next *or*
+# previous are different actions) or a direction-ambiguous one ("up/down, wheel": which way?), or
+# it only describes behavior inside a different mode (the ToC popup's own move/jump/cancel, which
+# only mean what this table says while the popup is already open -- not the base view a help-
+# screen click always returns to first). A click on such a row is simply a no-op, matching the
+# same "outside the box, or a non-actionable row" no-op the issue's requirement 8 already allows.
+_HELP_GROUPS: list[tuple[str, list[tuple[str, str, Event | None]]]] = [
     (
         "Scrolling",
         [
-            ("up/down, wheel", "scroll one line"),
-            ("space", "page down"),
-            ("b / - / Backspace", "page back up"),
-            ("g / ^", "jump to top"),
-            ("G / $", "jump to bottom"),
-            ("n / p", "jump to next / previous heading"),
-            ("j / k", "vim-style down / up (same as wheel)"),
-            ("left/right, h/l", "scroll sideways -- for lines wider than the terminal"),
-            ("0", "back to the left edge"),
+            ("up/down, wheel", "scroll one line", None),
+            ("space", "page down", Event("key", " ")),
+            ("b / - / Backspace", "page back up", Event("key", "b")),
+            ("g / ^", "jump to top", Event("key", "g")),
+            ("G / $", "jump to bottom", Event("key", "G")),
+            ("n / p", "jump to next / previous heading", None),
+            ("j / k", "vim-style down / up (same as wheel)", None),
+            ("left/right, h/l", "scroll sideways -- for lines wider than the terminal", None),
+            ("0", "back to the left edge", Event("key", "0")),
         ],
     ),
     (
         "Search",
         [
-            ("/", "search forward -- Enter confirms, Esc cancels"),
-            ("N", "repeat the last search, no prompt"),
-            ("Esc", "(with nothing else open) clear the search highlight"),
+            ("/", "search forward -- Enter confirms, Esc cancels", Event("key", "/")),
+            ("N", "repeat the last search, no prompt", Event("key", "N")),
+            ("Esc", "(with nothing else open) clear the search highlight", Event("key", "esc")),
         ],
     ),
     (
         "Table of contents",
         [
-            ("t", "open/close the popup"),
-            ("up/down, wheel, j/k", "move the selection (in the popup)"),
-            ("Enter", "jump to the selected heading (in the popup)"),
-            ("Esc / t", "cancel, keep the current position (in the popup)"),
+            ("t", "open/close the popup", Event("key", "t")),
+            ("up/down, wheel, j/k", "move the selection (in the popup)", None),
+            ("Enter", "jump to the selected heading (in the popup)", None),
+            ("Esc / t", "cancel, keep the current position (in the popup)", None),
+        ],
+    ),
+    (
+        "Links",
+        [
+            ("click a link", "follow it, if it resolves to a local .md file", None),
+            ("B", "go back to the file you navigated from", Event("key", "B")),
         ],
     ),
     (
         "Other",
         [
-            ("w", "toggle configured width <-> full terminal width"),
-            ("m", "toggle mouse capture -- off lets a drag select text natively"),
-            ("?", "show/hide this help"),
-            ("q", "quit"),
+            ("w", "toggle configured width <-> full terminal width", Event("key", "w")),
+            (
+                "m",
+                "toggle mouse capture -- off lets a drag select text natively",
+                Event("key", "m"),
+            ),
+            ("?", "show/hide this help", Event("key", "?")),
+            ("q", "quit", Event("key", "q")),
         ],
     ),
 ]
@@ -619,6 +763,7 @@ def _keybind_help(
     highlight_active: bool = False,
     *,
     has_headings: bool = True,
+    has_back: bool = False,
 ) -> str:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
     for the complete reference (`_HELP_GROUPS`/`_help_box`) rather than trying to cram every
@@ -635,13 +780,18 @@ def _keybind_help(
     `highlight_active` likewise only advertises `Esc: clear highlight` while there's a highlight
     to clear. `has_headings` (VIEWMD-0072) likewise drops the `t: contents` hint for content with
     no heading outline to build a popup from (a directory listing, a multi-file view) -- `t` is
-    inert there, same reasoning as the other two omissions."""
+    inert there, same reasoning as the other two omissions. `has_back` (VIEWMD-0076) only
+    advertises `B: prev file` once there's actually somewhere to go back to -- i.e. after the
+    reader has clicked at least one link to navigate away from where they started; showing it
+    unconditionally would advertise a key that's a no-op for the entire session until then."""
     if popup_open:
         pairs = [("up/down,wheel,j/k", "move"), ("Enter", "jump"), ("Esc/t", "cancel")]
     else:
         pairs = [("up/down,wheel", "scroll"), ("/", "search")]
         if has_headings:
             pairs.append(("t", "contents"))
+        if has_back:
+            pairs.append(("B", "prev file"))
         if width_toggle:
             pairs.append(("w", width_toggle))
         if highlight_active:
@@ -651,12 +801,15 @@ def _keybind_help(
     return "  ".join(f"{_keycap(key)} {label}" for key, label in pairs)
 
 
-def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
-    """The '?' help screen: every binding from `_HELP_GROUPS`, in a table, overlaid the same way
-    as the ToC popup (`_popup_box`/`_overlay`) -- same panel styling, same "freeze the scroll
-    position underneath" behavior. Unlike the ToC popup there's nothing to select or confirm, so
-    up/down/wheel/j-k scroll the table itself when it doesn't fit (`scroll`, in row units, clamped
-    here to the valid range) and a dedicated key (Esc/`?`/`q`) closes it instead of "any key".
+def _help_box(
+    term_w: int, avail_h: int, scroll: int = 0
+) -> tuple[list[str], list[Event | None]]:
+    """Returns (box lines, per-content-row invoke events). The '?' help screen: every binding
+    from `_HELP_GROUPS`, in a table, overlaid the same way as the ToC popup (`_popup_box`/
+    `_overlay`) -- same panel styling, same "freeze the scroll position underneath" behavior.
+    Unlike the ToC popup there's nothing to select or confirm, so up/down/wheel/j-k scroll the
+    table itself when it doesn't fit (`scroll`, in row units, clamped here to the valid range)
+    and a dedicated key (Esc/`?`/`q`) closes it instead of "any key".
 
     Each row is built as (lead, plain_rest, colored_rest): `lead` is the row's own first visible
     column, kept separate from everything colored after it so a `▲`/`▼` scroll indicator can
@@ -666,6 +819,12 @@ def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
     docstring describes: padding is always literal trailing spaces appended after the event, the
     same convention `_crop_row`/`_pad_ansi` use.
 
+    The second return value (VIEWMD-0076) is `_HELP_GROUPS`' own third element per row -- `None`
+    for a border/title row, a blank spacer, a group header, or a binding with no single
+    unambiguous action (see `_HELP_GROUPS`' own comment) -- aligned index-for-index with the
+    *visible* window (after `scroll` is applied), so a caller resolving a click (`_popup_hit`)
+    can index straight into it with the content-row index `_popup_hit` returns.
+
     `avail_h` is the caller's budget for the whole box (borders included) via `max_rows = avail_h
     - 2`, not the full screen body height -- `_overlay` centers the box within whatever body_rows
     it's given, so passing something less than the true body height here is what keeps a margin of
@@ -673,8 +832,8 @@ def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
     edge-to-edge whenever the table is long enough to want to. The caller (`draw`) is responsible
     for that margin decision; this function just fills whatever budget it's handed.
     """
-    key_w = max(len(key) for _, entries in _HELP_GROUPS for key, _ in entries)
-    action_w = max(len(action) for _, entries in _HELP_GROUPS for _, action in entries)
+    key_w = max(len(key) for _, entries in _HELP_GROUPS for key, _, _ in entries)
+    action_w = max(len(action) for _, entries in _HELP_GROUPS for _, action, _ in entries)
     inner_w = min(max(key_w + 2 + action_w, len(_MOUSE_SELECT_TIP)), term_w - 4)
     title = " Keybindings "
     inner_w = max(inner_w, len(title))
@@ -688,12 +847,15 @@ def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
         return lead + colored_rest + pad
 
     rows: list[str] = []
+    invokes: list[Event | None] = []
     for gi, (group_name, entries) in enumerate(_HELP_GROUPS):
         if gi > 0:
             rows.append(row(" ", "", ""))  # blank line above every header but the first
+            invokes.append(None)
         header_rest = f"{group_name}"
         rows.append(row(" ", header_rest, f"{_HELP_HEADER_STYLE}{header_rest}{_POPUP_BG}"))
-        for key, action in entries:
+        invokes.append(None)
+        for key, action, invoke in entries:
             key_text = key.ljust(key_w)
             action_text = action
             fixed = f" {key_text}  "
@@ -702,12 +864,16 @@ def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
             plain_rest = f"{key_text}  {action_text}"
             colored_rest = f"{_HELP_KEY_STYLE}{key_text}{_POPUP_BG}  {action_text}"
             rows.append(row(" ", plain_rest, colored_rest))
+            invokes.append(invoke)
     rows.append(row(" ", "", ""))
+    invokes.append(None)
     rows.append(row(" ", _MOUSE_SELECT_TIP, _MOUSE_SELECT_TIP))
+    invokes.append(None)
 
     max_rows = max(3, avail_h - 2)
     scroll = max(0, min(scroll, max(0, len(rows) - max_rows)))
     window = rows[scroll : scroll + max_rows]
+    window_invokes = invokes[scroll : scroll + max_rows]
     more_above = scroll > 0
     more_below = scroll + max_rows < len(rows)
 
@@ -719,7 +885,7 @@ def _help_box(term_w: int, avail_h: int, scroll: int = 0) -> list[str]:
             colored_row = "▼" + colored_row[1:]
         box.append(styled("│" + colored_row + "│"))
     box.append(styled("└" + ("─" * box_w) + "┘"))
-    return box
+    return box, window_invokes
 
 
 def _pad_ansi(text: str, width: int) -> str:
@@ -765,14 +931,43 @@ def run(
 ) -> None:
     """Page `text` (raw Markdown source) interactively. `name` is the display name shown in the
     mode line (typically the source path, or "-" for stdin); only its basename is shown.
+
+    The only one of the three `_run()` entry points that supports click-to-follow a local-file
+    link (VIEWMD-0076) -- it's the only one with a single well-defined file and directory to
+    resolve a relative link/wikilink against (`run_directory_listing()`/`run_multi_file()` don't,
+    and stdin, `name == "-"`, has no directory either) -- `doc_dir`/`open_path` are left `None`
+    for all of those, which makes a click on a link (and the 'B' back key) a no-op in `_run()`.
     """
     color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
     display_name = "(stdin)" if name == "-" else os.path.basename(name)
+    doc_dir = None if name == "-" else os.path.dirname(os.path.abspath(name))
+
+    def open_path(path: str) -> tuple | None:
+        # `_resolve_link_target` already confirmed `path` exists and is a `.md` file, but not
+        # that it's still readable or valid UTF-8 by the time a click actually opens it (a
+        # permissions change, a TOCTOU race, or simply a non-UTF-8 `.md` file) -- `None` on
+        # failure lets the caller treat this exactly like any other unresolvable link (a no-op,
+        # with an echo-area message) rather than crashing the whole interactive session, matching
+        # how `viewmd/__main__.py`'s own `_resolve_document()` handles the identical read for the
+        # document viewmd was originally invoked with.
+        try:
+            with open(path, encoding="utf-8") as f:
+                new_text = f.read()
+        except (OSError, UnicodeDecodeError):
+            return None
+        return (
+            lambda w: _load(new_text, w, color_kwargs=color_kwargs),
+            os.path.basename(path),
+            os.path.dirname(os.path.abspath(path)),
+        )
+
     _run(
         lambda w: _load(text, w, color_kwargs=color_kwargs),
         display_name,
         width=width,
         fallback=lambda: render_markdown(text, width=width, color=color, **color_kwargs),
+        doc_dir=doc_dir,
+        open_path=open_path,
     )
 
 
@@ -840,6 +1035,8 @@ def _run(
     *,
     width: int,
     fallback,
+    doc_dir: str | None = None,
+    open_path=None,
 ) -> None:
     """Shared interactive scrolling engine behind `run()`/`run_directory_listing()`/
     `run_multi_file()` (VIEWMD-0072) -- mouse-wheel scroll, resize handling, search, horizontal
@@ -855,6 +1052,14 @@ def _run(
     trusting their own stdin. `fallback()` renders once, plainly, for when `/dev/tty` can't be
     opened at all (no controlling terminal), which should be rare given the caller already checked
     `sys.stdout.isatty()` before reaching here.
+
+    `doc_dir`/`open_path` (VIEWMD-0076) enable click-to-follow a local `.md` link: `doc_dir` is
+    the directory the *currently open* document's relative links/wikilinks resolve against, and
+    `open_path(path)` returns a fresh `(loader, display_name, doc_dir)` triple for a resolved
+    target file, ready to swap in as the session's new "current document" -- only `run()` passes
+    these (see its own docstring); `None` for both (the default) makes link-following and the
+    'B' back key inert, matching `run_directory_listing()`/`run_multi_file()`, which have no
+    single file/directory of their own to resolve a relative link against.
     """
     try:
         tty_fd = os.open("/dev/tty", os.O_RDONLY)
@@ -878,6 +1083,15 @@ def _run(
     max_content_width = _max_content_width(plain_lines)
     left_col = 0
     h_step = 8
+    # Back-stack for click-to-follow (VIEWMD-0076): each entry is the document being navigated
+    # *away* from -- (loader, display_name, doc_dir, top, left_col, full_width_active) -- so 'B'
+    # can restore it exactly, most-recently-left last (a plain list.pop()). `full_width_active`
+    # is captured per-frame, not re-read from whatever it is at pop time: the reader could toggle
+    # 'w' while on the "away" document, and re-wrapping the restored document at the *current*
+    # width setting instead of the one `top`/`left_col` were actually measured against would
+    # apply those raw offsets to a differently-wrapped document and land somewhere unrelated
+    # (found in review).
+    nav_stack: list[tuple] = []
 
     old_settings = termios.tcgetattr(tty_fd)
     top = 0
@@ -941,9 +1155,9 @@ def _run(
             ]
             plain_visible += [""] * (body_h - len(plain_visible))
             overlay_box = (
-                _popup_box(headings, popup_selected, term_w, body_h)
+                _popup_box(headings, popup_selected, term_w, body_h)[0]
                 if popup_open
-                else _help_box(term_w, max(3, body_h - 2), help_scroll)
+                else _help_box(term_w, max(3, body_h - 2), help_scroll)[0]
             )
             visible = _overlay(visible, plain_visible, overlay_box, term_w)
         # `_CLEAR_EOL` only when the row is genuinely shorter than the terminal -- a row cropped
@@ -982,7 +1196,7 @@ def _run(
             if not width_is_full:
                 width_toggle = f"{configured_width} cols" if full_width_active else "full width"
             echo_text = _keybind_help(popup_open, width_toggle, bool(last_search_query),
-                                      has_headings=bool(headings))
+                                      has_headings=bool(headings), has_back=bool(nav_stack))
         # `_pad_ansi` always fills exactly `term_w` columns, so there's never real trailing space
         # left to erase -- no `_CLEAR_EOL` here, for the same pending-wrap-cursor reason `visible`
         # only appends one conditionally above.
@@ -990,6 +1204,191 @@ def _run(
         out = _HOME + "\n".join(visible) + "\n" + mode_line + "\n" + echo_line
         sys.stdout.write(out)
         sys.stdout.flush()
+
+    def _dispatch_base(ev: Event) -> bool:
+        """Handle one event in the base (no popup/search/help overlay open) state -- factored out
+        of the main loop (VIEWMD-0076) so a help-screen click-invoke can feed a synthesized `Event`
+        through the exact same dispatch a real keypress goes through, inert cases (e.g. `t` with
+        no headings) included for free, rather than re-deriving what each key does a second time.
+        Returns `True` if 'q' was pressed (or invoked) and the pager should quit -- a nested
+        function can't `break` its caller's loop directly, so this is the substitute signal.
+
+        `max_top` here is always freshly computed from the *current* `lines`/`body_h` at the top
+        of this call, not the outer loop's own per-iteration `max_top` -- deliberately a separate
+        local (not `nonlocal`), so a `lines`-reloading branch below (`w`, or a click-navigate) can
+        safely reassign its own copy without also having to keep the outer loop's copy in sync.
+        """
+        nonlocal top, left_col, popup_open, saved_top, popup_selected, help_open, help_scroll
+        nonlocal search_active, search_query, last_search_query, echo_message, mouse_enabled
+        nonlocal full_width_active, lines, plain_lines, headings, max_content_width
+        nonlocal loader, display_name, doc_dir
+        max_top = max(0, len(lines) - body_h)
+        if ev.value == "q" and ev.kind == "key":
+            return True
+        if ev.kind == "key" and ev.value == "t" and headings:
+            popup_open = True
+            saved_top = top
+            popup_selected = _nearest_heading_index(headings, top)
+        elif ev.kind == "key" and ev.value == "?":
+            help_open = True
+            help_scroll = 0
+        elif ev.kind == "key" and ev.value == "/":
+            search_active = True
+            # Prefilled with the last query, not blank -- Enter alone repeats it, or
+            # Backspace clears it out to type a fresh one; either way it's remembered
+            # rather than making every search start from scratch.
+            search_query = last_search_query
+        elif ev.kind == "key" and ev.value == "N":
+            # Repeat the last search without opening the prompt at all -- Info's own
+            # `/`-then-Enter reuses its last pattern the same way, just one keystroke.
+            if last_search_query:
+                found = _search(plain_lines, last_search_query, top)
+                if found is not None:
+                    top = min(max_top, found)
+                else:
+                    echo_message = f'Search failed: "{last_search_query}"'
+            else:
+                echo_message = "No previous search"
+        elif ev.kind == "key" and ev.value == "esc" and last_search_query:
+            # Esc with nothing else open clears the highlight rather than doing nothing --
+            # otherwise there'd be no way to turn it off short of searching for something
+            # that can't match.
+            last_search_query = ""
+        elif ev.kind in ("wheel_up",) or (ev.kind == "key" and ev.value in ("up", "k")):
+            top = max(0, top - 1)
+        elif ev.kind in ("wheel_down",) or (
+            ev.kind == "key" and ev.value in ("down", "j")
+        ):
+            top = min(max_top, top + 1)
+        elif ev.kind == "key" and ev.value == " ":
+            top = min(max_top, top + body_h)
+        elif ev.kind == "key" and ev.value in ("b", "backspace", "-"):
+            top = max(0, top - body_h)
+        elif ev.kind == "key" and ev.value == "n":
+            later = [h.row for h in headings if h.row > top]
+            if later:
+                top = min(max_top, later[0])
+        elif ev.kind == "key" and ev.value == "p":
+            earlier = [h.row for h in headings if h.row < top]
+            if earlier:
+                top = min(max_top, earlier[-1])
+        elif ev.kind == "key" and ev.value in ("g", "^"):
+            top = 0
+        elif ev.kind == "key" and ev.value in ("G", "$"):
+            top = max_top
+        elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
+            left_col = max(0, left_col - h_step)
+        elif ev.kind == "wheel_right" or (ev.kind == "key" and ev.value in ("right", "l")):
+            max_left_col = max(0, max_content_width - term_w)
+            left_col = min(max_left_col, left_col + h_step)
+        elif ev.kind == "key" and ev.value == "0":
+            left_col = 0
+        elif ev.kind == "key" and ev.value == "m":
+            mouse_enabled = not mouse_enabled
+            sys.stdout.write(_MOUSE_ON if mouse_enabled else _MOUSE_OFF)
+            sys.stdout.flush()
+            echo_message = (
+                "Mouse capture on -- wheel scrolls; drag to select text needs 'm' off"
+                if mouse_enabled
+                else "Mouse capture off -- drag to select text; 'm' re-enables wheel scroll"
+            )
+        elif ev.kind == "key" and ev.value == "w" and not width_is_full:
+            full_width_active = not full_width_active
+            new_width = term_w if full_width_active else configured_width
+            # Width changes rewrap the whole document, so every line/row number shifts --
+            # re-derive from the section the reader was actually in, not the raw `top`
+            # line offset, so the toggle lands back in roughly the same place instead of
+            # some arbitrary point mid-paragraph a few lines off from where they were.
+            section = _nearest_heading_index(headings, top)
+            lines, plain_lines, headings = loader(new_width)
+            max_top = max(0, len(lines) - body_h)
+            if headings:
+                top = min(max_top, headings[min(section, len(headings) - 1)].row)
+            else:
+                top = 0
+            max_content_width = _max_content_width(plain_lines)
+            left_col = min(left_col, max(0, max_content_width - term_w))
+        elif ev.kind == "key" and ev.value == "B":
+            # Go back to the file navigated *from* (VIEWMD-0076 requirement 6) -- a no-op with
+            # nothing on the stack, including for `run_directory_listing()`/`run_multi_file()`,
+            # which never push anything at all (no `open_path`, see `_run`'s own docstring).
+            if nav_stack:
+                (
+                    loader,
+                    display_name,
+                    doc_dir,
+                    saved_doc_top,
+                    saved_doc_left,
+                    full_width_active,
+                ) = nav_stack.pop()
+                eff_width = term_w if full_width_active else configured_width
+                lines, plain_lines, headings = loader(eff_width)
+                max_content_width = _max_content_width(plain_lines)
+                new_max_top = max(0, len(lines) - body_h)
+                top = min(saved_doc_top, new_max_top)
+                left_col = min(saved_doc_left, max(0, max_content_width - term_w))
+                popup_selected = 0
+                # Same reasoning as the click-navigate branch below: a search highlight/query
+                # from the file being left behind doesn't describe the one being returned to.
+                search_active = False
+                search_query = ""
+                last_search_query = ""
+            else:
+                echo_message = "No previous file to go back to"
+        elif ev.kind == "click" and doc_dir is not None and open_path is not None:
+            # Click-to-follow a local-file link (VIEWMD-0076 requirements 2-6): resolve which
+            # rendered row/column the click landed on, undo horizontal-scroll cropping to get
+            # back to the row's real display column, find whatever link (if any) covers it, and
+            # -- only if its href resolves to an existing local `.md` file -- swap the session
+            # over to that file, after pushing the file being left onto the back-stack. Every
+            # other case (no link under the click, an external URL, a missing/non-.md target)
+            # is a deliberate no-op, so a terminal's own native OSC8 click-to-open still gets a
+            # chance at a link this doesn't resolve (requirement 5).
+            body_row = ev.row - 1
+            if 0 <= body_row < body_h:
+                doc_row = top + body_row
+                if 0 <= doc_row < len(lines):
+                    plain_len = _display_width(_strip_ansi(lines[doc_row]))
+                    content_col = _content_col(plain_len, left_col, term_w, ev.col - 1)
+                    if content_col is not None:
+                        href = _link_at(lines[doc_row], content_col)
+                        if href is not None:
+                            target = _resolve_link_target(href, doc_dir)
+                            if target is not None:
+                                opened = open_path(target)
+                                if opened is None:
+                                    # Resolved to a real .md file, but it couldn't actually be
+                                    # read (permissions, a race, invalid UTF-8) -- a message, not
+                                    # a crash or a silent no-op that leaves no trace of why.
+                                    echo_message = f"Could not open {os.path.basename(target)}"
+                                else:
+                                    nav_stack.append(
+                                        (
+                                            loader,
+                                            display_name,
+                                            doc_dir,
+                                            top,
+                                            left_col,
+                                            full_width_active,
+                                        )
+                                    )
+                                    loader, display_name, doc_dir = opened
+                                    eff_width = (
+                                        term_w if full_width_active else configured_width
+                                    )
+                                    lines, plain_lines, headings = loader(eff_width)
+                                    max_content_width = _max_content_width(plain_lines)
+                                    top = 0
+                                    left_col = 0
+                                    popup_selected = 0
+                                    # A search highlight/query from the file being left doesn't
+                                    # describe the new one at all -- carrying it over would
+                                    # highlight spurious matches and let 'N' repeat a search
+                                    # against unrelated content (found in review).
+                                    search_active = False
+                                    search_query = ""
+                                    last_search_query = ""
+        return False
 
     try:
         tty.setcbreak(tty_fd)
@@ -1040,6 +1439,19 @@ def _run(
                 elif ev.kind == "key" and ev.value in ("esc", "?", "q"):
                     help_open = False
                     help_scroll = 0
+                elif ev.kind == "click":
+                    # Click-invoke (VIEWMD-0076, requirement 8): resolve which row the click
+                    # landed on, then close help first and feed the row's own invoke `Event`
+                    # (if it has one) through the same base-state dispatch a real keypress
+                    # would go through -- so it behaves exactly as if that key were pressed,
+                    # inert cases (e.g. `t` with no headings) included for free.
+                    box, invokes = _help_box(term_w, max(3, body_h - 2), help_scroll)
+                    hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
+                    if hit is not None and hit < len(invokes) and invokes[hit] is not None:
+                        help_open = False
+                        help_scroll = 0
+                        if _dispatch_base(invokes[hit]):
+                            break
             elif search_active:
                 if ev.kind == "key" and ev.value == "esc":
                     search_active = False
@@ -1081,92 +1493,22 @@ def _run(
                     popup_open = False
                 elif ev.kind == "key" and ev.value == "q":
                     break
+                elif ev.kind == "click":
+                    # Click-select-and-confirm (VIEWMD-0076, requirement 7): a click on an entry
+                    # row picks it and jumps immediately, same as arrowing to it then Enter -- a
+                    # click on the box's own border/title row, or outside the box entirely,
+                    # is a no-op (`_popup_hit` returns `None` for both).
+                    box, scroll = _popup_box(headings, popup_selected, term_w, body_h)
+                    hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
+                    if hit is not None:
+                        idx = scroll + hit
+                        if idx < len(headings):
+                            popup_selected = idx
+                            top = min(max_top, headings[popup_selected].row)
+                            popup_open = False
             else:
-                if ev.kind == "key" and ev.value == "q":
+                if _dispatch_base(ev):
                     break
-                if ev.kind == "key" and ev.value == "t" and headings:
-                    popup_open = True
-                    saved_top = top
-                    popup_selected = _nearest_heading_index(headings, top)
-                elif ev.kind == "key" and ev.value == "?":
-                    help_open = True
-                    help_scroll = 0
-                elif ev.kind == "key" and ev.value == "/":
-                    search_active = True
-                    # Prefilled with the last query, not blank -- Enter alone repeats it, or
-                    # Backspace clears it out to type a fresh one; either way it's remembered
-                    # rather than making every search start from scratch.
-                    search_query = last_search_query
-                elif ev.kind == "key" and ev.value == "N":
-                    # Repeat the last search without opening the prompt at all -- Info's own
-                    # `/`-then-Enter reuses its last pattern the same way, just one keystroke.
-                    if last_search_query:
-                        found = _search(plain_lines, last_search_query, top)
-                        if found is not None:
-                            top = min(max_top, found)
-                        else:
-                            echo_message = f'Search failed: "{last_search_query}"'
-                    else:
-                        echo_message = "No previous search"
-                elif ev.kind == "key" and ev.value == "esc" and last_search_query:
-                    # Esc with nothing else open clears the highlight rather than doing nothing --
-                    # otherwise there'd be no way to turn it off short of searching for something
-                    # that can't match.
-                    last_search_query = ""
-                elif ev.kind in ("wheel_up",) or (ev.kind == "key" and ev.value in ("up", "k")):
-                    top = max(0, top - 1)
-                elif ev.kind in ("wheel_down",) or (
-                    ev.kind == "key" and ev.value in ("down", "j")
-                ):
-                    top = min(max_top, top + 1)
-                elif ev.kind == "key" and ev.value == " ":
-                    top = min(max_top, top + body_h)
-                elif ev.kind == "key" and ev.value in ("b", "backspace", "-"):
-                    top = max(0, top - body_h)
-                elif ev.kind == "key" and ev.value == "n":
-                    later = [h.row for h in headings if h.row > top]
-                    if later:
-                        top = min(max_top, later[0])
-                elif ev.kind == "key" and ev.value == "p":
-                    earlier = [h.row for h in headings if h.row < top]
-                    if earlier:
-                        top = min(max_top, earlier[-1])
-                elif ev.kind == "key" and ev.value in ("g", "^"):
-                    top = 0
-                elif ev.kind == "key" and ev.value in ("G", "$"):
-                    top = max_top
-                elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
-                    left_col = max(0, left_col - h_step)
-                elif ev.kind == "wheel_right" or (ev.kind == "key" and ev.value in ("right", "l")):
-                    max_left_col = max(0, max_content_width - term_w)
-                    left_col = min(max_left_col, left_col + h_step)
-                elif ev.kind == "key" and ev.value == "0":
-                    left_col = 0
-                elif ev.kind == "key" and ev.value == "m":
-                    mouse_enabled = not mouse_enabled
-                    sys.stdout.write(_MOUSE_ON if mouse_enabled else _MOUSE_OFF)
-                    sys.stdout.flush()
-                    echo_message = (
-                        "Mouse capture on -- wheel scrolls; drag to select text needs 'm' off"
-                        if mouse_enabled
-                        else "Mouse capture off -- drag to select text; 'm' re-enables wheel scroll"
-                    )
-                elif ev.kind == "key" and ev.value == "w" and not width_is_full:
-                    full_width_active = not full_width_active
-                    new_width = term_w if full_width_active else configured_width
-                    # Width changes rewrap the whole document, so every line/row number shifts --
-                    # re-derive from the section the reader was actually in, not the raw `top`
-                    # line offset, so the toggle lands back in roughly the same place instead of
-                    # some arbitrary point mid-paragraph a few lines off from where they were.
-                    section = _nearest_heading_index(headings, top)
-                    lines, plain_lines, headings = loader(new_width)
-                    max_top = max(0, len(lines) - body_h)
-                    if headings:
-                        top = min(max_top, headings[min(section, len(headings) - 1)].row)
-                    else:
-                        top = 0
-                    max_content_width = _max_content_width(plain_lines)
-                    left_col = min(left_col, max(0, max_content_width - term_w))
             draw()
     finally:
         sys.stdout.write(_EXIT_SCREEN)

@@ -94,31 +94,34 @@ def _headings(n):
 
 def test_popup_box_marks_the_selected_row():
     headings = _headings(3)
-    box = ip._popup_box(headings, selected=1, term_w=60, avail_h=20)
+    box, scroll = ip._popup_box(headings, selected=1, term_w=60, avail_h=20)
     content = box[1:-1]
     assert "▸" in ip._strip_ansi(content[1])
     assert ip._POPUP_SELECTED_BG in content[1]
     assert "▸" not in ip._strip_ansi(content[0])
+    assert scroll == 0
 
 
 def test_popup_box_scrolls_and_shows_indicators_when_too_tall():
     headings = _headings(20)
     avail_h = 8
     max_rows = max(3, avail_h - 2)
-    box = ip._popup_box(headings, selected=10, term_w=60, avail_h=avail_h)
+    box, scroll = ip._popup_box(headings, selected=10, term_w=60, avail_h=avail_h)
     content = box[1:-1]
     assert len(content) <= max_rows
     joined = "".join(content)
     assert "▲" in joined
     assert "▼" in joined
+    assert scroll > 0
 
 
 def test_popup_box_no_indicators_when_everything_fits():
     headings = _headings(3)
-    box = ip._popup_box(headings, selected=0, term_w=60, avail_h=40)
+    box, scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=40)
     joined = "".join(box)
     assert "▲" not in joined
     assert "▼" not in joined
+    assert scroll == 0
 
 
 # --- _overlay ------------------------------------------------------------------------------------
@@ -230,6 +233,134 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     assert "›" in wrong
 
 
+# --- _link_at / _resolve_link_target / _content_col (VIEWMD-0076) ------------------------------
+
+
+def _first_colored_line(text: str, width: int = 80) -> str:
+    return ip._load(text, width, color_kwargs=_KW)[0][0]
+
+
+def _col_of(colored_line: str, substring: str) -> int:
+    """Display column of `substring`'s first character in `colored_line` -- walks the same
+    tokenizer `_link_at` does rather than trusting `str.index` on raw (escape-laden) text."""
+    target = substring[0]
+    col = 0
+    for tok in ip._ANSI_TOKEN_RE.findall(colored_line):
+        if tok.startswith("\x1b"):
+            continue
+        if tok == target:
+            return col
+        col += ip._char_width(tok)
+    raise AssertionError(f"{substring!r} not found in {colored_line!r}")
+
+
+def test_link_at_resolves_href_at_a_column_inside_the_link():
+    line = _first_colored_line("[a link](B.md) after")
+    col = _col_of(line, "a link")
+    assert ip._link_at(line, col) == "B.md"
+
+
+def test_link_at_returns_none_just_past_the_link():
+    line = _first_colored_line("[a link](B.md) zzz")
+    end_col = _col_of(line, "zzz")
+    assert ip._link_at(line, end_col) is None
+
+
+def test_link_at_returns_none_for_plain_text_with_no_link():
+    line = _first_colored_line("just plain text, no links here")
+    assert ip._link_at(line, 0) is None
+
+
+def test_link_at_decodes_a_wikilink_href():
+    line = _first_colored_line("[[Target Note]]")
+    col = _col_of(line, "Target")
+    assert ip._link_at(line, col) == "wikilink:Target Note"
+
+
+def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("wikilink:B", str(tmp_path)) == str(tmp_path / "B.md")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "Nested.md").write_text("# Nested\n")
+    assert ip._resolve_link_target("wikilink:Nested", str(tmp_path)) == str(sub / "Nested.md")
+    assert ip._resolve_link_target("wikilink:NoSuchDoc", str(tmp_path)) is None
+
+
+def test_resolve_link_target_relative_markdown_link(tmp_path):
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("B.md", str(tmp_path)) == str(tmp_path / "B.md")
+    assert ip._resolve_link_target("missing.md", str(tmp_path)) is None
+
+
+def test_resolve_link_target_rejects_non_md_and_external(tmp_path):
+    (tmp_path / "image.png").write_bytes(b"")
+    assert ip._resolve_link_target("image.png", str(tmp_path)) is None
+    assert ip._resolve_link_target("https://example.com/x", str(tmp_path)) is None
+    assert ip._resolve_link_target("mailto:a@b.com", str(tmp_path)) is None
+
+
+def test_resolve_link_target_rejects_absolute_href(tmp_path):
+    # An absolute href isn't "relative to current_dir" -- MUST NOT resolve outside the current
+    # document's own directory tree just because a real .md file happens to exist at that
+    # absolute path elsewhere on disk (found in review: os.path.join silently discards
+    # current_dir for an absolute second argument).
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    try:
+        assert ip._resolve_link_target(str(outside), str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+def test_content_col_maps_through_no_scroll():
+    # No truncation markers reserved -- screen column is content column, unchanged.
+    assert ip._content_col(plain_len=40, left_col=0, width=80, screen_col=5) == 5
+
+
+def test_content_col_none_on_left_truncation_marker():
+    assert ip._content_col(plain_len=200, left_col=10, width=80, screen_col=0) is None
+    assert ip._content_col(plain_len=200, left_col=10, width=80, screen_col=1) == 10
+
+
+def test_content_col_none_on_right_truncation_marker():
+    # plain_len > left_col + width -- a right marker is reserved at the last screen column.
+    assert ip._content_col(plain_len=200, left_col=0, width=80, screen_col=79) is None
+    assert ip._content_col(plain_len=200, left_col=0, width=80, screen_col=78) == 78
+
+
+# --- _popup_origin / _popup_hit (VIEWMD-0076) ---------------------------------------------------
+
+
+def _box(n_content_rows: int, width: int = 10) -> list[str]:
+    top = "┌" + "─" * width + "┐"
+    bottom = "└" + "─" * width + "┘"
+    return [top] + [f"│{'x' * width}│" for _ in range(n_content_rows)] + [bottom]
+
+
+def test_popup_hit_content_row_inside_box():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top + 2) == 1
+
+
+def test_popup_hit_none_on_border_row():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top) is None
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top + 4) is None
+
+
+def test_popup_hit_none_outside_box_columns():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=0, row0=top + 1) is None
+
+
+def test_popup_hit_none_for_empty_popup():
+    assert ip._popup_hit([], body_h=20, term_w=40, col0=5, row0=5) is None
+
+
 # --- _read_event ---------------------------------------------------------------------------------
 
 
@@ -285,6 +416,26 @@ def test_read_event_sgr_mouse_shift_wheel_falls_back_to_horizontal():
     assert ip._read_event(fd) == ip.Event("wheel_left")
     fd = _pipe_with(b"\x1b[<69;10;5M")
     assert ip._read_event(fd) == ip.Event("wheel_right")
+
+
+def test_read_event_sgr_mouse_click_press():
+    fd = _pipe_with(b"\x1b[<0;15;7M")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_click_release_is_ignored():
+    # The release ('m', not 'M') isn't a click -- VIEWMD-0076 only acts on the press.
+    fd = _pipe_with(b"\x1b[<0;15;7m")
+    ev = ip._read_event(fd)
+    assert ev.kind != "click"
+
+
+def test_read_event_sgr_mouse_modifier_click_is_ignored():
+    # A modifier-click (Ctrl/Alt/Shift + left button) is out of scope (VIEWMD-0076 Non-goals) --
+    # SGR encodes those as `btn` values other than the bare 0 a plain left-click press reports.
+    fd = _pipe_with(b"\x1b[<4;15;7M")  # Shift + left-click
+    ev = ip._read_event(fd)
+    assert ev.kind != "click"
 
 
 # --- _mode_line ------------------------------------------------------------------------------
@@ -353,6 +504,17 @@ def test_keybind_help_shows_contents_hint_with_headings_by_default():
     assert "contents" in ip._strip_ansi(line)
 
 
+def test_keybind_help_omits_prev_file_hint_before_any_navigation():
+    line = ip._keybind_help(False, None, False)
+    assert "prev file" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_prev_file_hint_once_has_back_is_true():
+    # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to.
+    line = ip._keybind_help(False, None, False, has_back=True)
+    assert "prev file" in ip._strip_ansi(line)
+
+
 def test_pad_ansi_pads_with_plain_trailing_spaces():
     colored = ip._keycap("q")
     padded = ip._pad_ansi(colored, 20)
@@ -370,21 +532,22 @@ def test_pad_ansi_falls_back_to_plain_text_when_truncating():
 
 
 def test_help_box_contains_every_group_and_key():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
     text = "\n".join(ip._strip_ansi(row) for row in box)
     for group_name, entries in ip._HELP_GROUPS:
         assert group_name in text
-        for key, _ in entries:
+        for key, _, _ in entries:
             assert key in text
+    assert len(invokes) == len(box) - 2
 
 
 def test_help_box_never_exceeds_the_given_width():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     assert all(len(ip._strip_ansi(row)) <= 100 for row in box)
 
 
 def test_help_box_has_a_blank_row_above_every_header_but_the_first():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     for i, (group_name, _) in enumerate(ip._HELP_GROUPS):
         header_i = next(j for j, row in enumerate(box) if group_name in row)
         prev_inner = ip._strip_ansi(box[header_i - 1]).strip("│").strip()
@@ -393,20 +556,31 @@ def test_help_box_has_a_blank_row_above_every_header_but_the_first():
 
 
 def test_help_box_headers_and_keys_are_styled():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     header_hits = sum(row.count(ip._HELP_HEADER_STYLE) for row in box)
     key_hits = sum(row.count(ip._HELP_KEY_STYLE) for row in box)
     assert header_hits == len(ip._HELP_GROUPS)
     assert key_hits == sum(len(entries) for _, entries in ip._HELP_GROUPS)
 
 
+def test_help_box_invokes_align_with_entries_that_have_one_unambiguous_action():
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    non_none = [inv for inv in invokes if inv is not None]
+    total_entries_with_invoke = sum(
+        1 for _, entries in ip._HELP_GROUPS for _, _, inv in entries if inv is not None
+    )
+    assert len(non_none) == total_entries_with_invoke
+    assert all(isinstance(inv, ip.Event) for inv in non_none)
+
+
 def test_help_box_scrolls_with_indicators_when_too_tall():
-    full = ip._help_box(term_w=100, avail_h=40)
-    short = ip._help_box(term_w=100, avail_h=12, scroll=0)
+    full, _full_invokes = ip._help_box(term_w=100, avail_h=40)
+    short, short_invokes = ip._help_box(term_w=100, avail_h=12, scroll=0)
     assert len(short) < len(full)
+    assert len(short_invokes) == len(short) - 2
     assert "▼" in "".join(short)
     assert "▲" not in "".join(short)
-    end = ip._help_box(term_w=100, avail_h=12, scroll=1000)
+    end, _end_invokes = ip._help_box(term_w=100, avail_h=12, scroll=1000)
     assert "▲" in "".join(end)
     assert "▼" not in "".join(end)
 
@@ -414,10 +588,10 @@ def test_help_box_scrolls_with_indicators_when_too_tall():
 def test_help_box_never_fills_the_full_body_edge_to_edge():
     # Regression: the popup must always leave at least one row of real document visible above
     # and below it -- callers pass `avail_h = max(3, body_h - 2)`, not the full body height.
-    full = ip._help_box(term_w=100, avail_h=40)
+    full, _full_invokes = ip._help_box(term_w=100, avail_h=40)
     body_h = len(full)
     body_rows = [f"document line {i}" for i in range(body_h)]
-    capped = ip._help_box(term_w=100, avail_h=max(3, body_h - 2))
+    capped, _capped_invokes = ip._help_box(term_w=100, avail_h=max(3, body_h - 2))
     overlaid = ip._overlay(body_rows, body_rows, capped, term_w=100)
     assert "┌" not in ip._strip_ansi(overlaid[0])
     assert "└" not in ip._strip_ansi(overlaid[-1])
@@ -526,7 +700,7 @@ def test_overlay_stays_column_aligned_around_a_wide_character():
 
 def test_popup_box_sizes_itself_for_a_heading_containing_a_wide_character():
     headings = [ip.HeadingLoc(text=f"{_WIDE} Section", level=2, row=0)]
-    box = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
     widths = {ip._display_width(ip._strip_ansi(row)) for row in box}
     assert len(widths) == 1  # every row, borders included, is exactly the same display width
 
