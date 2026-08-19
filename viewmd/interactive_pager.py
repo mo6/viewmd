@@ -975,6 +975,7 @@ def _keybind_help(
     *,
     has_headings: bool = True,
     has_back: bool = False,
+    help_open: bool = False,
 ) -> tuple[str, list[tuple[int, int, Event | None]]]:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
     for the complete reference (`_HELP_GROUPS`/`_help_box`) rather than trying to cram every
@@ -1001,16 +1002,26 @@ def _keybind_help(
     None)` triple per chip, 0-indexed and aligned to `text`'s own display columns -- the echo
     line always starts at column 0 of its terminal row, so a caller resolving a click there needs
     only a column-range lookup (`_chip_at`), simpler than the help screen's box-relative
-    `_popup_hit`. The `Event` is `None` for a chip with no single unambiguous action to invoke,
-    the same rule and the same reasoning `_HELP_GROUPS`' own third element documents -- currently
-    only the always-ambiguous `popup_open` layout's chips (out of scope per this issue's
-    Non-goals) and the base layout's `up/down,wheel` chip (direction-ambiguous, same as its
-    `_HELP_GROUPS` row)."""
-    if popup_open:
+    `_popup_hit`. The `Event` is `None` for a chip with no single unambiguous action to invoke --
+    `up/down,wheel(,j/k)` (direction-ambiguous, same as its `_HELP_GROUPS` row) and, in the
+    `popup_open` layout, `Enter` (which of several possible headings it confirms depends on
+    `popup_selected`, not something a synthesized event alone can carry). A chip whose several
+    listed keys all produce the *same* effect isn't ambiguous in that sense, just multi-key, so it
+    still gets a real invoke -- `popup_open`'s `Esc/t cancel` and `help_open`'s `Esc/?/q close
+    help` both close their overlay identically regardless of which listed key does it, found
+    missing in manual testing (VIEWMD-0092 follow-up: these two chips rendered but were inert to
+    both hover and click, unlike every other chip on this line)."""
+    if help_open:
         pairs: list[tuple[str, str, Event | None]] = [
+            ("up/down,wheel,j/k", "scroll", None),
+            ("Esc/?/q", "close help", Event("key", "esc")),
+        ]
+        return _render_chips(pairs)
+    if popup_open:
+        pairs = [
             ("up/down,wheel,j/k", "move", None),
             ("Enter", "jump", None),
-            ("Esc/t", "cancel", None),
+            ("Esc/t", "cancel", Event("key", "esc")),
         ]
     else:
         pairs = [("up/down,wheel", "scroll", None), ("/", "search", Event("key", "/"))]
@@ -1024,7 +1035,15 @@ def _keybind_help(
             pairs.append(("Esc", "clear hl", Event("key", "esc")))
         pairs.append(("?", "help", Event("key", "?")))
     pairs.append(("q", "quit", Event("key", "q")))
+    return _render_chips(pairs)
 
+
+def _render_chips(
+    pairs: list[tuple[str, str, Event | None]],
+) -> tuple[str, list[tuple[int, int, Event | None]]]:
+    """`(key, label, invoke)` triples -> `(text, spans)`, the shared rendering step behind every
+    `_keybind_help` layout (base, `popup_open`, `help_open`) -- factored out so each layout's own
+    `pairs` list is the only thing that differs between them."""
     parts: list[str] = []
     spans: list[tuple[int, int, Event | None]] = []
     col = 0
@@ -1435,6 +1454,7 @@ def _run(
             bool(last_search_query),
             has_headings=bool(headings),
             has_back=bool(nav_stack),
+            help_open=help_open,
         )
 
     def _content_w() -> int:
@@ -1456,27 +1476,39 @@ def _run(
         then (nothing while actively typing a search query, since there's no meaningful "hovered
         target" while the mouse isn't what's driving input), then the base view's echo-area chip
         and body-text/directory-row links -- so hovering only ever lights up whatever a click at
-        that exact position would actually do."""
+        that exact position would actually do.
+
+        Help/ToC-popup states have their own echo-area row too (`Esc/?/q close help`, `Esc/t
+        cancel`) -- a miss against the overlay box itself (the cursor is on the bottom row, not
+        inside the box) falls through to the same echo-chip check the base state uses, rather than
+        returning `None` outright, so those two rows hover-highlight like every other chip
+        (VIEWMD-0092 follow-up: found not hovering, or clicking, at all)."""
+
+        def echo_chip_hover() -> tuple | None:
+            if ev.row - 1 == body_h + 1 and echo_message is None:
+                _, spans = _echo_hint()
+                for start, end, invoke in spans:
+                    if invoke is not None and start <= ev.col - 1 < end:
+                        return ("chip", start, end)
+            return None
+
         if help_open:
             box, invokes = _help_box(term_w, max(3, body_h - 2), help_scroll)
             hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
             if hit is not None and hit < len(invokes) and invokes[hit] is not None:
                 return ("help", hit)
-            return None
+            return echo_chip_hover()
         if popup_open:
             box, scroll = _popup_box(headings, popup_selected, term_w, body_h)
             hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
             if hit is not None and scroll + hit < len(headings):
                 return ("toc", hit)
-            return None
+            return echo_chip_hover()
         if search_active:
             return None
-        if ev.row - 1 == body_h + 1 and echo_message is None:
-            _, spans = _echo_hint()
-            for start, end, invoke in spans:
-                if invoke is not None and start <= ev.col - 1 < end:
-                    return ("chip", start, end)
-            return None
+        chip_hover = echo_chip_hover()
+        if chip_hover is not None:
+            return chip_hover
         body_row = ev.row - 1
         reserved = _scrollbar_reserved(len(lines), body_h)
         if not (0 <= body_row < body_h and ev.col - 1 >= reserved):
@@ -1591,9 +1623,7 @@ def _run(
             display_name, len(lines), top, end, term_w, section, left_col
         )
         mode_line = f"{_MODE_LINE_BG}{mode_line_text}{_RESET}"
-        if help_open:
-            echo_text = f"{_keycap('up/down,wheel,j/k')} scroll  {_keycap('Esc/?/q')} close help"
-        elif search_active:
+        if search_active:
             # A literal block glyph, not a real cursor position -- the real terminal cursor is
             # hidden for the whole session (`_ENTER_SCREEN`'s `\x1b[?25l`), and any attempt to
             # mimic one with reverse-video SGR here would hit the same "slicing through live
@@ -1603,6 +1633,11 @@ def _run(
         elif echo_message:
             echo_text = echo_message
         else:
+            # Covers the base layout, the ToC-popup layout, and the help-screen layout alike --
+            # `_echo_hint()` reads `help_open`/`popup_open` itself (VIEWMD-0092 follow-up: the
+            # help layout used to be a separate hardcoded string here, bypassing both this hover
+            # wrap and the click-invoke spans `_echo_hint()`'s callers rely on, which is why its
+            # "Esc/?/q close help" chip was inert to both).
             echo_text, _ = _echo_hint()
             if hover is not None and hover[0] == "chip":
                 echo_text = _wrap_hover(echo_text, hover[1], hover[2])
@@ -1950,6 +1985,17 @@ def _run(
                         help_scroll = 0
                         if _dispatch_base(invokes[hit]):
                             break
+                    elif ev.row - 1 == body_h + 1:
+                        # Echo-area click-invoke while the help screen is open (VIEWMD-0092
+                        # follow-up): the only actionable chip on this row is "Esc/?/q close
+                        # help" -- its one unambiguous outcome closes the screen the same as
+                        # pressing any of those three keys directly, matched against `_chip_at`
+                        # rather than `_dispatch_base` since closing help isn't itself a
+                        # base-state action.
+                        _, spans = _echo_hint()
+                        if _chip_at(spans, ev.col - 1) is not None:
+                            help_open = False
+                            help_scroll = 0
             elif search_active:
                 if ev.kind == "key" and ev.value == "esc":
                     search_active = False
@@ -1995,7 +2041,8 @@ def _run(
                     # Click-select-and-confirm (VIEWMD-0076, requirement 7): a click on an entry
                     # row picks it and jumps immediately, same as arrowing to it then Enter -- a
                     # click on the box's own border/title row, or outside the box entirely,
-                    # is a no-op (`_popup_hit` returns `None` for both).
+                    # is a no-op (`_popup_hit` returns `None` for both) unless it's the echo-area
+                    # row below, handled next.
                     box, scroll = _popup_box(headings, popup_selected, term_w, body_h)
                     hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
                     if hit is not None:
@@ -2004,6 +2051,20 @@ def _run(
                             popup_selected = idx
                             top = min(max_top, headings[popup_selected].row)
                             popup_open = False
+                    elif ev.row - 1 == body_h + 1:
+                        # Echo-area click-invoke while the ToC popup is open (VIEWMD-0092
+                        # follow-up): "Esc/t cancel" and "q quit" both have one unambiguous
+                        # outcome regardless of which listed key does it -- `q` quits the whole
+                        # pager (matching the real `q` keypress above, not `_dispatch_base`, which
+                        # is the base-state dispatcher and has no notion of this popup), anything
+                        # else with a real invoke just cancels back to where the popup was opened.
+                        _, spans = _echo_hint()
+                        invoke = _chip_at(spans, ev.col - 1)
+                        if invoke == Event("key", "q"):
+                            break
+                        if invoke is not None:
+                            popup_open = False
+                            top = saved_top
             else:
                 # Echo-area click-invoke (VIEWMD-0078): the echo area is the terminal's last row
                 # (`body_h` rows of content, then the mode line, then this one) -- resolve which

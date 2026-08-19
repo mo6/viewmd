@@ -910,14 +910,29 @@ def test_keybind_help_base_layout_chip_invokes_match_their_key():
 
 
 def test_keybind_help_popup_layout_chips_have_no_ambiguous_invoke():
-    # Non-goal: the popup-open echo hint's move/jump/cancel chips share the same "no single
-    # unambiguous action" rule as their `_HELP_GROUPS` counterparts -- only the trailing `q`
-    # chip (always appended, popup or not) carries an invoke; the main loop never reaches the
-    # echo-row click handler while `popup_open` is true anyway (it has its own click handling
-    # for the ToC selection instead), so none of these chips are actually clickable in practice.
+    # `up/down,wheel,j/k` (which direction?) and `Enter` (confirms whichever heading happens to
+    # be `popup_selected`, not something a synthesized event alone can carry) stay genuinely
+    # ambiguous -- but `Esc/t cancel` and the trailing `q quit` both have one unambiguous outcome
+    # regardless of which listed key does it (VIEWMD-0092 follow-up: `Esc/t cancel` was wrongly
+    # grouped with the truly-ambiguous chips here, which is why it was inert to both hover and
+    # click while a ToC popup was open).
     _text, spans = ip._keybind_help(True)
-    assert [invoke for _start, _end, invoke in spans[:-1]] == [None, None, None]
-    assert spans[-1][2] == ip.Event("key", "q")
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[:2] == [None, None]
+    assert invokes[2] == ip.Event("key", "esc")
+    assert invokes[-1] == ip.Event("key", "q")
+
+
+def test_keybind_help_help_layout_close_chip_has_an_invoke():
+    # VIEWMD-0092 follow-up: the help-screen echo hint used to be a hardcoded plain string with
+    # no chip structure at all, so "Esc/?/q close help" was inert to both hover and click; now
+    # routed through the same `_keybind_help`/`_render_chips` machinery every other layout uses.
+    text, spans = ip._keybind_help(False, help_open=True)
+    assert "scroll" in ip._strip_ansi(text)
+    assert "close help" in ip._strip_ansi(text)
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[0] is None  # up/down,wheel,j/k: scroll -- direction-ambiguous
+    assert invokes[1] == ip.Event("key", "esc")
 
 
 def test_chip_at_resolves_column_to_the_right_chip():
@@ -927,6 +942,25 @@ def test_chip_at_resolves_column_to_the_right_chip():
     assert ip._chip_at(spans, t_col) == ip.Event("key", "t")
     q_col = plain.rindex("q quit")
     assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+
+
+def test_chip_at_resolves_the_popup_cancel_and_quit_chips():
+    text, spans = ip._keybind_help(True)
+    plain = ip._strip_ansi(text)
+    cancel_col = plain.index("Esc/t cancel")
+    assert ip._chip_at(spans, cancel_col) == ip.Event("key", "esc")
+    q_col = plain.rindex("q quit")
+    assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+    # The still-ambiguous chips resolve to no invoke at all.
+    move_col = plain.index("move")
+    assert ip._chip_at(spans, move_col) is None
+
+
+def test_chip_at_resolves_the_help_screen_close_chip():
+    text, spans = ip._keybind_help(False, help_open=True)
+    plain = ip._strip_ansi(text)
+    close_col = plain.index("close help")
+    assert ip._chip_at(spans, close_col) == ip.Event("key", "esc")
 
 
 def test_chip_at_returns_none_between_chips_and_out_of_range():
