@@ -3,7 +3,7 @@ id: VIEWMD-0086
 title: Decide and document how Obsidian embed/transclusion syntax (![[Target]]) is handled
 status: in-progress
 area: [wikilinks, render, docs]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>

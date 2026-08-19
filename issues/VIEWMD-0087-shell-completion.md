@@ -3,7 +3,7 @@ id: VIEWMD-0087
 title: Provide bash/zsh/fish shell completion for viewmd's CLI flags
 status: in-progress
 area: [cli, tools]
-effort:
+effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>

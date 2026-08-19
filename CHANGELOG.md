@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.44.1] — 2026-08-19
+
+- **Warn on unrecognized config-file keys** (VIEWMD-0083, bug): `viewmd.config.parse_config` now prints `viewmd: <path>:<line>: unrecognized config key <key>` to stderr for any config key it doesn't recognize, once per key, instead of silently ignoring it — a typo like `wdith = 80` no longer fails invisibly. Parsing still continues (forward compatibility with newer config files is preserved).
+
 ## [1.44.0] — 2026-08-19
 
 - **Document the narrow fast-path exception for small docs/metadata fixes** (VIEWMD-0098, docs): `AGENTS.md` now sanctions, in writing, the pattern VIEWMD-0095/0096/0097 each used ad hoc — a single-file, few-line docs/metadata fix may skip the worktree/branch mechanics, still requires the same acceptance and landing-approval gates every issue goes through, asked each time rather than assumed.
