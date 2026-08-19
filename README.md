@@ -163,6 +163,30 @@ value skips reading a config file entirely, regardless of what's on disk — han
 reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
 even then, since it's explicit).
 
+## Shell completion
+
+Tab-completion scripts for bash, zsh, and fish are checked into [completions/](completions/) —
+`viewmd.bash`, `viewmd.zsh`, `viewmd.fish` — generated from viewmd's own `argparse` parser
+(`./tools.sh completions`, see "Development" below) rather than hand-maintained per shell, so
+they stay in sync with the actual flag surface. They complete every flag name (including both
+spellings of a `--toc`/`--no-toc`-style pair), `--color`'s three literal choices
+(`auto`/`always`/`never`), `--width`'s `full` literal, and fall back to normal filesystem-path
+completion for `--config` and for the positional Markdown-file argument(s).
+
+**bash**: source the script directly, e.g. add `source /path/to/viewmd/completions/viewmd.bash`
+to `~/.bashrc`; or copy/symlink it into a directory your `bash-completion` setup already sources,
+such as `/etc/bash_completion.d/` or `$(brew --prefix)/etc/bash_completion.d/` on a Homebrew
+install.
+
+**zsh**: copy or symlink `completions/viewmd.zsh` as `_viewmd` into a directory on your `$fpath`
+(e.g. `~/.zsh/completions/_viewmd`), then make sure that directory is on `$fpath` before
+`autoload -Uz compinit && compinit` runs in `~/.zshrc` (or just start a new shell if `compinit`
+already scans it).
+
+**fish**: copy or symlink `completions/viewmd.fish` to `~/.config/fish/completions/viewmd.fish`
+(or any other directory on `$fish_complete_path`); fish picks it up automatically in any new
+shell, no further configuration needed.
+
 ## Mermaid diagrams
 
 A fenced ` ```mermaid ` code block containing a `sequenceDiagram`, `graph`/`flowchart`,
@@ -270,9 +294,11 @@ An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one
 ## Development
 
 - `./run-tests.sh` — the full check gate (pytest, ruff incl. security rules, `pip-audit`,
-  `issues/` lint).
+  `issues/` lint, `completions/` freshness check).
 - `./tools.sh issues` — regenerate the `issues/README.md` index; `./tools.sh issues --check`
   lints without writing.
+- `./tools.sh completions` — regenerate `completions/viewmd.{bash,zsh,fish}` from the current
+  `argparse` parser; `./tools.sh completions --check` asserts they're current without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
   [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook,

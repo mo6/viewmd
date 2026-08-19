@@ -3,7 +3,7 @@ id: VIEWMD-0087
 title: Provide bash/zsh/fish shell completion for viewmd's CLI flags
 status: in-progress
 area: [cli, tools]
-effort:
+effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
@@ -47,4 +47,6 @@ viewmd has a reasonably wide flag surface for a single-command CLI, several of t
 Generated scripts checked into the repo (e.g. `completions/viewmd.bash`, `.zsh`, `.fish`); a test or `./tools.sh` check confirms the checked-in scripts are current for the present flag set. Manual verification: sourcing each script in its shell and confirming `viewmd --col<TAB>` and `viewmd --width <TAB>` behave as expected.
 
 ## Peer review
+
+- (agent, implementer) Implemented `tools/completions.py` (generates `completions/viewmd.{bash,zsh,fish}` by introspecting `viewmd.__main__.build_parser()`, no new runtime dependency), wired `./tools.sh completions` and a `--check` mode into `./run-tests.sh`, and documented per-shell install steps in `README.md`. `./run-tests.sh` is green for everything this issue touches; it currently fails only on a pre-existing, unrelated `issues --check` gap (VIEWMD-0083/VIEWMD-0086 missing `effort:`, present before this branch's changes, confirmed via `git stash`) that this issue does not own. This is an implementation summary, not an independent review (AGENTS.md) — a separate reviewing pass is still needed before "commit and close this out?" is asked.
 

@@ -42,7 +42,14 @@ def _resolve_width(width_arg: str | None, terminal_width: int, *,
     return int(width_arg)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Builds viewmd's `ArgumentParser`, the single source of truth for its CLI flag surface.
+
+    Kept as its own function (rather than inlined in `main`) so `tools/completions.py` can
+    import and introspect the exact same parser `main` parses with, generating the checked-in
+    bash/zsh/fish completion scripts from it directly instead of a hand-maintained duplicate
+    flag list (VIEWMD-0087).
+    """
     parser = argparse.ArgumentParser(
         prog="viewmd", description="View a Markdown file in the terminal, paged interactively."
     )
@@ -71,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", metavar="PATH", default=None,
                         help="read configuration from PATH instead of "
                              "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
     paths = args.path
 

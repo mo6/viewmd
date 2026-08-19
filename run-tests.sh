@@ -2,9 +2,9 @@
 # viewmd's development check gate, in one command, from any working directory.
 #
 #   ./run-tests.sh                 the whole gate: pytest, ruff (incl. security rules), pip-audit,
-#                                   and issues/ lint+index check. Runs every step even if an
-#                                   earlier one fails, so one run shows every problem, and exits
-#                                   non-zero if any step failed.
+#                                   issues/ lint+index check, and completions/ freshness check.
+#                                   Runs every step even if an earlier one fails, so one run shows
+#                                   every problem, and exits non-zero if any step failed.
 #   ./run-tests.sh <pytest args>   tight iteration: anything you pass is handed straight to
 #                                   pytest, e.g. `./run-tests.sh -k render -x`.
 set -uo pipefail
@@ -40,6 +40,9 @@ echo "== pip-audit =="
 
 echo "== issues =="
 "$py" tools/issues.py --check || failed=1
+
+echo "== completions =="
+"$py" tools/completions.py --check || failed=1
 
 if [[ "$failed" -eq 0 ]]; then
     echo "run-tests: all green"
