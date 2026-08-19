@@ -124,6 +124,32 @@ def test_popup_box_no_indicators_when_everything_fits():
     assert scroll == 0
 
 
+def test_popup_box_marks_a_hovered_row_distinct_from_selected():
+    # VIEWMD-0092: hovering a *different* row than the current selection gets its own,
+    # dimmer highlight -- not the selected row's own `_POPUP_SELECTED_BG`.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20, hover=2)
+    content = box[1:-1]
+    assert ip._POPUP_HOVER_BG in content[2]
+    assert ip._POPUP_SELECTED_BG not in content[2]
+    assert ip._POPUP_HOVER_BG not in content[0]  # the selected row itself is untouched by hover
+
+
+def test_popup_box_selected_row_hover_keeps_selected_styling():
+    # Hovering the already-selected row must not demote it to the dimmer hover shade.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=1, term_w=60, avail_h=20, hover=1)
+    content = box[1:-1]
+    assert ip._POPUP_SELECTED_BG in content[1]
+    assert ip._POPUP_HOVER_BG not in content[1]
+
+
+def test_popup_box_no_hover_by_default():
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
+
+
 # --- _overlay ------------------------------------------------------------------------------------
 
 
@@ -231,6 +257,34 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     wrong = ip._crop_row(row, mismatched_len, left_col=max(0, own_len - 10), width=80)
     assert "›" not in correct
     assert "›" in wrong
+
+
+# --- _wrap_hover (VIEWMD-0092) ------------------------------------------------------------------
+
+
+def test_wrap_hover_wraps_only_the_given_span():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 3, 6)
+    assert ip._strip_ansi(out) == line  # visible text is untouched, just re-styled
+    assert f"{ip._HOVER_STYLE}345{ip._RESET}" in out
+    assert not out.startswith(ip._HOVER_STYLE)  # prefix ("012") isn't wrapped
+
+
+def test_wrap_hover_preserves_a_links_own_color_around_the_span():
+    line = _first_colored_line("before [a link](B.md) after")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    out = ip._wrap_hover(line, start, end)
+    assert ip._strip_ansi(out) == ip._strip_ansi(line)
+    assert ip._HOVER_STYLE in out
+    assert ip._RESET in out
+
+
+def test_wrap_hover_at_the_very_end_of_the_line():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 8, 10)
+    assert ip._strip_ansi(out) == line
+    assert f"{ip._HOVER_STYLE}89{ip._RESET}" in out
 
 
 # --- scrollbar column (VIEWMD-0079) -------------------------------------------------------------
@@ -356,6 +410,41 @@ def test_link_at_decodes_a_toc_anchor_href_with_a_percent_looking_heading():
     toc_line = next(line for line in colored if "Item" in ip._strip_ansi(line))
     col = _col_of(toc_line, "Item")
     assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:{heading_text}"
+
+
+# --- _link_span_at (VIEWMD-0092) ------------------------------------------------------------
+
+
+def test_link_span_at_resolves_href_and_span_inside_the_link():
+    line = _first_colored_line("[a link](B.md) after")
+    col = _col_of(line, "a link")
+    href, start, end = ip._link_span_at(line, col)
+    assert href == "B.md"
+    assert start <= col < end
+    # Every column across the link's own text resolves to the exact same span -- not just the
+    # one column `col_of` happened to land on.
+    for c in range(start, end):
+        assert ip._link_span_at(line, c) == (href, start, end)
+
+
+def test_link_span_at_returns_none_just_past_the_link():
+    line = _first_colored_line("[a link](B.md) zzz")
+    end_col = _col_of(line, "zzz")
+    assert ip._link_span_at(line, end_col) is None
+
+
+def test_link_span_at_returns_none_for_plain_text_with_no_link():
+    line = _first_colored_line("just plain text, no links here")
+    assert ip._link_span_at(line, 0) is None
+
+
+def test_link_span_at_span_excludes_neighboring_plain_text():
+    line = _first_colored_line("QQQ [a link](B.md) ZZZ")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    plain = ip._strip_ansi(line)
+    assert plain.index("QQQ") < start
+    assert end <= plain.index("ZZZ")
 
 
 def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
@@ -638,6 +727,33 @@ def test_read_event_sgr_mouse_modifier_click_is_ignored():
     assert ev.kind != "click"
 
 
+def test_read_event_sgr_mouse_motion_no_button(monkeypatch):
+    # VIEWMD-0092: xterm's own "motion, no button pressed" encoding is 32+3=35 -- confirmed
+    # empirically in macOS Terminal.app (see the issue's Design notes) as the report a bare mouse
+    # move (no click) produces once motion tracking (1003) is enabled.
+    fd = _pipe_with(b"\x1b[<35;15;7M")
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_with_button_held_is_still_motion():
+    # A drag (button held while moving) sets the same bit-32 motion flag, just with the held
+    # button's own low bits instead of 3 ("no button") -- still a "motion" event here, since
+    # this issue is about where the cursor currently sits, not whether a button happens to be
+    # down while it gets there.
+    fd = _pipe_with(b"\x1b[<32;15;7M")  # button 0 (left) held + moving
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_does_not_collide_with_wheel_or_click():
+    # Regression guard for the bit-32 check's own reasoning comment: wheel codes (64-69) and a
+    # plain click (0) must still parse exactly as before now that a motion branch sits between
+    # them in `_read_event`.
+    fd = _pipe_with(b"\x1b[<64;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_up")
+    fd = _pipe_with(b"\x1b[<0;15;7M")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+
+
 # --- _mode_line ------------------------------------------------------------------------------
 
 
@@ -860,6 +976,30 @@ def test_help_box_scrolls_with_indicators_when_too_tall():
     assert "▼" not in "".join(end)
 
 
+def test_help_box_marks_a_hovered_actionable_row():
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is not None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG in hovered_box[1 + hover_i]
+    # No other row picks up the hover styling.
+    assert sum(1 for row in hovered_box if ip._POPUP_HOVER_BG in row) == 1
+
+
+def test_help_box_does_not_highlight_a_non_actionable_hovered_row():
+    # A header/blank/tip row (invoke is None) is a click no-op -- hovering it must not imply
+    # otherwise (requirement 2's "MUST NOT ... imply a target is clickable" reasoning, applied to
+    # the help table the same way `_help_box`'s own docstring states for the hover param).
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG not in "".join(hovered_box)
+
+
+def test_help_box_no_hover_by_default():
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
+
+
 def test_help_box_never_fills_the_full_body_edge_to_edge():
     # Regression: the popup must always leave at least one row of real document visible above
     # and below it -- callers pass `avail_h = max(3, body_h - 2)`, not the full body height.
@@ -905,6 +1045,16 @@ def test_mouse_on_off_are_a_real_enable_disable_pair():
     assert ip._MOUSE_ON != ip._MOUSE_OFF
     assert "1000h" in ip._MOUSE_ON
     assert "1000l" in ip._MOUSE_OFF
+
+
+def test_mouse_on_off_enable_motion_tracking_too():
+    # VIEWMD-0092 requirement 1: motion tracking (1003) is layered onto the same on/off toggle as
+    # click reporting (1000) and SGR coordinates (1006) -- 'm' (see `_dispatch_base`) turning
+    # mouse capture off must also stop motion reports, not just clicks/wheel, so there's no stray
+    # hover highlighting while the reader has deliberately dropped out of mouse capture to select
+    # text natively.
+    assert "1003h" in ip._MOUSE_ON
+    assert "1003l" in ip._MOUSE_OFF
 
 
 # --- wide characters (VIEWMD-0070) ------------------------------------------------------------
