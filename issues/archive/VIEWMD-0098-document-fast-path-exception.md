@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0098
 title: Document the narrow fast-path exception for small docs/metadata fixes
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [876f348]
 related: [VIEWMD-0095, VIEWMD-0096, VIEWMD-0097]
 supersedes: []
-changelog:
+changelog: "[1.44.0]"
 reason:
 ---
 

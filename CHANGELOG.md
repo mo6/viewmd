@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.44.0] — 2026-08-19
+
+- **Document the narrow fast-path exception for small docs/metadata fixes** (VIEWMD-0098, docs): `AGENTS.md` now sanctions, in writing, the pattern VIEWMD-0095/0096/0097 each used ad hoc — a single-file, few-line docs/metadata fix may skip the worktree/branch mechanics, still requires the same acceptance and landing-approval gates every issue goes through, asked each time rather than assumed.
+
 ## [1.43.2] — 2026-08-19
 
 - **Mention mouse/scroll support in the package description** (VIEWMD-0097, docs): `pyproject.toml`'s `description` now names the interactive pager as mouse-driven and scrollable, not just "interactive."
