@@ -697,23 +697,79 @@ class Event:
     row: int = 0  # 1-indexed terminal row ("click" only, from the SGR report's Cy)
 
 
+# Bytes `_drain_paired_sgr_release` read past a complete mouse-release report (a following
+# keypress that arrived in the same burst). `_read_event` consumes these first so a drain that
+# peeked a real key doesn't lose it. Cleared at the start of each `_run` session.
+_unread = bytearray()
+
+# A complete SGR left-button release: ESC [ < 0 ; Cx ; Cy m
+_SGR_LEFT_RELEASE_RE = re.compile(rb"\x1b\[<0;\d+;\d+m")
+
+
+def _read_byte(fd: int) -> bytes:
+    if _unread:
+        b = bytes(_unread[:1])
+        del _unread[:1]
+        return b
+    return os.read(fd, 1)
+
+
+def _input_pending(fd: int, timeout: float) -> bool:
+    if _unread:
+        return True
+    ready, _, _ = select.select([fd], [], [], timeout)
+    return bool(ready)
+
+
+def _drain_paired_sgr_release(fd: int) -> None:
+    """Consume a left-button SGR release (ESC [ < 0 ; Cx ; Cy m) if it's already queued on `fd`.
+
+    A physical click is press then release; `_read_event` returns the click on the press and
+    used to leave the release unread for the *next* `_read_event` call to discard. That next
+    call never happens when the click itself quits the pager (VIEWMD-0094), so the release
+    bytes (`0;69;46m` of the `ESC[<0;69;46m` report, typically) leak to the shell. Drain the
+    pair here with the same 0.05s `select` window `_read_event` already uses to disambiguate
+    bare Esc; if the release hasn't arrived yet (button still held), the next `_read_event`
+    still ignores it the old way. Non-release bytes that arrived in the same burst are pushed
+    onto `_unread` rather than dropped.
+    """
+    if not _input_pending(fd, 0.05):
+        return
+    was_blocking = os.get_blocking(fd)
+    data = bytearray()
+    try:
+        os.set_blocking(fd, False)
+        while True:
+            try:
+                chunk = os.read(fd, 64)
+            except BlockingIOError:
+                break
+            if not chunk:
+                break
+            data.extend(chunk)
+    finally:
+        os.set_blocking(fd, was_blocking)
+    raw = bytes(data)
+    m = _SGR_LEFT_RELEASE_RE.match(raw)
+    _unread.extend(raw[m.end() :] if m else raw)
+
+
 def _read_event(fd: int) -> Event:
-    b = os.read(fd, 1)
+    b = _read_byte(fd)
     if b in (b"\x7f", b"\x08"):
         return Event("key", "backspace")
     if b != b"\x1b":
         return Event("key", b.decode(errors="replace"))
     # Distinguish a bare Esc (no more bytes within a short window) from the start of an escape
     # sequence (arrow keys, SGR mouse reports) -- xterm sends the whole sequence back-to-back.
-    ready, _, _ = select.select([fd], [], [], 0.05)
-    if not ready:
+    if not _input_pending(fd, 0.05):
         return Event("key", "esc")
-    b2 = os.read(fd, 1)
+    b2 = _read_byte(fd)
     if b2 != b"[":
         return Event("key", "esc")
     seq = b""
     while True:
-        ch = os.read(fd, 1)
+        ch = _read_byte(fd)
         seq += ch
         if ch.isalpha() or ch in (b"~",):
             break
@@ -740,11 +796,15 @@ def _read_event(fd: int) -> Event:
                 return Event("wheel_left")
             if btn == 69:
                 return Event("wheel_right")
-            # A plain (unmodified) left-click press (VIEWMD-0076) -- the release ('m') is ignored,
-            # and any modifier-click (Ctrl/Alt/Shift, which SGR encodes into `btn` the same way it
-            # does for the Shift+wheel fallback above) deliberately does not match `btn == 0`
-            # exactly, matching this issue's Non-goals (modifier-click is out of scope).
+            # A plain (unmodified) left-click press (VIEWMD-0076) -- the release ('m') is ignored
+            # as an event (VIEWMD-0076 only acts on the press), but drained from the fd here
+            # when already queued (VIEWMD-0094) so a click that quits doesn't leak it to the
+            # shell. Any modifier-click (Ctrl/Alt/Shift, which SGR encodes into `btn` the same
+            # way it does for the Shift+wheel fallback above) deliberately does not match
+            # `btn == 0` exactly, matching VIEWMD-0076's Non-goals (modifier-click is out of
+            # scope).
             if btn == 0 and m.group(4) == "M":
+                _drain_paired_sgr_release(fd)
                 return Event("click", col=int(m.group(2)), row=int(m.group(3)))
         return Event("key", "")
     arrows = {
@@ -1314,6 +1374,7 @@ def _run(
     # (found in review).
     nav_stack: list[tuple] = []
 
+    _unread.clear()
     old_settings = termios.tcgetattr(tty_fd)
     top = _home_top(body_start, max(0, len(lines) - body_h))
     popup_open = False
@@ -1716,29 +1777,35 @@ def _run(
         sys.stdout.write(_ENTER_SCREEN)
         draw()
         while True:
-            ready, _, _ = select.select([tty_fd, resize_read_fd], [], [])
-            if resize_read_fd in ready:
-                try:
-                    os.read(resize_read_fd, 4096)  # drain the wakeup byte(s); content is unused
-                except BlockingIOError:
-                    pass
-                new_w, new_h = shutil.get_terminal_size()
-                if (new_w, new_h) != (term_w, term_h):
-                    term_w, term_h = new_w, new_h
-                    width_is_full = configured_width == term_w
-                    if full_width_active:
-                        # Full-width mode means "whatever the terminal's width currently is" --
-                        # a resize while active has to rewrap, the same as pressing 'w' itself.
-                        lines, plain_lines, headings, body_start = loader(term_w)
-                        max_content_width = _max_content_width(plain_lines)
-                    body_h = term_h - 2
-                    top = min(top, max(0, len(lines) - body_h))
-                    left_col = min(left_col, max(0, max_content_width - _content_w()))
-                    popup_selected = min(popup_selected, max(0, len(headings) - 1))
-                draw()
-                continue
-            if tty_fd not in ready:
-                continue
+            # `_unread` holds bytes `_drain_paired_sgr_release` already pulled off `tty_fd`
+            # (a key that arrived in the same burst as a click-release). Those are no longer
+            # visible to `select` on the fd, so skip the wait and let `_read_event` consume
+            # them -- otherwise a non-quit click followed immediately by a key would stall
+            # until some later fd event (found in review, VIEWMD-0094).
+            if not _unread:
+                ready, _, _ = select.select([tty_fd, resize_read_fd], [], [])
+                if resize_read_fd in ready:
+                    try:
+                        os.read(resize_read_fd, 4096)  # drain the wakeup byte(s); content is unused
+                    except BlockingIOError:
+                        pass
+                    new_w, new_h = shutil.get_terminal_size()
+                    if (new_w, new_h) != (term_w, term_h):
+                        term_w, term_h = new_w, new_h
+                        width_is_full = configured_width == term_w
+                        if full_width_active:
+                            # Full-width mode means "whatever the terminal's width currently is" --
+                            # a resize while active has to rewrap, the same as pressing 'w' itself.
+                            lines, plain_lines, headings, body_start = loader(term_w)
+                            max_content_width = _max_content_width(plain_lines)
+                        body_h = term_h - 2
+                        top = min(top, max(0, len(lines) - body_h))
+                        left_col = min(left_col, max(0, max_content_width - _content_w()))
+                        popup_selected = min(popup_selected, max(0, len(headings) - 1))
+                    draw()
+                    continue
+                if tty_fd not in ready:
+                    continue
             ev = _read_event(tty_fd)
             max_top = max(0, len(lines) - body_h)
             # Captured before `echo_message` is cleared below (VIEWMD-0078 requirement 4): the
