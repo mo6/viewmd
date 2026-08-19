@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.42.1] — 2026-08-19
+
+- **Fix stale package description** (VIEWMD-0095, docs): `pyproject.toml`'s `description` no longer claims viewmd pages into `less` — VIEWMD-0072 removed the external pager entirely; the description now names viewmd's own built-in interactive pager instead.
+
 ## [1.42.0] — 2026-08-19
 
 - **Clickable `.md` file rows in the directory listing pager** (VIEWMD-0093, pager/render): a `.md` file row in the interactive directory-listing view now carries a real hyperlink, matching the subdirectory rows VIEWMD-0081 already made clickable; clicking (or Enter-ing) it opens the file in the pager, with `B` returning to the listing afterward. Non-interactive rendering and subdirectory-row behavior are unchanged.

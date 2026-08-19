@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0095
 title: pyproject.toml's package description still says "paging into less"
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [545b095]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.42.1]"
 reason:
 ---
 
