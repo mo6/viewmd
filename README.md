@@ -78,8 +78,9 @@ Viewing anything in a terminal — a single document (a file, stdin, or a direct
 a directory listing with no index file, or more than one path at once — pages into viewmd's own
 interactive pager. viewmd never spawns an external pager process: no `less` by default, and no
 `$PAGER` override either — mouse-wheel/trackpad scrolling, search with match highlighting,
-horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more are all
-built in. Press `?` at any time for the full keybinding reference; a few of the more useful ones:
+horizontal scrolling for a Mermaid diagram or code block wider than the terminal, hover highlighting
+of whatever clickable thing the mouse is over, and more are all built in. Press `?` at any time for
+the full keybinding reference; a few of the more useful ones:
 
 ```
 up/down, wheel, j/k     scroll one line                    t          open the table of contents*
@@ -98,10 +99,18 @@ that needs no toggling. Horizontal scroll also works via a horizontal wheel/trac
 terminals that report it natively; on ones that don't (macOS Terminal.app, notably), hold Shift
 while scrolling the ordinary wheel instead.
 
-Clicking a link (a `[[wikilink]]` or an ordinary Markdown link) that resolves to an existing local
-`.md` file navigates the pager to that file in place; `B` goes back to the file you navigated from.
-Clicking a row in the table-of-contents popup jumps to it, same as Enter; clicking a keybinding row
-in the `?` help screen performs that key's action directly.
+The mouse highlights whatever clickable target it's currently over — a link, a directory-listing
+row, a table-of-contents/help-screen row, or a keybinding chip in the bottom status row — before
+you click it, so it's clear what will actually respond. Clicking a link (a `[[wikilink]]` or an
+ordinary Markdown link) that resolves to an existing local `.md` file navigates the pager to that
+file in place; `B` goes back to the file you navigated from. Clicking a row in the table-of-contents
+popup jumps to it, same as Enter; clicking a keybinding row in the `?` help screen performs that
+key's action directly, and the `cancel`/`close help` chip in the bottom row while either popup is
+open does the same as pressing Esc.
+
+A bare directory listing (no index file present) is click-navigable too: clicking a subdirectory
+row descends into that subdirectory's own listing, clicking a `.md` file row opens it in the pager,
+and `B` returns to the listing you came from either way.
 
 \* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
 they're only available for a single document; viewing more than one file at once or a bare
@@ -110,7 +119,7 @@ it — just without those two, since there's no per-file/per-entry heading struc
 table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
 it's one long continuous scroll through every file in the order given.
 
-† Click-to-follow and `B` are likewise single-document-only — a directory listing or multi-file
+† Click-to-follow and `B` work for a single document and for a bare directory listing; a multi-file
 view has no single current file/directory to resolve a relative link against, so a click on a link
 and `B` are both inert there.
 
