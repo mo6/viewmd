@@ -120,6 +120,19 @@ worked, not the process it is worked under — each one still goes through the s
 Ready/Done gates (`issues/AGILE.md`) independently, and any conflict between two worktrees editing
 the same file surfaces the normal way, at merge time into `develop`.
 
+**Narrow fast-path exception: a single-file, few-line docs/metadata fix may be implemented directly
+on `develop`, no worktree, no branch, if the maintainer explicitly waives the worktree for that
+specific change.** VIEWMD-0095/0096/0097 (a stale `pyproject.toml` description, a README
+correction) established the pattern: the issue is still filed, still needs `accepted_by:`/
+`accepted_at:` (Definition of Ready) and the maintainer's own explicit approval to land (Definition
+of Done) exactly as any other issue does — only the worktree/branch *mechanics* are skipped,
+because the whole implement-test-commit-archive cycle happens in one uninterrupted turn, so the
+primary checkout is never left mid-work the way a longer-lived branch would leave it. This is not a
+size threshold to self-judge — never assume it silently for a change that touches more than
+`pyproject.toml`/`README.md`/`AGENTS.md`/a single doc file, and never assume it from a prior
+approval carrying forward to a later, unrelated change; ask each time the way `accepted_by`/"commit
+and close this out?" are already asked each time. When in doubt, use the worktree.
+
 **Attribute commits and `accepted_by:` from `.gitconfig`, never a guessed or session-supplied
 identity.** Run `git config user.name`/`git config user.email` (or check committed history, e.g.
 `git log -1 --format='%an <%ae>'`) before writing an issue's `accepted_by:` field or any other
