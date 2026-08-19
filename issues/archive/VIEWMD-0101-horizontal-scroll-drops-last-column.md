@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0101
 title: Fix horizontal scroll stopping one column short of a row's true right edge
-status: in-progress
+status: implemented
 area: [pager]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [9b8816f]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.46.3]"
 reason:
 ---
 
@@ -47,3 +47,4 @@ A new pager test scrolls a synthetic row wider than the terminal all the way rig
 ## Peer review
 
 - **Claude Sonnet 5** (agent), 2026-08-19: verdict CONFIRMED and fixed -- `max_left_col` in all four call sites (wheel-right, `w` width-toggle re-clamp, `B` back-navigation re-clamp, resize re-clamp) undercounted by 1, never reaching a row's true last column once scrolled all the way right, with no `›` marker to hint at the shortfall. Factored the corrected cap into a shared `_max_left_col` helper (requirement 4) and added regression tests (`test_max_left_col_reaches_the_rows_true_last_column`, `test_max_left_col_stays_reachable_by_repeated_stepping`, `test_max_left_col_no_scroll_needed_when_content_fits`). `./run-tests.sh` green.
+- **George Moses** (maintainer), 2026-08-19: tested, accept and close.

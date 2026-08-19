@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.3] — 2026-08-19
+
+- **Fix horizontal scroll stopping one column short of a row's true right edge** (VIEWMD-0101, bug): scrolling all the way right on a row wider than the terminal now reaches the row's actual last column — the max-scroll cap (`max_left_col`, four call sites) previously didn't account for the `‹` truncation marker's own reserved column at the fully-scrolled position, so the rightmost content stayed permanently hidden with no `›` marker to hint at it. Factored into a shared `_max_left_col` helper.
+
 ## [1.46.2] — 2026-08-19
 
 - **Mention the unrecognized-config-key warning in README.md** (VIEWMD-0100, docs): the "Configuration file" section now says an unrecognized key prints a `viewmd: ...` stderr warning (once per key) rather than just "is ignored" — stale since VIEWMD-0083 added that warning.
