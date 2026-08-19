@@ -257,6 +257,49 @@ def test_overlay_does_not_pad_past_real_content():
     assert tail == plain[box_top][left + 4 :]
 
 
+def test_overlay_plain_twin_must_share_the_colored_rows_own_layout():
+    # VIEWMD-0102 regression: a pie chart (VIEWMD-0043) renders a *structurally different*
+    # horizontal-bar-chart layout with color off, not a de-colored circle -- so a separately
+    # rendered `color=False` document (`plain_lines`) is the wrong source for `_overlay`'s
+    # `plain_rows` argument on a pie-chart row: it lays out different text at different columns
+    # than the colored row actually on screen, corrupting the margins around the popup box (which
+    # `_overlay` rebuilds from `plain_rows`) even though the popup never covers them.
+    #
+    # `draw()` itself isn't unit-testable (see this module's docstring), so this locks down the
+    # underlying contract `draw()` now relies on instead: the colorless twin `_overlay` needs must
+    # come from stripping the *same* colored row (`_strip_ansi`), never from a document rendered
+    # separately with `color=False`, because only the former is guaranteed to share the colored
+    # row's layout for every diagram type, pie charts included.
+    doc = "```mermaid\npie\n  \"A\" : 70\n  \"B\" : 30\n```\n"
+    colored, plain, _headings, _body_start = ip._load(doc, 40, color_kwargs=_KW)
+    # Fixture assumption: pie's no-color rendering really is a different layout, not just the same
+    # text minus color -- if this ever stops holding, the bug this test guards against can't recur.
+    assert plain != [ip._strip_ansi(row) for row in colored]
+
+    popup = ["┌──┐", "│ok│", "└──┘"]
+    term_w = 40
+
+    # The fix: `plain_rows` derived from the colored rows themselves.
+    fixed_plain_rows = [ip._strip_ansi(row) for row in colored]
+    fixed_out = ip._overlay(colored, fixed_plain_rows, popup, term_w)
+    top, left = ip._popup_origin(popup, len(colored), term_w)
+    popup_w = max(ip._display_width(ip._strip_ansi(r)) for r in popup)
+    for r in range(top, top + len(popup)):
+        margin_after = ip._strip_ansi(fixed_out[r])[left + popup_w :]
+        real_after = ip._strip_ansi(colored[r])[left + popup_w :]
+        assert margin_after == real_after, "fixed plain twin must preserve the real row's margin"
+
+    # The bug: `plain_rows` taken from a separately-rendered `color=False` document instead.
+    broken_out = ip._overlay(colored, plain, popup, term_w)
+    mismatches = [
+        r
+        for r in range(top, top + len(popup))
+        if ip._strip_ansi(broken_out[r])[left + popup_w :]
+        != ip._strip_ansi(colored[r])[left + popup_w :]
+    ]
+    assert mismatches, "fixture assumption broken: expected the mismatched twin to corrupt a margin"
+
+
 # --- _ansi_slice / _crop_row -----------------------------------------------------------------
 
 
@@ -434,8 +477,8 @@ def test_scrollbar_thumb_range_never_exceeds_body_h():
     assert 0 <= start < end <= 20
 
 
-def test_scrollbar_prefix_colored_marks_thumb_and_track_distinctly():
-    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=True)
+def test_scrollbar_prefix_marks_thumb_and_track_distinctly():
+    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0)
     assert len(prefix) == 10
     thumb_start, thumb_end = ip._scrollbar_thumb_range(100, 10, 0)
     for i, cell in enumerate(prefix):
@@ -443,14 +486,6 @@ def test_scrollbar_prefix_colored_marks_thumb_and_track_distinctly():
         glyph = ip._SCROLLBAR_THUMB_GLYPH if is_thumb else ip._SCROLLBAR_TRACK_GLYPH
         assert glyph in cell
         assert "\x1b[" in cell  # colored
-
-
-def test_scrollbar_prefix_plain_has_no_color_but_keeps_glyphs():
-    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=False)
-    assert len(prefix) == 10
-    for cell in prefix:
-        assert "\x1b[" not in cell
-        assert ip._SCROLLBAR_THUMB_GLYPH in cell or ip._SCROLLBAR_TRACK_GLYPH in cell
 
 
 # --- _link_at / _resolve_link_target / _content_col (VIEWMD-0076) ------------------------------

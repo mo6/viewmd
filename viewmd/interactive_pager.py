@@ -295,21 +295,21 @@ def _scrollbar_thumb_range(total_lines: int, body_h: int, top: int) -> tuple[int
     return thumb_start, thumb_start + thumb_h
 
 
-def _scrollbar_prefix(total_lines: int, body_h: int, top: int, *, colored: bool) -> list[str]:
+def _scrollbar_prefix(total_lines: int, body_h: int, top: int) -> list[str]:
     """One `_SCROLLBAR_RESERVED_W`-wide prefix string per row of the `body_h`-row body, ready to
     prepend to each already-cropped content row -- the thumb glyph/color for rows the thumb
     covers, the track glyph/color everywhere else, each followed by one blank gap column
-    (VIEWMD-0079 requirement 1). `colored` is `False` for the plain (`color=False`) twin rows
-    `_overlay` needs (`draw()`'s `plain_visible`), matching how every other rendered row already
-    carries a plain-text counterpart."""
+    (VIEWMD-0079 requirement 1).
+
+    Colored unconditionally: the plain twin `_overlay` needs for its popup-adjacent margins
+    (`draw()`'s `plain_visible`) is now derived by stripping color off the already-built colored
+    `visible` rows (VIEWMD-0102), rather than a separately-built plain prefix, so there is no
+    remaining caller that wants an uncolored prefix on its own."""
     thumb_start, thumb_end = _scrollbar_thumb_range(total_lines, body_h, top)
     out = []
     for i in range(body_h):
         thumb = thumb_start <= i < thumb_end
         glyph = _SCROLLBAR_THUMB_GLYPH if thumb else _SCROLLBAR_TRACK_GLYPH
-        if not colored:
-            out.append(glyph + " ")
-            continue
         style = _SCROLLBAR_THUMB_STYLE if thumb else _SCROLLBAR_TRACK_STYLE
         out.append(f"{style}{glyph}{_RESET} ")
     return out
@@ -1695,17 +1695,21 @@ def _run(
         # (either from the loop above, or the padding just added), one prefix cell per row index,
         # so no `top`-relative offset is needed: row `i` here already *is* on-screen row `i`.
         if reserved:
-            prefix = _scrollbar_prefix(len(lines), body_h, top, colored=True)
+            prefix = _scrollbar_prefix(len(lines), body_h, top)
             visible = [prefix[i] + visible[i] for i in range(body_h)]
         if popup_open or help_open:
-            plain_visible = [
-                _crop_row(row, _display_width(row.rstrip(" ")), left_col, cw)
-                for row in plain_lines[top:end]
-            ]
-            plain_visible += [""] * (body_h - len(plain_visible))
-            if reserved:
-                plain_prefix = _scrollbar_prefix(len(lines), body_h, top, colored=False)
-                plain_visible = [plain_prefix[i] + plain_visible[i] for i in range(body_h)]
+            # `_strip_ansi(visible[i])`, not a separately-cropped `plain_lines[top:end]` (as this
+            # used to do) -- `plain_lines` is a wholly independent `color=False` render of the
+            # document, and most diagram types happen to lay that out identically to their colored
+            # twin, but not all: a pie chart (VIEWMD-0043) renders a structurally different
+            # horizontal-bar-chart layout without color, not a de-colored circle. Splicing that
+            # unrelated layout's text into the margins around the popup box (VIEWMD-0102) visibly
+            # corrupted rows the popup didn't even cover. `visible` is *already* exactly what's on
+            # screen -- the real colored row, already search-highlighted/hover-wrapped, cropped,
+            # and scrollbar-prefixed -- so stripping its own color codes is the one way to get a
+            # colorless twin that is guaranteed to match it, for every diagram type, without a
+            # second render pass at all.
+            plain_visible = [_strip_ansi(row) for row in visible]
             if popup_open:
                 toc_hover = hover[1] if hover is not None and hover[0] == "toc" else None
                 overlay_box = _popup_box(
