@@ -78,6 +78,14 @@ def test_parse_config_ignores_unknown_keys():
     assert cfg.toc is None
 
 
+def test_parse_config_warns_once_on_unrecognized_key(capsys):
+    cfg = parse_config("wdith = 80\ncolor = never\n", source="config")
+    assert cfg.color == "never"
+    assert cfg.width is None
+    err = capsys.readouterr().err
+    assert err == "viewmd: config:1: unrecognized config key wdith\n"
+
+
 def test_parse_config_rejects_malformed_line():
     with pytest.raises(ConfigError, match="expected 'key = value'"):
         parse_config("not a config line\n", source="config")

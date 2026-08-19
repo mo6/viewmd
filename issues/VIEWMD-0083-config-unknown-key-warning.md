@@ -3,7 +3,7 @@ id: VIEWMD-0083
 title: Warn on unrecognized config-file keys instead of silently ignoring them
 status: in-progress
 area: [config]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
@@ -47,3 +47,5 @@ New test in `tests/test_config.py`: a config file with one known key and one mis
 
 ## Peer review
 
+- (agent, implementer) Implemented the stderr warning in `parse_config`, added `test_parse_config_warns_once_on_unrecognized_key`; `./run-tests.sh` passes pytest/ruff/pip-audit (pre-existing `issues --check` failures on VIEWMD-0086/0087, unrelated to this change, are untouched). This is a work summary from the implementer, not an independent review — an independent pass is still needed before "commit and close this out?".
+- (agent, independent reviewer) Reviewed the diff against all 4 requirements: warning format/wording matches exactly, non-fatal (falls through an `else`, no exception), exactly-once-per-key is structurally guaranteed since the `raw` dict already rejects duplicate keys before the warning loop runs, and ascending line order holds because `raw` is built via one top-to-bottom pass over `text.splitlines()` with Python dict insertion order preserved. New test matches file style and asserts all three acceptance-criteria pieces. `./run-tests.sh` confirmed green (pytest 1128 passed, ruff, pip-audit); the only failures are pre-existing unrelated `issues --check` gaps on VIEWMD-0086/0087. One non-blocking style nit: the warning prints directly from `config.py` rather than being raised and printed in `__main__.py` like other `viewmd: ...` messages, a reasonable divergence since this warning must not be fatal. Verdict: approve.

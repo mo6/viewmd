@@ -5,6 +5,7 @@ Reads `$XDG_CONFIG_HOME/viewmd/config` (or `~/.config/viewmd/config`) as a flat
 """
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
@@ -119,7 +120,13 @@ def parse_config(text: str, *, source: str) -> Config:
             full_front_matter = _parse_bool(value, source, lineno, key=key)
         elif key == "toc":
             toc = _parse_bool(value, source, lineno, key=key)
-        # Unknown keys are ignored (forward-compatible with future options).
+        else:
+            # Unknown keys are ignored (forward-compatible with future options),
+            # but warned about once each so a typo doesn't silently do nothing.
+            print(
+                f"viewmd: {source}:{lineno}: unrecognized config key {key}",
+                file=sys.stderr,
+            )
 
     return Config(
         width=width, color=color, full_front_matter=full_front_matter, toc=toc
