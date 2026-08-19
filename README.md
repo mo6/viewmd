@@ -158,9 +158,11 @@ keys:
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
 
-An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
-value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
-silently falling back. `--config PATH` reads configuration from `PATH` instead of the default
+An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
+stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config
+file's keys don't break an older `viewmd`; a key with an invalid value, or a file that fails to
+parse, prints a `viewmd: ...` error and exits non-zero rather than silently falling back.
+`--config PATH` reads configuration from `PATH` instead of the default
 location — useful for a one-off alternate profile. Setting `VIEWMD_NO_CONFIG` to any non-empty
 value skips reading a config file entirely, regardless of what's on disk — handy for CI or a
 reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
