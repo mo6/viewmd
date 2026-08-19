@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.0] — 2026-08-19
+
+- **Shell completion for bash/zsh/fish** (VIEWMD-0087, feature): `completions/viewmd.{bash,zsh,fish}` — generated from viewmd's own `argparse` parser via the new `./tools.sh completions` (`tools/completions.py`), never hand-maintained — complete every CLI flag (including both spellings of a `--toc`/`--no-toc`-style pair), `--color`'s `auto`/`always`/`never`, `--width`'s `full` literal, and fall back to filesystem-path completion for `--config` and the positional path argument(s). No new runtime dependency. `./run-tests.sh` now asserts the checked-in scripts match what the parser would generate. README documents per-shell install steps.
+
 ## [1.45.0] — 2026-08-19
 
 - **Render `![[Target]]` embed/transclusion wikilinks with a distinguishing glyph** (VIEWMD-0086, feature): Obsidian's embed syntax (`![[Target]]`, `![[Target|Display]]`, including `#Heading`/`#^block` suffixes) — previously falling through un-rewritten to Rich's Markdown parser with undefined rendering — now renders as a styled link prefixed with 📎, the same way a plain `[[Target]]` wikilink does, minus the `!`. Full transclusion (inlining the target note's content) remains out of scope. README's wikilinks paragraph documents the chosen behavior.

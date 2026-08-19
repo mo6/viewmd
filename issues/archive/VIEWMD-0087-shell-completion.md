@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0087
 title: Provide bash/zsh/fish shell completion for viewmd's CLI flags
-status: in-progress
+status: implemented
 area: [cli, tools]
 effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [346ffab]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.46.0]"
 reason:
 ---
 
@@ -49,4 +49,6 @@ Generated scripts checked into the repo (e.g. `completions/viewmd.bash`, `.zsh`,
 ## Peer review
 
 - (agent, implementer) Implemented `tools/completions.py` (generates `completions/viewmd.{bash,zsh,fish}` by introspecting `viewmd.__main__.build_parser()`, no new runtime dependency), wired `./tools.sh completions` and a `--check` mode into `./run-tests.sh`, and documented per-shell install steps in `README.md`. `./run-tests.sh` is green for everything this issue touches; it currently fails only on a pre-existing, unrelated `issues --check` gap (VIEWMD-0083/VIEWMD-0086 missing `effort:`, present before this branch's changes, confirmed via `git stash`) that this issue does not own. This is an implementation summary, not an independent review (AGENTS.md) — a separate reviewing pass is still needed before "commit and close this out?" is asked.
+- (agent, independent reviewer) Reviewed `tools/completions.py`'s parser-introspection logic against all requirements: flags are read from `build_parser()._actions` directly (no hand-maintained duplicate list, requirement 1); `--color`'s three choices come from `action.choices`, `--width`'s `full` is hardcoded since `_width_arg`'s type function has no `choices` argparse can read (requirement 2); `--config` and the positional path fall back to filesystem-path completion with no extension filter in all three shells (requirement 3, verified in `render_bash`/`render_zsh`/`render_fish`); README documents install steps for all three shells (requirement 4); `./tools.sh completions --check` is wired into `run-tests.sh`'s gate (requirement 5). Manually drove `completions/viewmd.bash` (sourced it, called `_viewmd_completions` with `COMP_WORDS=(viewmd --col)`/`(viewmd --color)` set) and confirmed `--col<TAB>` completes to `--color` and `--color <TAB>` offers `auto always never`, matching the issue's specified manual-verification steps. Merged into `develop` with one conflict, in the auto-generated `issues/README.md` index only (resolved by regenerating via `./tools.sh issues`, no manual content decisions); `./run-tests.sh` reconfirmed green post-merge (1136 passed, ruff, pip-audit, completions --check). Verdict: approve, no changes requested.
+- (maintainer, George Moses) 2026-08-19: "accept and close issue 87" — explicit landing approval given in-conversation.
 
