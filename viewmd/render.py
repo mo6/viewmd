@@ -706,7 +706,14 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
         full_path = os.path.join(dir_path, name)
         title = _markdown_title(full_path)
         modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
-        table.add_row(escape(name), "file", escape(title), modified)
+        # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use (VIEWMD-0081) --
+        # a plain relative-path href (no scheme prefix), unlike the `_DIR_ANCHOR_SCHEME`-tagged
+        # subdirectory hrefs, since this needs to resolve through `_resolve_link_target()`
+        # (`interactive_pager.py`) the same way an ordinary in-document relative link does, not
+        # through `_resolve_dir_target()` (VIEWMD-0093).
+        name_cell = Text(name)
+        name_cell.stylize(Style(link=urllib.parse.quote(name)))
+        table.add_row(name_cell, "file", escape(title), modified)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)

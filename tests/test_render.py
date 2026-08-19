@@ -269,8 +269,10 @@ def test_render_directory_listing_links_subdirectory_rows(tmp_path):
     colored = render_directory_listing(str(tmp_path), width=80, color=True)
 
     assert "viewmd-dir:sub%20dir" in colored
-    # Only the subdirectory row is linked -- an `.md` file row carries no href yet
-    # (VIEWMD-0081 Non-goals).
+    # A subdirectory row's href is scheme-tagged (`_DIR_ANCHOR_SCHEME`, resolved by
+    # `_resolve_dir_target`); an `.md` file row's own href (VIEWMD-0093) is a plain relative path
+    # with no such prefix (resolved by `_resolve_link_target` instead), so it never matches this
+    # scheme-qualified string.
     assert "viewmd-dir:a.md" not in colored
 
 
@@ -281,6 +283,27 @@ def test_render_directory_listing_no_dir_link_without_color(tmp_path):
 
     assert "viewmd-dir:" not in out
     assert "sub" in out
+
+
+def test_render_directory_listing_links_md_file_rows(tmp_path):
+    # VIEWMD-0093: a `.md` file row now carries a clickable target too, a plain (percent-encoded)
+    # relative path -- not the `_DIR_ANCHOR_SCHEME`-tagged form subdirectory rows use, since it
+    # needs to resolve through `_resolve_link_target` like an ordinary in-document link.
+    (tmp_path / "a file.md").write_text("# A\n")
+
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+
+    assert "a%20file.md" in colored
+    assert "viewmd-dir:a%20file.md" not in colored
+
+
+def test_render_directory_listing_no_file_link_without_color(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+
+    out = render_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert "\x1b]8;" not in out
+    assert "a.md" in out
 
 
 def test_render_directory_listing_does_not_recurse(tmp_path):
