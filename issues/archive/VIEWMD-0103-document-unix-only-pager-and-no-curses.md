@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0103
 title: Document that the interactive pager is Unix-only, and why it does not use curses
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [9c7144c]
 related: [VIEWMD-0007, VIEWMD-0072]
 supersedes: []
-changelog:
+changelog: "[1.46.5]"
 reason:
 ---
 

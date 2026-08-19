@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.5] — 2026-08-19
+
+- **Document that the interactive pager is Unix-only, and why it does not use curses** (VIEWMD-0103, docs): README's Interactive pager section now states the pager is Unix-only (macOS, Linux, BSD, WSL) and is not supported on native Windows (`termios` / `/dev/tty`). `docs/PLAN.md` records why curses was ruled out — the pager dumps pre-rendered Rich ANSI (OSC-8, 256-color, xterm mouse) rather than a cell grid, and a curses port would not make native Windows work.
+
 ## [1.46.4] — 2026-08-19
 
 - **Fix the ToC/help popup corrupting content and color in the rows around it** (VIEWMD-0102, bug): `_overlay` no longer rebuilds a popup-touched row's margins from a separately-rendered `color=False` twin of the document — for a pie chart (VIEWMD-0043), whose no-color rendering is a structurally different bar-chart layout, that twin diverged in both content and total row count from the colored one, corrupting the diagram with unrelated bar-chart text and misaligning every row below it. Margins are now sliced straight out of the real colored row via `_ansi_slice`, which also restores the row's own color there instead of leaving it monochrome.
