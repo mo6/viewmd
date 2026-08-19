@@ -57,7 +57,10 @@ argument or one of several.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
-spans, which are left untouched.
+spans, which are left untouched. Obsidian's embed/transclusion syntax (`![[Target]]`,
+`![[Target|Display text]]`, including a `#Heading`/`#^block` suffix) renders the same way but
+prefixed with a 📎 glyph to mark it as an embed reference — the target note's actual content is
+never inlined (no transclusion); that's out of scope.
 
 A GitHub-flavored-Markdown task list item (`- [x] label` / `- [ ] label`) renders with a ✅/⬜
 checkbox glyph in place of the plain bullet, the marker stripped from the label and a checked

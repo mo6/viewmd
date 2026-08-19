@@ -1,4 +1,4 @@
-"""Rewrite Obsidian-style [[wikilinks]] into ordinary Markdown links (VIEWMD-0006).
+"""Rewrite Obsidian-style [[wikilinks]] into ordinary Markdown links (VIEWMD-0006, VIEWMD-0086).
 
 Rich has no public extension point for custom inline rules, so this runs as a text-level
 preprocessing pass before the body reaches ``rich.markdown.Markdown``. Rewriting to
@@ -7,6 +7,13 @@ preprocessing pass before the body reaches ``rich.markdown.Markdown``. Rewriting
 link. The destination is wrapped in ``<...>`` (with backslash/``<``/``>`` escaped) because
 CommonMark only allows spaces in a link destination inside that bracketed form -- a bare
 ``(wikilink:Target With Spaces)`` is invalid and Rich falls back to printing the raw markdown.
+
+Obsidian's embed/transclusion form, ``![[Target]]`` (and ``![[Target#Heading]]``/
+``![[Target#^block]]``), is rewritten the same way, with the ``!`` dropped and the display text
+prefixed with the :data:`_EMBED_GLYPH` marker so it reads as "this is an embed reference", not a
+plain link -- rendering the target note's actual content inline (full transclusion) is out of
+scope (VIEWMD-0086); the target's whole ``Target#Heading`` string, headings/blocks included, is
+used verbatim, same as a non-embed wikilink.
 """
 
 from __future__ import annotations
@@ -15,6 +22,10 @@ import re
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 _FENCE_RE = re.compile(r"^(```|~~~)")
+
+# Distinguishes an embed/transclusion reference from a plain wikilink in the rendered output,
+# since both become an ordinary styled link and would otherwise be indistinguishable.
+_EMBED_GLYPH = "\U0001f4ce"  # 📎
 
 
 def rewrite_wikilinks(text: str) -> str:
@@ -53,6 +64,17 @@ def _rewrite_line(line: str) -> str:
             result.append(line[i : close + 1])
             i = close + 1
             continue
+        if line.startswith("![[", i):
+            match = _WIKILINK_RE.match(line, i + 1)
+            if match:
+                target = match.group(1)
+                display = match.group(2) if match.group(2) is not None else target
+                display = f"{_EMBED_GLYPH} {display}"
+                dest = f"wikilink:{target}"
+                dest = dest.replace("\\", "\\\\").replace("<", "\\<").replace(">", "\\>")
+                result.append(f"[{display}](<{dest}>)")
+                i = match.end()
+                continue
         if line.startswith("[[", i):
             match = _WIKILINK_RE.match(line, i)
             if match:

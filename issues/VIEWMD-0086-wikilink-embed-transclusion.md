@@ -47,3 +47,5 @@ New/updated tests in `tests/test_wikilinks.py` and `tests/test_render.py` coveri
 
 ## Peer review
 
+- (agent, implementer) Implemented treatment (a): `![[Target]]`/`![[Target|Display]]` (and `#Heading`/`#^block` suffixes) now rewrite to the same `[Display](<wikilink:Target>)` link form as a plain wikilink, with display text prefixed by a distinguishing 📎 glyph; no target content is inlined. Pinned the pre-change baseline (un-rewritten `!` fell through to Rich's broken-image-placeholder rendering of `![Target](<wikilink:Target>)`) as a documented historical note in `tests/test_wikilinks.py`/`tests/test_render.py` before changing behavior. `./run-tests.sh` pytest/ruff/pip-audit all green; this is a work summary from the implementing agent, not an independent review -- a genuinely independent pass is still needed before the maintainer's sign-off per `issues/AGILE.md`.
+
