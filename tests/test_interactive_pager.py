@@ -309,6 +309,39 @@ def test_crop_row_no_right_marker_at_the_true_end():
     assert "‹" in out
 
 
+def test_max_left_col_no_scroll_needed_when_content_fits():
+    assert ip._max_left_col(max_content_width=60, width=80) == 0
+
+
+def test_max_left_col_reaches_the_rows_true_last_column():
+    # VIEWMD-0101: at the max legal `left_col`, `_crop_row` must show the row's real last
+    # character -- not stop one column short because the `‹` marker's reserved column at that
+    # position was never subtracted out of the cap.
+    row = "x" * 300 + "!"  # a distinctive last character to look for
+    width = 80
+    max_left = ip._max_left_col(max_content_width=len(row), width=width)
+    out = ip._crop_row(row, len(row), left_col=max_left, width=width)
+    assert "!" in ip._strip_ansi(out)
+    assert "›" not in out  # nothing left to scroll to -- no right marker at the true end
+    assert "‹" in out  # still scrolled away from the left edge
+
+
+def test_max_left_col_stays_reachable_by_repeated_stepping():
+    # Mirrors the actual wheel-right/`l` call site: repeatedly advancing `left_col` by a step and
+    # clamping to `_max_left_col` must still land on a position that reveals the row's true end,
+    # not overshoot-and-clamp to something short of it.
+    row = "x" * 137 + "END"
+    width = 50
+    max_left = ip._max_left_col(len(row), width)
+    left_col = 0
+    for _ in range(20):
+        left_col = min(max_left, left_col + 7)
+    assert left_col == max_left
+    out = ip._crop_row(row, len(row), left_col=left_col, width=width)
+    assert "END" in ip._strip_ansi(out)
+    assert "›" not in out
+
+
 def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     # Regression: an earlier version decided the right marker using a *different* render's
     # length (some Mermaid diagram types legitimately render different widths with color on vs

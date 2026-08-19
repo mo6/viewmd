@@ -723,6 +723,22 @@ def _content_col(plain_len: int, left_col: int, width: int, screen_col: int) -> 
 _TRUNCATION_STYLE = "\x1b[1;38;5;214m"
 
 
+def _max_left_col(max_content_width: int, width: int) -> int:
+    """The largest legal `left_col` for horizontal scrolling: the position where the last real
+    column of the widest row lands exactly on the last on-screen column, leaving no more content
+    scrolled out to the right (VIEWMD-0101).
+
+    Not simply `max_content_width - width`: once `left_col > 0`, `_crop_row` reserves one column
+    for the `‹` truncation marker, so only `width - 1` columns of that row are actually visible at
+    the fully-scrolled position, not `width`. Using `max_content_width - width` as the cap left
+    that reserved column's worth of content permanently off-screen -- one column short of the
+    row's true end however far right the reader scrolled, with no `›` marker to hint anything was
+    still cut off (found in review)."""
+    if max_content_width <= width:
+        return 0
+    return max_content_width - width + 1
+
+
 def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> str:
     """The horizontal-scroll counterpart to plain `_ansi_slice`: crop `colored_row` to exactly
     `width` columns starting at `left_col`, like `_ansi_slice` does, but additionally reserve the
@@ -1837,8 +1853,7 @@ def _run(
         elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
             left_col = max(0, left_col - h_step)
         elif ev.kind == "wheel_right" or (ev.kind == "key" and ev.value in ("right", "l")):
-            max_left_col = max(0, max_content_width - _content_w())
-            left_col = min(max_left_col, left_col + h_step)
+            left_col = min(_max_left_col(max_content_width, _content_w()), left_col + h_step)
         elif ev.kind == "key" and ev.value == "0":
             left_col = 0
         elif ev.kind == "key" and ev.value == "m":
@@ -1865,7 +1880,7 @@ def _run(
             else:
                 top = _home_top(body_start, max_top)
             max_content_width = _max_content_width(plain_lines)
-            left_col = min(left_col, max(0, max_content_width - _content_w()))
+            left_col = min(left_col, _max_left_col(max_content_width, _content_w()))
         elif ev.kind == "key" and ev.value == "B":
             # Go back to the document navigated *from* (VIEWMD-0076 requirement 6) -- a no-op
             # with nothing on the stack. `run_directory_listing()` pushes here too, for a clicked
@@ -1886,7 +1901,7 @@ def _run(
                 max_content_width = _max_content_width(plain_lines)
                 new_max_top = max(0, len(lines) - body_h)
                 top = min(saved_doc_top, new_max_top)
-                left_col = min(saved_doc_left, max(0, max_content_width - _content_w()))
+                left_col = min(saved_doc_left, _max_left_col(max_content_width, _content_w()))
                 popup_selected = 0
                 # Same reasoning as the click-navigate branch below: a search highlight/query
                 # from the file being left behind doesn't describe the one being returned to.
@@ -2036,7 +2051,7 @@ def _run(
                             max_content_width = _max_content_width(plain_lines)
                         body_h = term_h - 2
                         top = min(top, max(0, len(lines) - body_h))
-                        left_col = min(left_col, max(0, max_content_width - _content_w()))
+                        left_col = min(left_col, _max_left_col(max_content_width, _content_w()))
                         popup_selected = min(popup_selected, max(0, len(headings) - 1))
                         # A resize can shift which document row/column a fixed screen position now
                         # shows (requirement 3) -- the highlight is cleared rather than re-resolved
