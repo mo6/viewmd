@@ -48,3 +48,5 @@ Generated scripts checked into the repo (e.g. `completions/viewmd.bash`, `.zsh`,
 
 ## Peer review
 
+- (agent, implementer) Implemented `tools/completions.py` (generates `completions/viewmd.{bash,zsh,fish}` by introspecting `viewmd.__main__.build_parser()`, no new runtime dependency), wired `./tools.sh completions` and a `--check` mode into `./run-tests.sh`, and documented per-shell install steps in `README.md`. `./run-tests.sh` is green for everything this issue touches; it currently fails only on a pre-existing, unrelated `issues --check` gap (VIEWMD-0083/VIEWMD-0086 missing `effort:`, present before this branch's changes, confirmed via `git stash`) that this issue does not own. This is an implementation summary, not an independent review (AGENTS.md) — a separate reviewing pass is still needed before "commit and close this out?" is asked.
+
