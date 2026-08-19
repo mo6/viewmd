@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.45.0] — 2026-08-19
+
+- **Render `![[Target]]` embed/transclusion wikilinks with a distinguishing glyph** (VIEWMD-0086, feature): Obsidian's embed syntax (`![[Target]]`, `![[Target|Display]]`, including `#Heading`/`#^block` suffixes) — previously falling through un-rewritten to Rich's Markdown parser with undefined rendering — now renders as a styled link prefixed with 📎, the same way a plain `[[Target]]` wikilink does, minus the `!`. Full transclusion (inlining the target note's content) remains out of scope. README's wikilinks paragraph documents the chosen behavior.
+
 ## [1.44.1] — 2026-08-19
 
 - **Warn on unrecognized config-file keys** (VIEWMD-0083, bug): `viewmd.config.parse_config` now prints `viewmd: <path>:<line>: unrecognized config key <key>` to stderr for any config key it doesn't recognize, once per key, instead of silently ignoring it — a typo like `wdith = 80` no longer fails invisibly. Parsing still continues (forward compatibility with newer config files is preserved).

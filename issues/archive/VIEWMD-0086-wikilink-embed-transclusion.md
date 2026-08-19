@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0086
 title: Decide and document how Obsidian embed/transclusion syntax (![[Target]]) is handled
-status: in-progress
+status: implemented
 area: [wikilinks, render, docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
-related: []
+commits: [ea38277]
+related: [VIEWMD-0099]
 supersedes: []
-changelog:
+changelog: "[1.45.0]"
 reason:
 ---
 
@@ -48,4 +48,6 @@ New/updated tests in `tests/test_wikilinks.py` and `tests/test_render.py` coveri
 ## Peer review
 
 - (agent, implementer) Implemented treatment (a): `![[Target]]`/`![[Target|Display]]` (and `#Heading`/`#^block` suffixes) now rewrite to the same `[Display](<wikilink:Target>)` link form as a plain wikilink, with display text prefixed by a distinguishing 📎 glyph; no target content is inlined. Pinned the pre-change baseline (un-rewritten `!` fell through to Rich's broken-image-placeholder rendering of `![Target](<wikilink:Target>)`) as a documented historical note in `tests/test_wikilinks.py`/`tests/test_render.py` before changing behavior. `./run-tests.sh` pytest/ruff/pip-audit all green; this is a work summary from the implementing agent, not an independent review -- a genuinely independent pass is still needed before the maintainer's sign-off per `issues/AGILE.md`.
+- (agent, independent reviewer) Reviewed `viewmd/wikilinks.py`'s diff line by line: the new `![[`-prefixed branch runs before the plain `[[` branch and correctly falls through to literal-character handling (leaving `!` untouched, then matching `[[` on the next iteration) when `_WIKILINK_RE` fails to match, so an unterminated `![[foo` degrades the same way an unterminated `[[foo` already did. `#Heading`/`#^block` suffixes are carried through verbatim in `target`, matching a plain wikilink's own handling, per requirement 2's "reuse the existing fence/inline-code skipping logic unchanged." README's wikilinks paragraph states the chosen behavior explicitly (requirement 4). Also drove the change manually end-to-end (`./viewmd.sh` against a scratch file with real target `.md` files) to confirm click-navigation resolves embed hrefs the same way plain wikilink hrefs do, and confirmed the fence-detection gap found during that manual pass (`> ` `` ``` `` blockquote-nested fences not recognized) is pre-existing back to VIEWMD-0006, not introduced by this diff -- filed separately as VIEWMD-0099 rather than blocking this issue. `./run-tests.sh` reconfirmed green after merge to `develop`. Verdict: approve, no changes requested.
+- (maintainer, George Moses) 2026-08-19: "accept and close issue 86" -- explicit landing approval given in-conversation.
 
