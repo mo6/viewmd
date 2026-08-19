@@ -1129,8 +1129,10 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
     `doc_dir`/`open_path` are wired the same way `run()` wires them for a `.md` file link, just
     resolving to a directory instead; the 'B' back key (already part of `_run`'s click-to-follow
     machinery, VIEWMD-0076) is this feature's way back up to the parent listing, so no separate
-    `..` row is needed. `.md` file rows carry no link yet (VIEWMD-0081 Non-goals) -- clicking one
-    is still a no-op."""
+    `..` row is needed. `.md` file rows are clickable too (VIEWMD-0093) -- their href is an
+    ordinary relative path (no `_DIR_ANCHOR_SCHEME` prefix), so `_run`'s click handler resolves it
+    via `_resolve_link_target` the same way a document's own in-text links resolve, and `open_path`
+    below opens it as a document rather than a nested listing."""
     from viewmd.render import render_directory_listing
 
     def make_loader(d: str):
@@ -1141,12 +1143,32 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
 
         return loader
 
-    def open_path(path: str) -> tuple:
-        # `_resolve_dir_target` already confirmed `path` is a directory that still exists, and
-        # unlike `run()`'s own `open_path` there's no file read that can fail here, so this never
-        # returns `None` -- `_run`'s click handler still checks for `None` since the same code
-        # path is shared with `run()`'s file-opening case.
-        return make_loader(path), os.path.basename(os.path.normpath(path)) + "/", path
+    def open_path(path: str) -> tuple | None:
+        # `target` reaching here is either a directory (`_resolve_dir_target`, VIEWMD-0081) or a
+        # `.md` file (`_resolve_link_target`, VIEWMD-0093) -- `_run`'s click handler shares this
+        # single `open_path` between both hrefs (see its own comment), so this dispatches on
+        # which one it actually got.
+        if os.path.isdir(path):
+            # `_resolve_dir_target` already confirmed `path` is a directory that still exists, and
+            # unlike the file case below there's no read that can fail here, so this never returns
+            # `None` -- `_run`'s click handler still checks for `None` since the same code path is
+            # shared with the file-opening case.
+            return make_loader(path), os.path.basename(os.path.normpath(path)) + "/", path
+        # A `.md` file, opened the same way `run()`'s own `open_path` opens a clicked link
+        # (VIEWMD-0076) -- `_resolve_link_target` already confirmed `path` exists and is a `.md`
+        # file, but not that it's still readable or valid UTF-8 by the time the click actually
+        # opens it (a permissions change, a TOCTOU race, or a non-UTF-8 file), so `None` here is a
+        # real possibility, unlike the directory branch above.
+        try:
+            with open(path, encoding="utf-8") as f:
+                new_text = f.read()
+        except (OSError, UnicodeDecodeError):
+            return None
+        return (
+            lambda w: _load(new_text, w, color_kwargs={}),
+            os.path.basename(path),
+            os.path.dirname(os.path.abspath(path)),
+        )
 
     display_name = os.path.basename(os.path.normpath(dir_path)) + "/"
     _run(

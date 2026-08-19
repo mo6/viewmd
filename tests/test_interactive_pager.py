@@ -513,6 +513,65 @@ def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypa
     assert headings == []
 
 
+# --- .md file rows clickable in the directory listing (VIEWMD-0093) -----------------------------
+
+
+def test_link_at_decodes_a_directory_listing_file_href(tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "a file.md").write_text("# A\n")
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+    line = next(line for line in colored.split("\n") if "a file.md" in ip._strip_ansi(line))
+    col = _col_of(line, "a file.md")
+    assert ip._link_at(line, col) == "a file.md"
+
+
+def test_resolve_link_target_resolves_a_directory_listing_file_href(tmp_path):
+    # Unlike a subdirectory row's `_DIR_ANCHOR_SCHEME`-tagged href, a file row's href is a plain
+    # (percent-encoded, already-unquoted-by-`_link_at`) relative path -- it resolves through the
+    # same `_resolve_link_target` an ordinary in-document link uses, per the issue's design notes.
+    (tmp_path / "a.md").write_text("# A\n")
+    assert ip._resolve_link_target("a.md", str(tmp_path)) == str(tmp_path / "a.md")
+
+
+def test_run_directory_listing_open_path_opens_an_md_file(monkeypatch, tmp_path):
+    # VIEWMD-0093: `run_directory_listing()`'s `open_path` now dispatches to opening a document
+    # (not a nested listing) when handed a `.md` file target, the same shape `run()`'s own
+    # `open_path` returns for a clicked in-document link.
+    (tmp_path / "a.md").write_text("# A\n\nBody text.\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    opened = captured["open_path"](str(tmp_path / "a.md"))
+    assert opened is not None
+    new_loader, new_display_name, new_doc_dir = opened
+    assert new_display_name == "a.md"
+    assert new_doc_dir == str(tmp_path)
+    colored, _plain, headings = new_loader(80)
+    assert any("Body text." in ip._strip_ansi(line) for line in colored)
+    assert len(headings) == 1
+
+
+def test_run_directory_listing_open_path_returns_none_for_unreadable_file(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    # Never written -- resolved and then removed/never-existed by the time open_path runs, the
+    # same race `run()`'s own open_path guards against (VIEWMD-0076).
+    assert captured["open_path"](str(tmp_path / "missing.md")) is None
+
+
 def test_content_col_maps_through_no_scroll():
     # No truncation markers reserved -- screen column is content column, unchanged.
     assert ip._content_col(plain_len=40, left_col=0, width=80, screen_col=5) == 5
