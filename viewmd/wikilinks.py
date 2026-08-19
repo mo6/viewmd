@@ -22,6 +22,10 @@ import re
 
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 _FENCE_RE = re.compile(r"^(```|~~~)")
+# Strips leading whitespace and any number of nested blockquote markers (each a `>`, optionally
+# followed by whitespace, per CommonMark's own blockquote-nesting grammar) before the fence
+# check, so a `>`- or `> > `-prefixed fence is recognized the same as a bare one.
+_BLOCKQUOTE_PREFIX_RE = re.compile(r"^(?:\s*>)*\s*")
 
 # Distinguishes an embed/transclusion reference from a plain wikilink in the rendered output,
 # since both become an ordinary styled link and would otherwise be indistinguishable.
@@ -31,15 +35,16 @@ _EMBED_GLYPH = "\U0001f4ce"  # 📎
 def rewrite_wikilinks(text: str) -> str:
     """Rewrite ``[[Target]]`` / ``[[Target|Display]]`` outside of code into Markdown links.
 
-    Fenced code blocks (any line whose content, ignoring leading indentation, starts with
-    `` ``` `` or ``~~~`` toggles fence state -- so a fence indented under a list item or
-    blockquote is still recognized) and single-backtick inline code spans are left untouched.
+    Fenced code blocks (any line whose content, ignoring leading indentation and any nesting of
+    ``>`` blockquote markers, starts with `` ``` `` or ``~~~`` toggles fence state -- so a fence
+    indented under a list item or nested under one or more blockquote markers is still
+    recognized) and single-backtick inline code spans are left untouched.
     """
     lines = text.split("\n")
     out: list[str] = []
     in_fence = False
     for line in lines:
-        if _FENCE_RE.match(line.lstrip()):
+        if _FENCE_RE.match(_BLOCKQUOTE_PREFIX_RE.sub("", line, count=1)):
             in_fence = not in_fence
             out.append(line)
             continue
