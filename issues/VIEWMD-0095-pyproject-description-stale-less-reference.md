@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0095
 title: pyproject.toml's package description still says "paging into less"
-status: proposed
+status: in-progress
 area: [docs]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: []
 supersedes: []
@@ -44,4 +44,7 @@ See VIEWMD-0072 (external-pager removal) for the change this description fell ou
 `grep -n less pyproject.toml` shows no reference to `less` as viewmd's pager. `./run-tests.sh` green (no test currently pins this string, but the gate should still pass cleanly after the edit).
 
 ## Peer review
+
+- **implementing agent** (agent), 2026-08-19: one-line fix, `pyproject.toml`'s `description` no longer mentions `less`; checked `docs/PLAN.md`'s own reference to `less` and confirmed it's historical narrative describing what VIEWMD-0072 changed away from, not a stale current-state claim, so left untouched per the issue's Non-goals. `./run-tests.sh` green (1100 passed, ruff/pip-audit/issues clean). Implemented directly on `develop` at the maintainer's explicit request, no worktree/branch for this one-line change.
+- **George Moses** (maintainer), 2026-08-19: requested doing this without a worktree; approved.
 
