@@ -37,6 +37,7 @@ from viewmd.render import (
     _TOC_ANCHOR_SCHEME,
     ViewmdMarkdown,
     heading_outline,
+    render_front_matter_block,
     render_markdown,
 )
 
@@ -189,15 +190,39 @@ def _locate_headings(lines: list[str], outline) -> list[HeadingLoc]:
     return locs
 
 
+def _front_matter_body_start(text: str, width: int, *, color_kwargs: dict) -> int:
+    """How many rendered lines the front-matter table + divider occupy, or 0 if `render_markdown`
+    would print no table at all (VIEWMD-0080). Recomputed at whatever `width` the document is
+    currently wrapped to -- a long value can wrap to extra table rows at a narrower width."""
+    block = render_front_matter_block(
+        text,
+        width=width,
+        color=False,
+        full_front_matter=color_kwargs.get("full_front_matter", False),
+    )
+    if not block:
+        return 0
+    return len(block.rstrip("\n").split("\n"))
+
+
+def _home_top(body_start: int, max_top: int) -> int:
+    """The 'top of document' row for initial view and the `g`/`^` jump (VIEWMD-0080): the first
+    body line after the front-matter table when one is present, else 0. Clamped to `max_top` so a
+    document that fits on screen still opens at 0 -- the pager never leaves blank rows at the
+    bottom to skip content that's already visible. Not a scroll floor: up-arrow/page-up/wheel
+    still reach rows 0..(body_start - 1)."""
+    return min(max_top, max(0, body_start))
+
+
 def _load(
     text: str, width: int, *, color_kwargs: dict
-) -> tuple[list[str], list[str], list[HeadingLoc]]:
-    """Returns (colored lines, plain lines, headings). The two renders agree line-for-line for
-    ordinary content -- Rich's own color on/off never changes its wrapping decisions, only which
-    escape codes ride along with the same text -- so `plain_lines[i]` is usually `colored_lines[i]`
-    with every SGR/OSC8 sequence removed, character-position-for-character-position. `_overlay`
-    leans on that to composite the popup onto the plain twin of a row instead of slicing through
-    live color state (see its docstring).
+) -> tuple[list[str], list[str], list[HeadingLoc], int]:
+    """Returns (colored lines, plain lines, headings, body_start). The two renders agree
+    line-for-line for ordinary content -- Rich's own color on/off never changes its wrapping
+    decisions, only which escape codes ride along with the same text -- so `plain_lines[i]` is
+    usually `colored_lines[i]` with every SGR/OSC8 sequence removed,
+    character-position-for-character-position. `_overlay` leans on that to composite the popup
+    onto the plain twin of a row instead of slicing through live color state (see its docstring).
 
     That agreement is NOT guaranteed for a Mermaid diagram, though: `render_markdown` threads
     `color` into its own preprocessing pass (VIEWMD-0043), and a diagram renderer is free to size
@@ -208,14 +233,18 @@ def _load(
     not assume `plain_lines[i]`'s length describes it.
 
     `color_kwargs` carries `full_front_matter`/`toc` through to both renders unchanged, so the
-    interactive view matches exactly what `--no-pager`/a piped invocation would have shown."""
+    interactive view matches exactly what `--no-pager`/a piped invocation would have shown.
+    `body_start` is the first row of the document body (immediately after the front-matter table
+    and its divider), or 0 when no table is shown -- `_run()` uses it as the initial viewport and
+    as the `g`/`^` jump target (VIEWMD-0080)."""
     colored_raw = render_markdown(text, width=width, color=True, **color_kwargs)
     plain_raw = render_markdown(text, width=width, color=False, **color_kwargs)
     colored = colored_raw.rstrip("\n").split("\n")
     plain = plain_raw.rstrip("\n").split("\n")
     markdown = ViewmdMarkdown(text, code_theme="monokai")
     outline = heading_outline(markdown)
-    return colored, plain, _locate_headings(plain, outline)
+    body_start = _front_matter_body_start(text, width, color_kwargs=color_kwargs)
+    return colored, plain, _locate_headings(plain, outline), body_start
 
 
 def _max_content_width(plain_lines: list[str]) -> int:
@@ -1134,10 +1163,10 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
     from viewmd.render import render_directory_listing
 
     def make_loader(d: str):
-        def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
+        def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
             colored = render_directory_listing(d, width=w, color=True).rstrip("\n").split("\n")
             plain = render_directory_listing(d, width=w, color=False).rstrip("\n").split("\n")
-            return colored, plain, []
+            return colored, plain, [], 0
 
         return loader
 
@@ -1177,12 +1206,12 @@ def run_multi_file(
     today's behavior."""
     from viewmd.render import render_multi_file
 
-    def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc]]:
+    def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
         colored = render_multi_file(entries, width=w, directory_width=directory_width, color=True,
                                     full_front_matter=full_front_matter, toc=toc)
         plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
                                   full_front_matter=full_front_matter, toc=toc)
-        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), []
+        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), [], 0
 
     display_name = f"{len(entries)} files"
     _run(
@@ -1208,8 +1237,10 @@ def _run(
     `run_multi_file()` (VIEWMD-0072) -- mouse-wheel scroll, resize handling, search, horizontal
     scroll, width toggle, help screen, and (when `loader` ever returns a non-empty heading list)
     the ToC popup. `loader(w)` re-renders content at width `w`, returning (colored lines,
-    plain-twin lines, heading locations) -- called once up front and again on a width toggle or a
-    resize while full-width mode is active.
+    plain-twin lines, heading locations, body_start) -- called once up front and again on a width
+    toggle or a resize while full-width mode is active. `body_start` is the first body row after
+    a front-matter table (VIEWMD-0080), or 0 when there isn't one (`run_directory_listing()` /
+    `run_multi_file()` always pass 0; see VIEWMD-0080 Non-goals).
 
     Reads keyboard/mouse input from `/dev/tty`, not `sys.stdin` -- the underlying content may have
     been read from a pipe (`cat file.md | viewmd -`), in which case stdin itself is already fully
@@ -1243,7 +1274,7 @@ def _run(
     configured_width = width
     width_is_full = configured_width == term_w
     full_width_active = False
-    lines, plain_lines, headings = loader(configured_width)
+    lines, plain_lines, headings, body_start = loader(configured_width)
     body_h = term_h - 2  # bottom two rows reserved: mode line + echo area (Info-style split)
     # Widest rendered line, in columns -- fenced code (VIEWMD-0019) and Mermaid diagrams
     # (VIEWMD-0018) both render `crop=False`, so a line can be wider than either the terminal or
@@ -1262,7 +1293,7 @@ def _run(
     nav_stack: list[tuple] = []
 
     old_settings = termios.tcgetattr(tty_fd)
-    top = 0
+    top = _home_top(body_start, max(0, len(lines) - body_h))
     popup_open = False
     popup_selected = 0
     saved_top = 0
@@ -1428,7 +1459,7 @@ def _run(
         """
         nonlocal top, left_col, popup_open, saved_top, popup_selected, help_open, help_scroll
         nonlocal search_active, search_query, last_search_query, echo_message, mouse_enabled
-        nonlocal full_width_active, lines, plain_lines, headings, max_content_width
+        nonlocal full_width_active, lines, plain_lines, headings, max_content_width, body_start
         nonlocal loader, display_name, doc_dir
         max_top = max(0, len(lines) - body_h)
         if ev.value == "q" and ev.kind == "key":
@@ -1481,7 +1512,7 @@ def _run(
             if earlier:
                 top = min(max_top, earlier[-1])
         elif ev.kind == "key" and ev.value in ("g", "^"):
-            top = 0
+            top = _home_top(body_start, max_top)
         elif ev.kind == "key" and ev.value in ("G", "$"):
             top = max_top
         elif ev.kind == "wheel_left" or (ev.kind == "key" and ev.value in ("left", "h")):
@@ -1508,12 +1539,12 @@ def _run(
             # line offset, so the toggle lands back in roughly the same place instead of
             # some arbitrary point mid-paragraph a few lines off from where they were.
             section = _nearest_heading_index(headings, top)
-            lines, plain_lines, headings = loader(new_width)
+            lines, plain_lines, headings, body_start = loader(new_width)
             max_top = max(0, len(lines) - body_h)
             if headings:
                 top = min(max_top, headings[min(section, len(headings) - 1)].row)
             else:
-                top = 0
+                top = _home_top(body_start, max_top)
             max_content_width = _max_content_width(plain_lines)
             left_col = min(left_col, max(0, max_content_width - _content_w()))
         elif ev.kind == "key" and ev.value == "B":
@@ -1532,7 +1563,7 @@ def _run(
                     full_width_active,
                 ) = nav_stack.pop()
                 eff_width = term_w if full_width_active else configured_width
-                lines, plain_lines, headings = loader(eff_width)
+                lines, plain_lines, headings, body_start = loader(eff_width)
                 max_content_width = _max_content_width(plain_lines)
                 new_max_top = max(0, len(lines) - body_h)
                 top = min(saved_doc_top, new_max_top)
@@ -1644,9 +1675,9 @@ def _run(
                                     eff_width = (
                                         term_w if full_width_active else configured_width
                                     )
-                                    lines, plain_lines, headings = loader(eff_width)
+                                    lines, plain_lines, headings, body_start = loader(eff_width)
                                     max_content_width = _max_content_width(plain_lines)
-                                    top = 0
+                                    top = _home_top(body_start, max(0, len(lines) - body_h))
                                     left_col = 0
                                     popup_selected = 0
                                     # A search highlight/query from the file being left doesn't
@@ -1676,7 +1707,7 @@ def _run(
                     if full_width_active:
                         # Full-width mode means "whatever the terminal's width currently is" --
                         # a resize while active has to rewrap, the same as pressing 'w' itself.
-                        lines, plain_lines, headings = loader(term_w)
+                        lines, plain_lines, headings, body_start = loader(term_w)
                         max_content_width = _max_content_width(plain_lines)
                     body_h = term_h - 2
                     top = min(top, max(0, len(lines) - body_h))

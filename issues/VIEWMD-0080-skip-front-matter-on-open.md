@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0080
 title: Interactive pager opens past front matter, not on it
-status: proposed
+status: in-progress
 area: [pager]
-effort:
+effort: low
 created: 2026-08-18
-updated: 2026-08-18
-accepted_by:
-accepted_at:
+updated: 2026-08-19
+accepted_by: George Moses
+accepted_at: 2026-08-19
 commits: []
 related: []
 supersedes: []
@@ -107,3 +107,6 @@ and the width-toggle/resize reload paths that already re-clamp `top` against a f
 - `./run-tests.sh` green.
 
 ## Peer review
+
+- **code-review agent** (agent), 2026-08-19: accepted. Initial viewport and `g`/`^` both go through `_home_top(body_start, max_top)`; `_home_top` is not a scroll floor, so up-arrow, page-up, and wheel still reach row 0. Directory-listing and multi-file loaders pass `body_start=0`. `render_markdown` output and `_mode_line` totals are unchanged; `body_start` is recomputed on `w` and on full-width resize; click-to-follow through `run()` uses the same home row. Tests cover the acceptance cases; no mermaid fixtures touched. No findings.
+- **George Moses** (maintainer), 2026-08-19: accepted, approved to land.
