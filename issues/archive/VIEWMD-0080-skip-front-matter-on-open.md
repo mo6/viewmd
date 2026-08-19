@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0080
 title: Interactive pager opens past front matter, not on it
-status: in-progress
+status: implemented
 area: [pager]
 effort: low
 created: 2026-08-18
 updated: 2026-08-19
 accepted_by: George Moses
 accepted_at: 2026-08-19
-commits: []
+commits: [9f3cbf7]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.41.0]"
 reason:
 ---
 

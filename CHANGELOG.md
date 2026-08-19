@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.41.0] — 2026-08-19
+
+- **Interactive pager opens past front matter, not on it** (VIEWMD-0080, pager): a document with a rendered front-matter table now starts (and `g`/`^` returns) at the first body line after the divider, instead of on the metadata table itself. The table stays reachable by scrolling up; a file with no table, and directory/multi-file views, still open at line 0.
+
 ## [1.40.1] — 2026-08-18
 
 - **Fix click-to-follow for a path-qualified wikilink target outside the vault root** (VIEWMD-0082, pager): a `[[Target|Display]]` wikilink whose target is a full vault-relative path (Obsidian's own disambiguation form, used when two notes share a name) now resolves correctly when the linking note isn't itself sitting at the vault root -- resolution now walks upward from the linking note's own directory through each ancestor, nearest first, instead of only checking directly relative to that directory. A bare (no `/`) wikilink target's resolution is unchanged.
