@@ -86,12 +86,12 @@ of whatever clickable thing the mouse is over, and more are all built in. Press 
 the full keybinding reference; a few of the more useful ones:
 
 ```
-up/down, wheel, j/k     scroll one line                    t          open the table of contents*
-space / b               page down / back up                /          search forward
-g / G                   jump to top / bottom                N          repeat the last search
-n / p                   jump to next / previous heading*     w         toggle full terminal width
-left/right, h/l         scroll sideways (wide content)        m        toggle mouse capture
-click a link             follow it, if local†                 B        go back†
+up/down, wheel, j/k     scroll one line                    t        open the table of contents*
+space / b               page down / back up                /        search forward
+g / G                   jump to top / bottom               N        repeat the last search
+n / p                   jump to next / previous heading*   w        toggle full terminal width
+left/right, h/l         scroll sideways (wide content)     m        toggle mouse capture
+click a link            follow it, if local†               B        go back†
 q                       quit
 ```
 
