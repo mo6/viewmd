@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0099
 title: Wikilink fence detection misses code fences indented under a blockquote marker
-status: in-progress
+status: implemented
 area: [wikilinks]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [33aa15a]
 related: [VIEWMD-0006, VIEWMD-0086]
 supersedes: []
-changelog:
+changelog: "[1.46.1]"
 reason:
 ---
 
@@ -48,3 +48,4 @@ New tests in `tests/test_wikilinks.py` covering: a `[[Target]]` and an `![[Targe
 
 - (agent, implementer) Added `_BLOCKQUOTE_PREFIX_RE = re.compile(r"^(?:\s*>)*\s*")` and changed `rewrite_wikilinks`'s fence check from `_FENCE_RE.match(line.lstrip())` to `_FENCE_RE.match(_BLOCKQUOTE_PREFIX_RE.sub("", line, count=1))`, so any number of nested `>` markers (not just a single level) is stripped before the fence test — covers requirement 1 and goes slightly beyond it (arbitrary nesting, not just one marker). Corrected the `rewrite_wikilinks` docstring's "list item or blockquote" claim to describe the actual behavior (requirement 4). Added three tests: single-level blockquote-nested fence for both a plain and an embed wikilink, plus a two-level-nested case. Manually verified plain fences, list-indented fences, and inline code spans are unaffected (requirement 3). `./run-tests.sh` green (1139 passed, ruff, pip-audit, completions, issues).
 - (agent, independent reviewer) Reviewed the diff: `_BLOCKQUOTE_PREFIX_RE`'s `(?:\s*>)*\s*` matches an empty string on a non-blockquoted line, so `_FENCE_RE.match(_BLOCKQUOTE_PREFIX_RE.sub("", line, count=1))` is exactly equivalent to the old `_FENCE_RE.match(line.lstrip())` in that case — confirms requirement 3 (no behavior change for plain/list-indented fences) structurally, not just by the passing test suite. A blockquoted *non-fence* line (e.g. `> [[Note]]`) still fails the fence match on its stripped remainder and falls through to `_rewrite_line` unchanged, correctly leaving existing blockquote-wikilink rewriting untouched. Traced both new tests by hand against the fix and confirmed the toggle correctly opens/closes on matching blockquote-prefixed fence pairs. `./run-tests.sh` reconfirmed green. Verdict: approve, no changes requested.
+- (maintainer, George Moses) 2026-08-19: "accept and close issue 99" — explicit landing approval given in-conversation.

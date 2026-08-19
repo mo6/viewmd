@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.1] — 2026-08-19
+
+- **Recognize blockquote-nested code fences in wikilink rewriting** (VIEWMD-0099, bug): `viewmd.wikilinks.rewrite_wikilinks` now strips leading `>` blockquote markers (any nesting depth), not just whitespace, before checking whether a line opens/closes a fenced code block — a fence quoted inside a blockquote (e.g. `` > ``` `` ) was previously missed, so `[[...]]`/`![[...]]` text inside it got wrongly rewritten instead of left literal.
+
 ## [1.46.0] — 2026-08-19
 
 - **Shell completion for bash/zsh/fish** (VIEWMD-0087, feature): `completions/viewmd.{bash,zsh,fish}` — generated from viewmd's own `argparse` parser via the new `./tools.sh completions` (`tools/completions.py`), never hand-maintained — complete every CLI flag (including both spellings of a `--toc`/`--no-toc`-style pair), `--color`'s `auto`/`always`/`never`, `--width`'s `full` literal, and fall back to filesystem-path completion for `--config` and the positional path argument(s). No new runtime dependency. `./run-tests.sh` now asserts the checked-in scripts match what the parser would generate. README documents per-shell install steps.
