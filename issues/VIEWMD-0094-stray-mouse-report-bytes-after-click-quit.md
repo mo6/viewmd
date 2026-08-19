@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0094
 title: Clicking the 'q quit' keybinding row leaves stray SGR mouse-report bytes on the terminal after exit
-status: proposed
+status: in-progress
 area: [pager]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: [VIEWMD-0076, VIEWMD-0078]
 supersedes: []
@@ -49,4 +49,7 @@ That assumption — "there will always be a next `_read_event()` call to mop it 
 New test in `tests/test_interactive_pager.py`: simulate an SGR click-press report immediately followed by its paired release report on the input fd, where the press resolves (via help-screen or echo-area click-invoke) to a quit; assert the release report's bytes are fully consumed before the pager returns, not left in the (simulated) fd. Manual verification: in a real terminal, open the pager, press `?`, click the `q  quit` row with the mouse, confirm the shell prompt line afterward is clean — no stray escape-sequence remnants. `./run-tests.sh` green.
 
 ## Peer review
+
+- **independent review agent** (agent), 2026-08-19: four findings. (1) a release arriving after the 0.05s drain window can still leak on click-to-quit -- accepted as the residual of this issue's chosen drain-after-press design (requirements 4/5: the same `select(..., 0.05)` window as bare-Esc); the maintainer's live test of the reported path was clean. (2) ~50ms wait on a click whose release isn't already queued -- same, matching the issue's required existing-`select` pattern. (3) `_unread` leftover after a non-quit click stalled the main loop because `select` only watched the tty fd -- fixed inline (skip `select` while `_unread` is non-empty), with `test_non_quit_click_then_key_in_same_burst_is_not_stalled`. (4) original tests only covered press+release already concatenated -- the stall test covers a following key through `_run`.
+- **George Moses** (maintainer), 2026-08-19: tested in a real terminal; click-q-quit leaves a clean prompt. "I've tested it: it works." Asked to commit, merge, and close.
 

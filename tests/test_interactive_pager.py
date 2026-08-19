@@ -2,9 +2,12 @@
 
 Covers every pure helper function directly -- the raw-terminal event loop itself (`run`) isn't
 unit-testable without a real tty, so these lock down the logic it's built from instead, including
-regressions found and fixed while this was developed as `poc/pager/pager_poc.py`.
+regressions found and fixed while this was developed as `poc/pager/pager_poc.py`. VIEWMD-0094
+adds a narrow exception: `run()` is driven against a pipe standing in for `/dev/tty` to pin that
+a click-to-quit consumes its paired SGR release rather than leaving it for the shell.
 """
 
+import os
 import pathlib
 
 import pytest
@@ -697,11 +700,51 @@ def test_popup_hit_none_for_empty_popup():
 # --- _read_event ---------------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _clear_sgr_unread():
+    ip._unread.clear()
+    yield
+    ip._unread.clear()
+
+
 def _pipe_with(data: bytes) -> int:
-    r, w = __import__("os").pipe()
-    __import__("os").write(w, data)
-    __import__("os").close(w)
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
     return r
+
+
+def _run_pager_with_input(
+    monkeypatch, data: bytes, *, term_size=(80, 24), width=80, text="# Hi\n\nbody\n"
+) -> bytes:
+    """Drive `run()` against a pipe standing in for `/dev/tty`, feeding `data` as the pager's
+    input. Returns whatever bytes were still unread on that pipe after `run()` returned --
+    VIEWMD-0094's leak is exactly those leftover SGR-release bytes."""
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
+    pager_fd = os.dup(r)
+
+    real_open = ip.os.open
+
+    def fake_open(path, flags, *args, **kwargs):
+        if path == "/dev/tty":
+            return pager_fd
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    monkeypatch.setattr(ip.termios, "tcgetattr", lambda fd: [0, 0, 0, 0, 0, 0, [0] * 32])
+    monkeypatch.setattr(ip.termios, "tcsetattr", lambda fd, when, mode: None)
+    monkeypatch.setattr(ip.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
+    )
+
+    ip.run(text, "file.md", width=width, color=False)
+
+    leftover = os.read(r, 64)
+    os.close(r)
+    return leftover
 
 
 def test_read_event_plain_key():
@@ -756,6 +799,26 @@ def test_read_event_sgr_mouse_click_press():
     assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
 
 
+def test_read_event_sgr_mouse_click_press_drains_paired_release():
+    # VIEWMD-0094: a physical click is press then release; one `_read_event` call must consume
+    # both so a click that quits the pager doesn't leave `\x1b[<0;Cx;Cym` for the shell to echo.
+    fd = _pipe_with(b"\x1b[<0;69;46M\x1b[<0;69;46m")
+    assert ip._read_event(fd) == ip.Event("click", col=69, row=46)
+    leftover = os.read(fd, 64)
+    os.close(fd)
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_read_event_sgr_mouse_click_press_does_not_consume_a_following_key():
+    # Requirement 3: a click that does *not* quit must not swallow the next real key -- the
+    # drain only takes the paired release, and anything after it is pushed back.
+    fd = _pipe_with(b"\x1b[<0;15;7M\x1b[<0;15;7mx")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+    assert ip._read_event(fd) == ip.Event("key", "x")
+    os.close(fd)
+
+
 def test_read_event_sgr_mouse_click_release_is_ignored():
     # The release ('m', not 'M') isn't a click -- VIEWMD-0076 only acts on the press.
     fd = _pipe_with(b"\x1b[<0;15;7m")
@@ -769,6 +832,57 @@ def test_read_event_sgr_mouse_modifier_click_is_ignored():
     fd = _pipe_with(b"\x1b[<4;15;7M")  # Shift + left-click
     ev = ip._read_event(fd)
     assert ev.kind != "click"
+
+
+def test_echo_area_click_quit_consumes_paired_sgr_release(monkeypatch):
+    # VIEWMD-0094: clicking the echo-area `q quit` chip (press + its paired release on the
+    # input fd) must consume the release before the pager returns, not leave it for the shell.
+    term_w, term_h = 80, 24
+    body_h = term_h - 2
+    _text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    q_start, _, invoke = next(s for s in spans if s[2] == ip.Event("key", "q"))
+    assert invoke == ip.Event("key", "q")
+    col = q_start + 1  # 1-indexed SGR Cx, inside the chip
+    row = body_h + 2  # 1-indexed SGR Cy of the echo area
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    leftover = _run_pager_with_input(
+        monkeypatch, press + release, term_size=(term_w, term_h), width=term_w
+    )
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_help_screen_click_quit_consumes_paired_sgr_release(monkeypatch):
+    # Same leak, via the `?` help screen's `q  quit` row (the originally reported path).
+    # term_h=40 is tall enough that the q row is in the un-scrolled help window.
+    term_w, term_h = 80, 40
+    body_h = term_h - 2
+    box, invokes = ip._help_box(term_w, max(3, body_h - 2), 0)
+    q_hit = next(i for i, inv in enumerate(invokes) if inv == ip.Event("key", "q"))
+    top, left = ip._popup_origin(box, body_h, term_w)
+    col0, row0 = left + 2, top + 1 + q_hit
+    assert ip._popup_hit(box, body_h, term_w, col0, row0) == q_hit
+    col, row = col0 + 1, row0 + 1
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    leftover = _run_pager_with_input(
+        monkeypatch, b"?" + press + release, term_size=(term_w, term_h), width=term_w
+    )
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_non_quit_click_then_key_in_same_burst_is_not_stalled(monkeypatch):
+    # Independent review: `_drain_paired_sgr_release` can push a following key into `_unread`,
+    # and the main loop used to `select` only on the tty fd -- so `q` sitting in `_unread`
+    # after a non-quit click (document body, not a chip) would never be read. Press+release+`q`
+    # in one burst must still quit.
+    leftover = _run_pager_with_input(
+        monkeypatch, b"\x1b[<0;1;1M\x1b[<0;1;1mq", term_size=(80, 24), width=80
+    )
+    assert leftover == b""
+    assert not ip._unread
 
 
 # --- _mode_line ------------------------------------------------------------------------------
