@@ -1,3 +1,3 @@
 """viewmd: view Markdown files from the command line."""
 
-__version__ = "1.42.2"
+__version__ = "1.43.0"

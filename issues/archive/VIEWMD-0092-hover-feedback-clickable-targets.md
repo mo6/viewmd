@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0092
 title: Visible hover feedback for clickable targets in the interactive pager
-status: in-progress
+status: implemented
 area: [pager]
 effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [98c4135, ec8c2ed, 8e71380]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.43.0]"
 reason:
 ---
 

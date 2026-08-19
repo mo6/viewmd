@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.43.0] — 2026-08-19
+
+- **Visible hover feedback for clickable targets in the interactive pager** (VIEWMD-0092, pager): the mouse now highlights whatever it's currently over -- a resolvable body-text link, a directory-listing row, a ToC-popup/help-screen row, or an echo-area keybinding chip -- via xterm any-motion tracking, so it's clear what's clickable before clicking it. Also fixed two related gaps found in testing: the echo area's `cancel`/`close help` chips (shown while a ToC popup or the help screen is open) were previously wired as unclickable "ambiguous" chips despite having one unambiguous outcome, so they're now clickable and hoverable like every other chip.
+
 ## [1.42.2] — 2026-08-19
 
 - **Fix stray SGR mouse-report bytes after click-to-quit** (VIEWMD-0094, pager): quitting the interactive pager by clicking `q  quit` (the `?` help-screen row or the echo-area chip) no longer leaves a leftover SGR mouse-release (`0;69;46m`) sitting on the shell prompt; the paired release is now drained with the press. Keyboard-`q` quit is unchanged.
