@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0096
 title: Document hover feedback and directory-listing click-nav in README; record VIEWMD-0092/0093/0094 lessons in AGENTS.md
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [e89572e]
 related: [VIEWMD-0081, VIEWMD-0092, VIEWMD-0093, VIEWMD-0094]
 supersedes: []
-changelog:
+changelog: "[1.43.1]"
 reason:
 ---
 
