@@ -732,10 +732,19 @@ def _wrap_hover(colored_line: str, start_col: int, end_col: int) -> str:
     `_RESET` at its own end if it opened one (`_ansi_slice`'s own doc), so simple concatenation of
     the three reproduces the original line exactly, with `_HOVER_STYLE` just added around the
     middle piece -- the same reasoning `_overlay`'s docstring gives for why slicing through live
-    color state needs care in general."""
+    color state needs care in general.
+
+    `middle` can itself contain a full `_RESET` mid-span -- a keycap chip (`_keycap`) closes with
+    one right after its key, and a multi-segment styled span (bold text inside a link, say) can
+    carry its own too -- which would otherwise cancel the reverse video applied just before
+    `middle` began partway through the span (observed: hovering the echo area's `w full width`
+    chip only reversed the `w` keycap itself, not ` full width`, because `_keycap`'s own trailing
+    `_RESET` wiped the SGR state `_HOVER_STYLE` had just turned on). Re-asserting `_HOVER_STYLE`
+    after every embedded reset keeps the whole span reversed end to end."""
     total_w = _display_width(_strip_ansi(colored_line))
     prefix = _ansi_slice(colored_line, 0, start_col)
     middle = _ansi_slice(colored_line, start_col, max(0, end_col - start_col))
+    middle = middle.replace(_RESET, _RESET + _HOVER_STYLE)
     suffix = _ansi_slice(colored_line, end_col, max(0, total_w - end_col))
     return f"{prefix}{_HOVER_STYLE}{middle}{_RESET}{suffix}"
 
@@ -1465,7 +1474,7 @@ def _run(
         if ev.row - 1 == body_h + 1 and echo_message is None:
             _, spans = _echo_hint()
             for start, end, invoke in spans:
-                if invoke == Event("key", "w") and start <= ev.col - 1 < end:
+                if invoke is not None and start <= ev.col - 1 < end:
                     return ("chip", start, end)
             return None
         body_row = ev.row - 1

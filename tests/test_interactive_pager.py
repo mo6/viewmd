@@ -287,6 +287,40 @@ def test_wrap_hover_at_the_very_end_of_the_line():
     assert f"{ip._HOVER_STYLE}89{ip._RESET}" in out
 
 
+def test_wrap_hover_survives_an_embedded_reset_mid_span():
+    # Regression (found in manual testing): a keycap chip (`_keycap`) closes with its own
+    # `_RESET` right after the key, e.g. "w full width" is `_KEYCAP_BG` + "w" + `_RESET` + "
+    # full width". That embedded `_RESET` sits inside the wrapped span and must not cancel
+    # `_HOVER_STYLE` for the rest of it -- previously only the "w" keycap itself showed reversed,
+    # not " full width".
+    text, spans = ip._keybind_help(popup_open=False, width_toggle="full width")
+    chip = next((s, e) for s, e, invoke in spans if invoke == ip.Event("key", "w"))
+    out = ip._wrap_hover(text, *chip)
+    assert ip._strip_ansi(out) == ip._strip_ansi(text)
+    # Exact expected rendering of the "w full width" chip once wrapped: the keycap's own
+    # trailing `_RESET` (right after "w") is immediately followed by another `_HOVER_STYLE`, so
+    # reverse video is never actually off anywhere inside the span -- not just "w", but
+    # " full width" too.
+    expected = (
+        f"{ip._HOVER_STYLE}{ip._KEYCAP_BG}w{ip._RESET}{ip._HOVER_STYLE} full width{ip._RESET}"
+    )
+    assert expected in out
+
+
+def test_compute_hover_style_matches_any_actionable_chip_not_only_w():
+    # Regression (found in manual testing): hovering chips other than "w full width" (e.g. "t
+    # contents", "? help", "q quit") never highlighted at all, because the hover-matching branch
+    # was hardcoded to only recognize `Event("key", "w")` instead of any chip with a real invoke
+    # -- mirrored here against `_chip_at`, the click-side counterpart that was never restricted
+    # this way, to pin the fix without needing a live `_run()` session (not unit-testable, see
+    # module docstring).
+    _text, spans = ip._keybind_help(popup_open=False, has_headings=True)
+    t_chip = next((s, e, i) for s, e, i in spans if i == ip.Event("key", "t"))
+    start, end, invoke = t_chip
+    assert invoke is not None
+    assert ip._chip_at(spans, start) == invoke
+
+
 # --- scrollbar column (VIEWMD-0079) -------------------------------------------------------------
 
 
