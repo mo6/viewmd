@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0100
 title: Mention the unrecognized-config-key warning in README.md
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [f9c8605]
 related: [VIEWMD-0083]
 supersedes: []
-changelog:
+changelog: "[1.46.2]"
 reason:
 ---
 

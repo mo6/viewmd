@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.2] — 2026-08-19
+
+- **Mention the unrecognized-config-key warning in README.md** (VIEWMD-0100, docs): the "Configuration file" section now says an unrecognized key prints a `viewmd: ...` stderr warning (once per key) rather than just "is ignored" — stale since VIEWMD-0083 added that warning.
+
 ## [1.46.1] — 2026-08-19
 
 - **Recognize blockquote-nested code fences in wikilink rewriting** (VIEWMD-0099, bug): `viewmd.wikilinks.rewrite_wikilinks` now strips leading `>` blockquote markers (any nesting depth), not just whitespace, before checking whether a line opens/closes a fenced code block — a fence quoted inside a blockquote (e.g. `` > ``` `` ) was previously missed, so `[[...]]`/`![[...]]` text inside it got wrongly rewritten instead of left literal.
