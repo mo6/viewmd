@@ -46,4 +46,4 @@ A new pager test scrolls a synthetic row wider than the terminal all the way rig
 
 ## Peer review
 
-Left blank until the change is implemented and tested.
+- **Claude Sonnet 5** (agent), 2026-08-19: verdict CONFIRMED and fixed -- `max_left_col` in all four call sites (wheel-right, `w` width-toggle re-clamp, `B` back-navigation re-clamp, resize re-clamp) undercounted by 1, never reaching a row's true last column once scrolled all the way right, with no `›` marker to hint at the shortfall. Factored the corrected cap into a shared `_max_left_col` helper (requirement 4) and added regression tests (`test_max_left_col_reaches_the_rows_true_last_column`, `test_max_left_col_stays_reachable_by_repeated_stepping`, `test_max_left_col_no_scroll_needed_when_content_fits`). `./run-tests.sh` green.
