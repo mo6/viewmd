@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0083
 title: Warn on unrecognized config-file keys instead of silently ignoring them
-status: proposed
+status: in-progress
 area: [config]
 effort:
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: []
 supersedes: []

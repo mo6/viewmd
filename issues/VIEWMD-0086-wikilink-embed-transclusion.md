@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0086
 title: Decide and document how Obsidian embed/transclusion syntax (![[Target]]) is handled
-status: proposed
+status: in-progress
 area: [wikilinks, render, docs]
 effort:
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: []
 supersedes: []
