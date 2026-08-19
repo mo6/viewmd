@@ -2,9 +2,12 @@
 
 Covers every pure helper function directly -- the raw-terminal event loop itself (`run`) isn't
 unit-testable without a real tty, so these lock down the logic it's built from instead, including
-regressions found and fixed while this was developed as `poc/pager/pager_poc.py`.
+regressions found and fixed while this was developed as `poc/pager/pager_poc.py`. VIEWMD-0094
+adds a narrow exception: `run()` is driven against a pipe standing in for `/dev/tty` to pin that
+a click-to-quit consumes its paired SGR release rather than leaving it for the shell.
 """
 
+import os
 import pathlib
 
 import pytest
@@ -62,7 +65,7 @@ def test_highlight_matches_returns_none_for_empty_query():
 
 
 def test_load_locates_every_heading_at_the_correct_row():
-    colored, plain, headings = ip._load(_DOC, 80, color_kwargs=_KW)
+    colored, plain, headings, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     assert [h.text for h in headings] == ["Title", "Alpha", "Beta", "Gamma"]
     for h in headings:
         assert ip._strip_ansi(plain[h.row]).strip() == h.text
@@ -70,12 +73,12 @@ def test_load_locates_every_heading_at_the_correct_row():
 
 
 def test_load_colored_and_plain_agree_in_length_for_ordinary_markdown():
-    colored, plain, _ = ip._load(_DOC, 80, color_kwargs=_KW)
+    colored, plain, _, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     assert len(colored) == len(plain)
 
 
 def test_nearest_heading_index_picks_the_section_currently_in_view():
-    _, _, headings = ip._load(_DOC, 80, color_kwargs=_KW)
+    _, _, headings, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     beta_row = next(h.row for h in headings if h.text == "Beta")
     assert ip._nearest_heading_index(headings, top=beta_row + 2) == 2
     assert ip._nearest_heading_index(headings, top=0) == 0
@@ -83,6 +86,79 @@ def test_nearest_heading_index_picks_the_section_currently_in_view():
 
 def test_nearest_heading_index_empty_headings_is_zero():
     assert ip._nearest_heading_index([], top=5) == 0
+
+
+# --- body_start / _home_top (VIEWMD-0080) -------------------------------------------------------
+
+
+def test_load_body_start_skips_the_front_matter_table():
+    _, plain, headings, body_start = ip._load(_DOC, 80, color_kwargs=_KW)
+    assert body_start > 0
+    assert "═" in plain[body_start - 1]
+    assert ip._strip_ansi(plain[body_start]).strip() == "Title"
+    title_row = next(h.row for h in headings if h.text == "Title")
+    assert body_start == title_row
+    # Rows above body_start are the table, still in the document -- scrolling up reaches them.
+    assert any("title" in ip._strip_ansi(row) for row in plain[:body_start])
+
+
+def test_load_body_start_zero_without_front_matter():
+    _, _, _, body_start = ip._load("# Just a heading\n\nsome text\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_for_unterminated_front_matter():
+    _, _, _, body_start = ip._load("---\ntitle: Hello\n\n# Body\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_for_empty_front_matter_block():
+    _, _, _, body_start = ip._load("---\n---\n# Body\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_when_all_fields_are_empty_unless_full():
+    md = "---\naccepted_by:\nreason:\n---\n# Body\n"
+    _, _, _, body_start = ip._load(md, 80, color_kwargs=_KW)
+    assert body_start == 0
+    _, plain, _, body_start = ip._load(md, 80, color_kwargs={**_KW, "full_front_matter": True})
+    assert body_start > 0
+    assert "═" in plain[body_start - 1]
+
+
+def test_load_body_start_recomputes_when_the_table_wraps():
+    keys = "\n".join(f"k{i}: v{i}" for i in range(20))
+    md = f"---\n{keys}\nlong: {'word ' * 40}\n---\n# Body\n"
+    _, _, _, wide = ip._load(md, 120, color_kwargs=_KW)
+    _, _, _, narrow = ip._load(md, 40, color_kwargs=_KW)
+    assert wide > 0
+    assert narrow > wide
+
+
+def test_home_top_is_body_start_when_the_document_overflows():
+    assert ip._home_top(body_start=10, max_top=50) == 10
+    assert ip._home_top(body_start=0, max_top=50) == 0
+
+
+def test_home_top_clamps_when_the_document_fits_on_screen():
+    # max_top == 0 means every line is already visible, so "skip the table" would just leave
+    # blank rows at the bottom -- open at 0 instead, matching every other jump's clamp.
+    assert ip._home_top(body_start=10, max_top=0) == 0
+
+
+def test_run_loader_reports_front_matter_body_start(monkeypatch):
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(_DOC, "test.md", width=80, color=False, toc=False)
+    _, plain, _, body_start = captured["loader"](80)
+    assert body_start > 0
+    assert ip._strip_ansi(plain[body_start]).strip() == "Title"
+    assert ip._home_top(body_start, max_top=50) == body_start
+    assert ip._home_top(body_start, max_top=0) == 0
 
 
 # --- _popup_box --------------------------------------------------------------------------------
@@ -94,31 +170,60 @@ def _headings(n):
 
 def test_popup_box_marks_the_selected_row():
     headings = _headings(3)
-    box = ip._popup_box(headings, selected=1, term_w=60, avail_h=20)
+    box, scroll = ip._popup_box(headings, selected=1, term_w=60, avail_h=20)
     content = box[1:-1]
     assert "▸" in ip._strip_ansi(content[1])
     assert ip._POPUP_SELECTED_BG in content[1]
     assert "▸" not in ip._strip_ansi(content[0])
+    assert scroll == 0
 
 
 def test_popup_box_scrolls_and_shows_indicators_when_too_tall():
     headings = _headings(20)
     avail_h = 8
     max_rows = max(3, avail_h - 2)
-    box = ip._popup_box(headings, selected=10, term_w=60, avail_h=avail_h)
+    box, scroll = ip._popup_box(headings, selected=10, term_w=60, avail_h=avail_h)
     content = box[1:-1]
     assert len(content) <= max_rows
     joined = "".join(content)
     assert "▲" in joined
     assert "▼" in joined
+    assert scroll > 0
 
 
 def test_popup_box_no_indicators_when_everything_fits():
     headings = _headings(3)
-    box = ip._popup_box(headings, selected=0, term_w=60, avail_h=40)
+    box, scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=40)
     joined = "".join(box)
     assert "▲" not in joined
     assert "▼" not in joined
+    assert scroll == 0
+
+
+def test_popup_box_marks_a_hovered_row_distinct_from_selected():
+    # VIEWMD-0092: hovering a *different* row than the current selection gets its own,
+    # dimmer highlight -- not the selected row's own `_POPUP_SELECTED_BG`.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20, hover=2)
+    content = box[1:-1]
+    assert ip._POPUP_HOVER_BG in content[2]
+    assert ip._POPUP_SELECTED_BG not in content[2]
+    assert ip._POPUP_HOVER_BG not in content[0]  # the selected row itself is untouched by hover
+
+
+def test_popup_box_selected_row_hover_keeps_selected_styling():
+    # Hovering the already-selected row must not demote it to the dimmer hover shade.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=1, term_w=60, avail_h=20, hover=1)
+    content = box[1:-1]
+    assert ip._POPUP_SELECTED_BG in content[1]
+    assert ip._POPUP_HOVER_BG not in content[1]
+
+
+def test_popup_box_no_hover_by_default():
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
 
 
 # --- _overlay ------------------------------------------------------------------------------------
@@ -126,30 +231,72 @@ def test_popup_box_no_indicators_when_everything_fits():
 
 def test_overlay_leaves_untouched_rows_exactly_as_given():
     body = [f"row {i}" for i in range(10)]
-    plain = list(body)
     popup = ["┌──┐", "│ok│", "└──┘"]
-    out = ip._overlay(body, plain, popup, term_w=20)
+    out = ip._overlay(body, popup, term_w=20)
     assert out[0] == body[0]
     assert out[-1] == body[-1]
 
 
 def test_overlay_no_popup_returns_body_unchanged():
     body = ["a", "b"]
-    assert ip._overlay(body, body, [], term_w=20) is body
+    assert ip._overlay(body, [], term_w=20) is body
 
 
 def test_overlay_does_not_pad_past_real_content():
     # Regression: an earlier version padded touched rows all the way to term_w with literal
     # spaces, painting over the terminal's own background where an erase should have been used.
     body = ["short"] * 5
-    plain = list(body)
     popup = ["┌──┐", "│ok│", "└──┘"]
-    out = ip._overlay(body, plain, popup, term_w=100)
+    out = ip._overlay(body, popup, term_w=100)
     box_top = (len(body) - len(popup)) // 2
     row = out[box_top]
     left = (100 - 4) // 2
     tail = ip._strip_ansi(row)[left + 4 :]
-    assert tail == plain[box_top][left + 4 :]
+    assert tail == body[box_top][left + 4 :]
+
+
+def test_overlay_margins_come_from_the_real_colored_row():
+    # VIEWMD-0102 regression, part 1 (content): a pie chart (VIEWMD-0043) renders a *structurally
+    # different* horizontal-bar-chart layout with color off, not a de-colored circle -- so
+    # rebuilding the popup's margins from a separately-rendered `color=False` document (as an
+    # earlier version of `_overlay` did) spliced unrelated, misaligned bar-chart text into the
+    # margins around the box, even on rows the popup never covered. Slicing the real colored row
+    # directly (this test's subject) can't drift from itself the way a second render can.
+    doc = "```mermaid\npie\n  \"A\" : 70\n  \"B\" : 30\n```\n"
+    colored, plain, _headings, _body_start = ip._load(doc, 40, color_kwargs=_KW)
+    # Fixture assumption: pie's no-color rendering really is a different layout, not just the same
+    # text minus color -- if this ever stops holding, the bug this test guards against can't recur.
+    assert plain != [ip._strip_ansi(row) for row in colored]
+
+    popup = ["┌──┐", "│ok│", "└──┘"]
+    term_w = 40
+    out = ip._overlay(colored, popup, term_w)
+    top, left = ip._popup_origin(popup, len(colored), term_w)
+    popup_w = max(ip._display_width(ip._strip_ansi(r)) for r in popup)
+    for r in range(top, top + len(popup)):
+        margin_after = ip._strip_ansi(out[r])[left + popup_w :]
+        real_after = ip._strip_ansi(colored[r])[left + popup_w :]
+        assert margin_after == real_after
+
+
+def test_overlay_margins_keep_their_own_color():
+    # VIEWMD-0102 regression, part 2 (color): even once the margin *text* matched the real row
+    # (part 1 above), an earlier fix still rebuilt margins from a colorless twin (`_strip_ansi` of
+    # the colored row) -- correct content, but every popup-adjacent row visibly lost all color,
+    # most noticeably on a color-filled diagram like a pie chart where color *is* the content, not
+    # just a highlight on top of it. `_ansi_slice` can cut the real colored row directly without
+    # that trade-off (reopening/closing whatever SGR span the cut lands inside, the same way
+    # `_crop_row`'s horizontal-scroll cropping already relies on it to), so the margins should
+    # carry the row's real color, not just its real text.
+    row = f"{ip._TRUNCATION_STYLE}" + ("x" * 30) + ip._RESET
+    popup = ["┌──┐", "│ok│", "└──┘"]
+    term_w = 40
+    body = [row] * 10
+    out = ip._overlay(body, popup, term_w)
+    top, left = ip._popup_origin(popup, len(body), term_w)
+    assert left > 0  # a left margin actually exists to check color in
+    touched = out[top]
+    assert ip._TRUNCATION_STYLE in touched, "margin around the popup lost the row's real color"
 
 
 # --- _ansi_slice / _crop_row -----------------------------------------------------------------
@@ -204,6 +351,39 @@ def test_crop_row_no_right_marker_at_the_true_end():
     assert "‹" in out
 
 
+def test_max_left_col_no_scroll_needed_when_content_fits():
+    assert ip._max_left_col(max_content_width=60, width=80) == 0
+
+
+def test_max_left_col_reaches_the_rows_true_last_column():
+    # VIEWMD-0101: at the max legal `left_col`, `_crop_row` must show the row's real last
+    # character -- not stop one column short because the `‹` marker's reserved column at that
+    # position was never subtracted out of the cap.
+    row = "x" * 300 + "!"  # a distinctive last character to look for
+    width = 80
+    max_left = ip._max_left_col(max_content_width=len(row), width=width)
+    out = ip._crop_row(row, len(row), left_col=max_left, width=width)
+    assert "!" in ip._strip_ansi(out)
+    assert "›" not in out  # nothing left to scroll to -- no right marker at the true end
+    assert "‹" in out  # still scrolled away from the left edge
+
+
+def test_max_left_col_stays_reachable_by_repeated_stepping():
+    # Mirrors the actual wheel-right/`l` call site: repeatedly advancing `left_col` by a step and
+    # clamping to `_max_left_col` must still land on a position that reveals the row's true end,
+    # not overshoot-and-clamp to something short of it.
+    row = "x" * 137 + "END"
+    width = 50
+    max_left = ip._max_left_col(len(row), width)
+    left_col = 0
+    for _ in range(20):
+        left_col = min(max_left, left_col + 7)
+    assert left_col == max_left
+    out = ip._crop_row(row, len(row), left_col=left_col, width=width)
+    assert "END" in ip._strip_ansi(out)
+    assert "›" not in out
+
+
 def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     # Regression: an earlier version decided the right marker using a *different* render's
     # length (some Mermaid diagram types legitimately render different widths with color on vs
@@ -214,7 +394,7 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     doc = (
         "```mermaid\nkanban\n  Todo\n    a[first]\n    b[second]\n  Done\n    c[third]\n```\n"
     )
-    colored, plain, _ = ip._load(doc, 40, color_kwargs=_KW)
+    colored, plain, _, _ = ip._load(doc, 40, color_kwargs=_KW)
     divergent = [
         i for i in range(len(colored)) if len(ip._strip_ansi(colored[i])) != len(plain[i])
     ]
@@ -230,14 +410,531 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     assert "›" in wrong
 
 
+# --- _wrap_hover (VIEWMD-0092) ------------------------------------------------------------------
+
+
+def test_wrap_hover_wraps_only_the_given_span():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 3, 6)
+    assert ip._strip_ansi(out) == line  # visible text is untouched, just re-styled
+    assert f"{ip._HOVER_STYLE}345{ip._RESET}" in out
+    assert not out.startswith(ip._HOVER_STYLE)  # prefix ("012") isn't wrapped
+
+
+def test_wrap_hover_preserves_a_links_own_color_around_the_span():
+    line = _first_colored_line("before [a link](B.md) after")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    out = ip._wrap_hover(line, start, end)
+    assert ip._strip_ansi(out) == ip._strip_ansi(line)
+    assert ip._HOVER_STYLE in out
+    assert ip._RESET in out
+
+
+def test_wrap_hover_at_the_very_end_of_the_line():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 8, 10)
+    assert ip._strip_ansi(out) == line
+    assert f"{ip._HOVER_STYLE}89{ip._RESET}" in out
+
+
+def test_wrap_hover_survives_an_embedded_reset_mid_span():
+    # Regression (found in manual testing): a keycap chip (`_keycap`) closes with its own
+    # `_RESET` right after the key, e.g. "w full width" is `_KEYCAP_BG` + "w" + `_RESET` + "
+    # full width". That embedded `_RESET` sits inside the wrapped span and must not cancel
+    # `_HOVER_STYLE` for the rest of it -- previously only the "w" keycap itself showed reversed,
+    # not " full width".
+    text, spans = ip._keybind_help(popup_open=False, width_toggle="full width")
+    chip = next((s, e) for s, e, invoke in spans if invoke == ip.Event("key", "w"))
+    out = ip._wrap_hover(text, *chip)
+    assert ip._strip_ansi(out) == ip._strip_ansi(text)
+    # Exact expected rendering of the "w full width" chip once wrapped: the keycap's own
+    # trailing `_RESET` (right after "w") is immediately followed by another `_HOVER_STYLE`, so
+    # reverse video is never actually off anywhere inside the span -- not just "w", but
+    # " full width" too.
+    expected = (
+        f"{ip._HOVER_STYLE}{ip._KEYCAP_BG}w{ip._RESET}{ip._HOVER_STYLE} full width{ip._RESET}"
+    )
+    assert expected in out
+
+
+def test_compute_hover_style_matches_any_actionable_chip_not_only_w():
+    # Regression (found in manual testing): hovering chips other than "w full width" (e.g. "t
+    # contents", "? help", "q quit") never highlighted at all, because the hover-matching branch
+    # was hardcoded to only recognize `Event("key", "w")` instead of any chip with a real invoke
+    # -- mirrored here against `_chip_at`, the click-side counterpart that was never restricted
+    # this way, to pin the fix without needing a live `_run()` session (not unit-testable, see
+    # module docstring).
+    _text, spans = ip._keybind_help(popup_open=False, has_headings=True)
+    t_chip = next((s, e, i) for s, e, i in spans if i == ip.Event("key", "t"))
+    start, end, invoke = t_chip
+    assert invoke is not None
+    assert ip._chip_at(spans, start) == invoke
+
+
+# --- scrollbar column (VIEWMD-0079) -------------------------------------------------------------
+
+
+def test_scrollbar_reserved_zero_when_document_fits():
+    assert ip._scrollbar_reserved(total_lines=20, body_h=20) == 0
+    assert ip._scrollbar_reserved(total_lines=5, body_h=20) == 0
+
+
+def test_scrollbar_reserved_when_document_overflows():
+    assert ip._scrollbar_reserved(total_lines=100, body_h=20) == ip._SCROLLBAR_RESERVED_W
+    assert ip._SCROLLBAR_RESERVED_W == 2
+
+
+def test_scrollbar_thumb_range_at_top():
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=20, top=0)
+    assert start == 0
+    assert end > start
+
+
+def test_scrollbar_thumb_range_at_bottom():
+    max_top = 100 - 20
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=20, top=max_top)
+    assert end == 20
+
+
+def test_scrollbar_thumb_range_proportional_midway():
+    # Viewing half the document (50/100 rows visible) should occupy roughly half the column.
+    start, end = ip._scrollbar_thumb_range(total_lines=100, body_h=50, top=25)
+    assert end - start >= 20  # not the whole column, but a substantial chunk
+    assert 0 < start < end < 50
+
+
+def test_scrollbar_thumb_range_never_exceeds_body_h():
+    start, end = ip._scrollbar_thumb_range(total_lines=21, body_h=20, top=0)
+    assert 0 <= start < end <= 20
+
+
+def test_scrollbar_prefix_marks_thumb_and_track_distinctly():
+    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0)
+    assert len(prefix) == 10
+    thumb_start, thumb_end = ip._scrollbar_thumb_range(100, 10, 0)
+    for i, cell in enumerate(prefix):
+        is_thumb = thumb_start <= i < thumb_end
+        glyph = ip._SCROLLBAR_THUMB_GLYPH if is_thumb else ip._SCROLLBAR_TRACK_GLYPH
+        assert glyph in cell
+        assert "\x1b[" in cell  # colored
+
+
+# --- _link_at / _resolve_link_target / _content_col (VIEWMD-0076) ------------------------------
+
+
+def _first_colored_line(text: str, width: int = 80) -> str:
+    return ip._load(text, width, color_kwargs=_KW)[0][0]
+
+
+def _col_of(colored_line: str, substring: str) -> int:
+    """Display column of `substring`'s first character in `colored_line` -- walks the same
+    tokenizer `_link_at` does rather than trusting `str.index` on raw (escape-laden) text."""
+    target = substring[0]
+    col = 0
+    for tok in ip._ANSI_TOKEN_RE.findall(colored_line):
+        if tok.startswith("\x1b"):
+            continue
+        if tok == target:
+            return col
+        col += ip._char_width(tok)
+    raise AssertionError(f"{substring!r} not found in {colored_line!r}")
+
+
+def test_link_at_resolves_href_at_a_column_inside_the_link():
+    line = _first_colored_line("[a link](B.md) after")
+    col = _col_of(line, "a link")
+    assert ip._link_at(line, col) == "B.md"
+
+
+def test_link_at_returns_none_just_past_the_link():
+    line = _first_colored_line("[a link](B.md) zzz")
+    end_col = _col_of(line, "zzz")
+    assert ip._link_at(line, end_col) is None
+
+
+def test_link_at_returns_none_for_plain_text_with_no_link():
+    line = _first_colored_line("just plain text, no links here")
+    assert ip._link_at(line, 0) is None
+
+
+def test_link_at_decodes_a_wikilink_href():
+    line = _first_colored_line("[[Target Note]]")
+    col = _col_of(line, "Target")
+    assert ip._link_at(line, col) == "wikilink:Target Note"
+
+
+def test_link_at_decodes_a_toc_anchor_href():
+    # VIEWMD-0077: the static ToC block's own entries carry a `viewmd-toc:<rank>:<heading text>`
+    # href (`viewmd/render.py`'s `_toc_lines()`) -- `_link_at` decodes it the same as any other
+    # href, scheme-agnostic; the interactive pager's click dispatch is what treats this scheme
+    # specially (resolved by heading text + rank into `top`, never through `_resolve_link_target`).
+    kw = {**_KW, "toc": True}
+    colored, _plain, _headings, _ = ip._load("# Title\n\n## Section\n", 80, color_kwargs=kw)
+    toc_line = next(line for line in colored if "Section" in ip._strip_ansi(line))
+    col = _col_of(toc_line, "Section")
+    assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:Section"
+
+
+def test_link_at_decodes_a_toc_anchor_href_with_a_percent_looking_heading():
+    # Regression (found in review): _link_at() already fully unquotes an href once -- a click
+    # handler that unquotes it a *second* time would corrupt a heading whose text happens to
+    # contain a literal '%'-looking substring (e.g. quote()-ing "%41" produces "%2541", and a
+    # correct single decode gives back "%41", not a further-decoded "A").
+    kw = {**_KW, "toc": True}
+    heading_text = "Item %41 Spec"
+    colored, _plain, _headings, _ = ip._load(f"# Title\n\n## {heading_text}\n", 80, color_kwargs=kw)
+    toc_line = next(line for line in colored if "Item" in ip._strip_ansi(line))
+    col = _col_of(toc_line, "Item")
+    assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:{heading_text}"
+
+
+# --- _link_span_at (VIEWMD-0092) ------------------------------------------------------------
+
+
+def test_link_span_at_resolves_href_and_span_inside_the_link():
+    line = _first_colored_line("[a link](B.md) after")
+    col = _col_of(line, "a link")
+    href, start, end = ip._link_span_at(line, col)
+    assert href == "B.md"
+    assert start <= col < end
+    # Every column across the link's own text resolves to the exact same span -- not just the
+    # one column `col_of` happened to land on.
+    for c in range(start, end):
+        assert ip._link_span_at(line, c) == (href, start, end)
+
+
+def test_link_span_at_returns_none_just_past_the_link():
+    line = _first_colored_line("[a link](B.md) zzz")
+    end_col = _col_of(line, "zzz")
+    assert ip._link_span_at(line, end_col) is None
+
+
+def test_link_span_at_returns_none_for_plain_text_with_no_link():
+    line = _first_colored_line("just plain text, no links here")
+    assert ip._link_span_at(line, 0) is None
+
+
+def test_link_span_at_span_excludes_neighboring_plain_text():
+    line = _first_colored_line("QQQ [a link](B.md) ZZZ")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    plain = ip._strip_ansi(line)
+    assert plain.index("QQQ") < start
+    assert end <= plain.index("ZZZ")
+
+
+def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("wikilink:B", str(tmp_path)) == str(tmp_path / "B.md")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "Nested.md").write_text("# Nested\n")
+    assert ip._resolve_link_target("wikilink:Nested", str(tmp_path)) == str(sub / "Nested.md")
+    assert ip._resolve_link_target("wikilink:NoSuchDoc", str(tmp_path)) is None
+
+
+# --- path-qualified wikilink target resolution (VIEWMD-0082) -----------------------------------
+
+
+def test_resolve_link_target_path_qualified_wikilink_from_vault_root(tmp_path):
+    # Already-working case (a path-qualified target resolves directly when current_dir *is* the
+    # vault root) -- MUST stay unaffected by the ancestor-walk added for the nested case below.
+    sub = tmp_path / "Projects" / "Garden" / "Notes"
+    sub.mkdir(parents=True)
+    (sub / "_Index.md").write_text("# Notes\n")
+    target = "wikilink:Projects/Garden/Notes/_Index"
+    assert ip._resolve_link_target(target, str(tmp_path)) == str(sub / "_Index.md")
+
+
+def test_resolve_link_target_path_qualified_wikilink_from_nested_note(tmp_path):
+    # The reported bug: the linking note lives several levels below the vault root (here, inside
+    # the very folder the target names), so the target can't be found relative to current_dir
+    # directly -- it must be found by walking upward until an ancestor matches.
+    sub = tmp_path / "Projects" / "Garden" / "Notes"
+    sub.mkdir(parents=True)
+    (sub / "_Index.md").write_text("# Notes\n")
+    target = "wikilink:Projects/Garden/Notes/_Index"
+    assert ip._resolve_link_target(target, str(sub)) == str(sub / "_Index.md")
+    deeper = tmp_path / "Projects" / "Garden" / "Notes" / "Seedlings"
+    deeper.mkdir()
+    assert ip._resolve_link_target(target, str(deeper)) == str(sub / "_Index.md")
+
+
+def test_resolve_link_target_path_qualified_wikilink_no_match_anywhere(tmp_path):
+    sub = tmp_path / "a" / "b"
+    sub.mkdir(parents=True)
+    assert ip._resolve_link_target("wikilink:no/such/note", str(sub)) is None
+
+
+def test_resolve_link_target_rejects_absolute_path_qualified_wikilink(tmp_path):
+    # Regression (found in review): os.path.join(ancestor, target) silently discards `ancestor`
+    # for an absolute `target` -- a crafted `[[/etc/passwd|x]]` MUST NOT resolve to any absolute
+    # path reachable on disk, the same guard the non-wikilink branch below already has.
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    target_without_extension = str(outside)[: -len(".md")]
+    href = f"wikilink:{target_without_extension}"
+    try:
+        assert ip._resolve_link_target(href, str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+def test_resolve_link_target_rejects_dotdot_escaping_path_qualified_wikilink(tmp_path):
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    try:
+        assert ip._resolve_link_target("wikilink:../outside", str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+def test_resolve_link_target_bare_wikilink_unaffected_by_ancestor_walk(tmp_path):
+    # Requirement 2: a bare (no "/") target's own direct-then-os.walk resolution is unchanged --
+    # this exercises the exact scenario the ancestor-walk branch must not intercept.
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("wikilink:B", str(tmp_path)) == str(tmp_path / "B.md")
+
+
+def test_resolve_link_target_relative_markdown_link(tmp_path):
+    (tmp_path / "B.md").write_text("# B\n")
+    assert ip._resolve_link_target("B.md", str(tmp_path)) == str(tmp_path / "B.md")
+    assert ip._resolve_link_target("missing.md", str(tmp_path)) is None
+
+
+def test_resolve_link_target_rejects_non_md_and_external(tmp_path):
+    (tmp_path / "image.png").write_bytes(b"")
+    assert ip._resolve_link_target("image.png", str(tmp_path)) is None
+    assert ip._resolve_link_target("https://example.com/x", str(tmp_path)) is None
+    assert ip._resolve_link_target("mailto:a@b.com", str(tmp_path)) is None
+
+
+def test_resolve_link_target_rejects_absolute_href(tmp_path):
+    # An absolute href isn't "relative to current_dir" -- MUST NOT resolve outside the current
+    # document's own directory tree just because a real .md file happens to exist at that
+    # absolute path elsewhere on disk (found in review: os.path.join silently discards
+    # current_dir for an absolute second argument).
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("# Outside\n")
+    try:
+        assert ip._resolve_link_target(str(outside), str(tmp_path)) is None
+    finally:
+        outside.unlink()
+
+
+# --- _resolve_dir_target / directory-listing subdirectory click nav (VIEWMD-0081) --------------
+
+
+def test_link_at_decodes_a_dir_anchor_href(tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "sub").mkdir()
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+    line = next(line for line in colored.split("\n") if "sub" in ip._strip_ansi(line))
+    col = _col_of(line, "sub")
+    assert ip._link_at(line, col) == f"{ip._DIR_ANCHOR_SCHEME}sub"
+
+
+def test_resolve_dir_target_resolves_an_existing_subdirectory(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}sub", str(tmp_path)) == str(sub)
+
+
+def test_resolve_dir_target_rejects_a_missing_directory(tmp_path):
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}missing", str(tmp_path)) is None
+
+
+def test_resolve_dir_target_rejects_a_path_that_is_a_file_not_a_directory(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    assert ip._resolve_dir_target(f"{ip._DIR_ANCHOR_SCHEME}a.md", str(tmp_path)) is None
+
+
+def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypatch, tmp_path):
+    # VIEWMD-0081: `run_directory_listing()` now passes `doc_dir`/`open_path` to `_run()` (just
+    # like `run()` does for a `.md` file) so a click on a subdirectory row can navigate into it --
+    # this exercises that wiring directly, at the level `_run`'s own click-to-follow logic (itself
+    # untested end-to-end, see VIEWMD-0076's tests above) is invoked at, without needing a real
+    # tty/event loop.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["doc_dir"] = doc_dir
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert captured["doc_dir"] == str(tmp_path)
+    new_loader, new_display_name, new_doc_dir = captured["open_path"](str(sub))
+    assert new_display_name == "sub/"
+    assert new_doc_dir == str(sub)
+    colored, _plain, headings, body_start = new_loader(80)
+    assert any("nested.md" in ip._strip_ansi(line) for line in colored)
+    assert headings == []
+    assert body_start == 0
+
+
+# --- .md file rows clickable in the directory listing (VIEWMD-0093) -----------------------------
+
+
+def test_link_at_decodes_a_directory_listing_file_href(tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "a file.md").write_text("# A\n")
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+    line = next(line for line in colored.split("\n") if "a file.md" in ip._strip_ansi(line))
+    col = _col_of(line, "a file.md")
+    assert ip._link_at(line, col) == "a file.md"
+
+
+def test_resolve_link_target_resolves_a_directory_listing_file_href(tmp_path):
+    # Unlike a subdirectory row's `_DIR_ANCHOR_SCHEME`-tagged href, a file row's href is a plain
+    # (percent-encoded, already-unquoted-by-`_link_at`) relative path -- it resolves through the
+    # same `_resolve_link_target` an ordinary in-document link uses, per the issue's design notes.
+    (tmp_path / "a.md").write_text("# A\n")
+    assert ip._resolve_link_target("a.md", str(tmp_path)) == str(tmp_path / "a.md")
+
+
+def test_run_directory_listing_open_path_opens_an_md_file(monkeypatch, tmp_path):
+    # VIEWMD-0093: `run_directory_listing()`'s `open_path` now dispatches to opening a document
+    # (not a nested listing) when handed a `.md` file target, the same shape `run()`'s own
+    # `open_path` returns for a clicked in-document link.
+    (tmp_path / "a.md").write_text("# A\n\nBody text.\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    opened = captured["open_path"](str(tmp_path / "a.md"))
+    assert opened is not None
+    new_loader, new_display_name, new_doc_dir = opened
+    assert new_display_name == "a.md"
+    assert new_doc_dir == str(tmp_path)
+    colored, _plain, headings, _body_start = new_loader(80)
+    assert any("Body text." in ip._strip_ansi(line) for line in colored)
+    assert len(headings) == 1
+
+
+def test_run_directory_listing_open_path_returns_none_for_unreadable_file(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+
+    # Never written -- resolved and then removed/never-existed by the time open_path runs, the
+    # same race `run()`'s own open_path guards against (VIEWMD-0076).
+    assert captured["open_path"](str(tmp_path / "missing.md")) is None
+
+
+def test_content_col_maps_through_no_scroll():
+    # No truncation markers reserved -- screen column is content column, unchanged.
+    assert ip._content_col(plain_len=40, left_col=0, width=80, screen_col=5) == 5
+
+
+def test_content_col_none_on_left_truncation_marker():
+    assert ip._content_col(plain_len=200, left_col=10, width=80, screen_col=0) is None
+    assert ip._content_col(plain_len=200, left_col=10, width=80, screen_col=1) == 10
+
+
+def test_content_col_none_on_right_truncation_marker():
+    # plain_len > left_col + width -- a right marker is reserved at the last screen column.
+    assert ip._content_col(plain_len=200, left_col=0, width=80, screen_col=79) is None
+    assert ip._content_col(plain_len=200, left_col=0, width=80, screen_col=78) == 78
+
+
+# --- _popup_origin / _popup_hit (VIEWMD-0076) ---------------------------------------------------
+
+
+def _box(n_content_rows: int, width: int = 10) -> list[str]:
+    top = "┌" + "─" * width + "┐"
+    bottom = "└" + "─" * width + "┘"
+    return [top] + [f"│{'x' * width}│" for _ in range(n_content_rows)] + [bottom]
+
+
+def test_popup_hit_content_row_inside_box():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top + 2) == 1
+
+
+def test_popup_hit_none_on_border_row():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top) is None
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=left, row0=top + 4) is None
+
+
+def test_popup_hit_none_outside_box_columns():
+    popup = _box(3)
+    top, left = ip._popup_origin(popup, body_h=20, term_w=40)
+    assert ip._popup_hit(popup, body_h=20, term_w=40, col0=0, row0=top + 1) is None
+
+
+def test_popup_hit_none_for_empty_popup():
+    assert ip._popup_hit([], body_h=20, term_w=40, col0=5, row0=5) is None
+
+
 # --- _read_event ---------------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _clear_sgr_unread():
+    ip._unread.clear()
+    yield
+    ip._unread.clear()
+
+
 def _pipe_with(data: bytes) -> int:
-    r, w = __import__("os").pipe()
-    __import__("os").write(w, data)
-    __import__("os").close(w)
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
     return r
+
+
+def _run_pager_with_input(
+    monkeypatch, data: bytes, *, term_size=(80, 24), width=80, text="# Hi\n\nbody\n"
+) -> bytes:
+    """Drive `run()` against a pipe standing in for `/dev/tty`, feeding `data` as the pager's
+    input. Returns whatever bytes were still unread on that pipe after `run()` returned --
+    VIEWMD-0094's leak is exactly those leftover SGR-release bytes."""
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
+    pager_fd = os.dup(r)
+
+    real_open = ip.os.open
+
+    def fake_open(path, flags, *args, **kwargs):
+        if path == "/dev/tty":
+            return pager_fd
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    monkeypatch.setattr(ip.termios, "tcgetattr", lambda fd: [0, 0, 0, 0, 0, 0, [0] * 32])
+    monkeypatch.setattr(ip.termios, "tcsetattr", lambda fd, when, mode: None)
+    monkeypatch.setattr(ip.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
+    )
+
+    ip.run(text, "file.md", width=width, color=False)
+
+    leftover = os.read(r, 64)
+    os.close(r)
+    return leftover
 
 
 def test_read_event_plain_key():
@@ -268,6 +965,141 @@ def test_read_event_sgr_mouse_wheel():
     assert ip._read_event(fd) == ip.Event("wheel_up")
     fd = _pipe_with(b"\x1b[<65;10;5M")
     assert ip._read_event(fd) == ip.Event("wheel_down")
+
+
+def test_read_event_sgr_mouse_horizontal_wheel():
+    fd = _pipe_with(b"\x1b[<66;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_left")
+    fd = _pipe_with(b"\x1b[<67;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_right")
+
+
+def test_read_event_sgr_mouse_shift_wheel_falls_back_to_horizontal():
+    # Terminals with no native horizontal-wheel report (e.g. macOS Terminal.app) send Shift +
+    # vertical wheel instead (SGR adds 4 for a held Shift: 64+4=68, 65+4=69) -- the same
+    # shift-scrolls-horizontally convention other GUI apps fall back to.
+    fd = _pipe_with(b"\x1b[<68;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_left")
+    fd = _pipe_with(b"\x1b[<69;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_right")
+
+
+def test_read_event_sgr_mouse_click_press():
+    fd = _pipe_with(b"\x1b[<0;15;7M")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_click_press_drains_paired_release():
+    # VIEWMD-0094: a physical click is press then release; one `_read_event` call must consume
+    # both so a click that quits the pager doesn't leave `\x1b[<0;Cx;Cym` for the shell to echo.
+    fd = _pipe_with(b"\x1b[<0;69;46M\x1b[<0;69;46m")
+    assert ip._read_event(fd) == ip.Event("click", col=69, row=46)
+    leftover = os.read(fd, 64)
+    os.close(fd)
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_read_event_sgr_mouse_click_press_does_not_consume_a_following_key():
+    # Requirement 3: a click that does *not* quit must not swallow the next real key -- the
+    # drain only takes the paired release, and anything after it is pushed back.
+    fd = _pipe_with(b"\x1b[<0;15;7M\x1b[<0;15;7mx")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+    assert ip._read_event(fd) == ip.Event("key", "x")
+    os.close(fd)
+
+
+def test_read_event_sgr_mouse_click_release_is_ignored():
+    # The release ('m', not 'M') isn't a click -- VIEWMD-0076 only acts on the press.
+    fd = _pipe_with(b"\x1b[<0;15;7m")
+    ev = ip._read_event(fd)
+    assert ev.kind != "click"
+
+
+def test_read_event_sgr_mouse_modifier_click_is_ignored():
+    # A modifier-click (Ctrl/Alt/Shift + left button) is out of scope (VIEWMD-0076 Non-goals) --
+    # SGR encodes those as `btn` values other than the bare 0 a plain left-click press reports.
+    fd = _pipe_with(b"\x1b[<4;15;7M")  # Shift + left-click
+    ev = ip._read_event(fd)
+    assert ev.kind != "click"
+
+
+def test_echo_area_click_quit_consumes_paired_sgr_release(monkeypatch):
+    # VIEWMD-0094: clicking the echo-area `q quit` chip (press + its paired release on the
+    # input fd) must consume the release before the pager returns, not leave it for the shell.
+    term_w, term_h = 80, 24
+    body_h = term_h - 2
+    _text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    q_start, _, invoke = next(s for s in spans if s[2] == ip.Event("key", "q"))
+    assert invoke == ip.Event("key", "q")
+    col = q_start + 1  # 1-indexed SGR Cx, inside the chip
+    row = body_h + 2  # 1-indexed SGR Cy of the echo area
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    leftover = _run_pager_with_input(
+        monkeypatch, press + release, term_size=(term_w, term_h), width=term_w
+    )
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_help_screen_click_quit_consumes_paired_sgr_release(monkeypatch):
+    # Same leak, via the `?` help screen's `q  quit` row (the originally reported path).
+    # term_h=40 is tall enough that the q row is in the un-scrolled help window.
+    term_w, term_h = 80, 40
+    body_h = term_h - 2
+    box, invokes = ip._help_box(term_w, max(3, body_h - 2), 0)
+    q_hit = next(i for i, inv in enumerate(invokes) if inv == ip.Event("key", "q"))
+    top, left = ip._popup_origin(box, body_h, term_w)
+    col0, row0 = left + 2, top + 1 + q_hit
+    assert ip._popup_hit(box, body_h, term_w, col0, row0) == q_hit
+    col, row = col0 + 1, row0 + 1
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    leftover = _run_pager_with_input(
+        monkeypatch, b"?" + press + release, term_size=(term_w, term_h), width=term_w
+    )
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_non_quit_click_then_key_in_same_burst_is_not_stalled(monkeypatch):
+    # Independent review: `_drain_paired_sgr_release` can push a following key into `_unread`,
+    # and the main loop used to `select` only on the tty fd -- so `q` sitting in `_unread`
+    # after a non-quit click (document body, not a chip) would never be read. Press+release+`q`
+    # in one burst must still quit.
+    leftover = _run_pager_with_input(
+        monkeypatch, b"\x1b[<0;1;1M\x1b[<0;1;1mq", term_size=(80, 24), width=80
+    )
+    assert leftover == b""
+    assert not ip._unread
+
+
+def test_read_event_sgr_mouse_motion_no_button(monkeypatch):
+    # VIEWMD-0092: xterm's own "motion, no button pressed" encoding is 32+3=35 -- confirmed
+    # empirically in macOS Terminal.app (see the issue's Design notes) as the report a bare mouse
+    # move (no click) produces once motion tracking (1003) is enabled.
+    fd = _pipe_with(b"\x1b[<35;15;7M")
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_with_button_held_is_still_motion():
+    # A drag (button held while moving) sets the same bit-32 motion flag, just with the held
+    # button's own low bits instead of 3 ("no button") -- still a "motion" event here, since
+    # this issue is about where the cursor currently sits, not whether a button happens to be
+    # down while it gets there.
+    fd = _pipe_with(b"\x1b[<32;15;7M")  # button 0 (left) held + moving
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_does_not_collide_with_wheel_or_click():
+    # Regression guard for the bit-32 check's own reasoning comment: wheel codes (64-69) and a
+    # plain click (0) must still parse exactly as before now that a motion branch sits between
+    # them in `_read_event`.
+    fd = _pipe_with(b"\x1b[<64;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_up")
+    fd = _pipe_with(b"\x1b[<0;15;7M")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
 
 
 # --- _mode_line ------------------------------------------------------------------------------
@@ -313,15 +1145,147 @@ def test_mode_line_drops_section_when_no_room_at_all():
 
 def test_keybind_help_fits_comfortably_and_stays_colored():
     for popup_open in (False, True):
-        line = ip._keybind_help(popup_open, "full width", True)
+        line, _spans = ip._keybind_help(popup_open, "full width", True)
         assert len(ip._strip_ansi(line)) <= 90
         assert ip._KEYCAP_BG in line
 
 
 def test_keybind_help_omits_width_toggle_and_highlight_hints_when_not_applicable():
-    line = ip._keybind_help(False, None, False)
+    line, _spans = ip._keybind_help(False, None, False)
     assert "full width" not in ip._strip_ansi(line)
     assert "clear hl" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_omits_contents_hint_without_headings():
+    # VIEWMD-0072: a directory listing/multi-file view has no heading outline, so 't' is inert --
+    # not advertised in the echo-area default hint.
+    line, _spans = ip._keybind_help(False, None, False, has_headings=False)
+    assert "contents" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_contents_hint_with_headings_by_default():
+    line, _spans = ip._keybind_help(False, None, False)
+    assert "contents" in ip._strip_ansi(line)
+
+
+def test_keybind_help_omits_prev_file_hint_before_any_navigation():
+    line, _spans = ip._keybind_help(False, None, False)
+    assert "prev file" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_prev_file_hint_once_has_back_is_true():
+    # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to.
+    line, _spans = ip._keybind_help(False, None, False, has_back=True)
+    assert "prev file" in ip._strip_ansi(line)
+
+
+# --- _keybind_help spans / _chip_at (VIEWMD-0078) -------------------------------------------
+
+
+def test_keybind_help_every_chip_has_a_resolvable_span():
+    # Requirement 2/acceptance: every chip `_keybind_help()` can render, in both layouts, has a
+    # span that covers at least one column and doesn't overlap its neighbors.
+    for popup_open in (False, True):
+        for width_toggle, highlight_active, has_headings, has_back in (
+            (None, False, True, False),
+            ("full width", True, True, True),
+            (None, False, False, False),
+        ):
+            _text, spans = ip._keybind_help(
+                popup_open,
+                width_toggle,
+                highlight_active,
+                has_headings=has_headings,
+                has_back=has_back,
+            )
+            assert spans
+            prev_end = 0
+            for start, end, _invoke in spans:
+                assert start >= prev_end
+                assert end > start
+                prev_end = end
+
+
+def test_keybind_help_base_layout_chip_invokes_match_their_key():
+    _text, spans = ip._keybind_help(
+        False, "full width", True, has_headings=True, has_back=True
+    )
+    invokes = {inv.value: inv for _s, _e, inv in spans if inv is not None}
+    assert invokes["/"] == ip.Event("key", "/")
+    assert invokes["t"] == ip.Event("key", "t")
+    assert invokes["B"] == ip.Event("key", "B")
+    assert invokes["w"] == ip.Event("key", "w")
+    assert invokes["esc"] == ip.Event("key", "esc")
+    assert invokes["?"] == ip.Event("key", "?")
+    assert invokes["q"] == ip.Event("key", "q")
+    # "scroll" (up/down,wheel) has no single unambiguous direction, same as its `_HELP_GROUPS`
+    # row -- its span is the first one and carries no invoke.
+    assert spans[0][2] is None
+
+
+def test_keybind_help_popup_layout_chips_have_no_ambiguous_invoke():
+    # `up/down,wheel,j/k` (which direction?) and `Enter` (confirms whichever heading happens to
+    # be `popup_selected`, not something a synthesized event alone can carry) stay genuinely
+    # ambiguous -- but `Esc/t cancel` and the trailing `q quit` both have one unambiguous outcome
+    # regardless of which listed key does it (VIEWMD-0092 follow-up: `Esc/t cancel` was wrongly
+    # grouped with the truly-ambiguous chips here, which is why it was inert to both hover and
+    # click while a ToC popup was open).
+    _text, spans = ip._keybind_help(True)
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[:2] == [None, None]
+    assert invokes[2] == ip.Event("key", "esc")
+    assert invokes[-1] == ip.Event("key", "q")
+
+
+def test_keybind_help_help_layout_close_chip_has_an_invoke():
+    # VIEWMD-0092 follow-up: the help-screen echo hint used to be a hardcoded plain string with
+    # no chip structure at all, so "Esc/?/q close help" was inert to both hover and click; now
+    # routed through the same `_keybind_help`/`_render_chips` machinery every other layout uses.
+    text, spans = ip._keybind_help(False, help_open=True)
+    assert "scroll" in ip._strip_ansi(text)
+    assert "close help" in ip._strip_ansi(text)
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[0] is None  # up/down,wheel,j/k: scroll -- direction-ambiguous
+    assert invokes[1] == ip.Event("key", "esc")
+
+
+def test_chip_at_resolves_column_to_the_right_chip():
+    text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    plain = ip._strip_ansi(text)
+    t_col = plain.index("t contents")
+    assert ip._chip_at(spans, t_col) == ip.Event("key", "t")
+    q_col = plain.rindex("q quit")
+    assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+
+
+def test_chip_at_resolves_the_popup_cancel_and_quit_chips():
+    text, spans = ip._keybind_help(True)
+    plain = ip._strip_ansi(text)
+    cancel_col = plain.index("Esc/t cancel")
+    assert ip._chip_at(spans, cancel_col) == ip.Event("key", "esc")
+    q_col = plain.rindex("q quit")
+    assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+    # The still-ambiguous chips resolve to no invoke at all.
+    move_col = plain.index("move")
+    assert ip._chip_at(spans, move_col) is None
+
+
+def test_chip_at_resolves_the_help_screen_close_chip():
+    text, spans = ip._keybind_help(False, help_open=True)
+    plain = ip._strip_ansi(text)
+    close_col = plain.index("close help")
+    assert ip._chip_at(spans, close_col) == ip.Event("key", "esc")
+
+
+def test_chip_at_returns_none_between_chips_and_out_of_range():
+    text, spans = ip._keybind_help(False, None, False, has_headings=True)
+    plain = ip._strip_ansi(text)
+    assert ip._chip_at(spans, -1) is None
+    assert ip._chip_at(spans, len(plain) + 5) is None
+    # The two literal spaces joining every pair of chips fall in no span.
+    gap_col = spans[0][1]
+    assert plain[gap_col] == " "
+    assert ip._chip_at(spans, gap_col) is None
 
 
 def test_pad_ansi_pads_with_plain_trailing_spaces():
@@ -341,21 +1305,22 @@ def test_pad_ansi_falls_back_to_plain_text_when_truncating():
 
 
 def test_help_box_contains_every_group_and_key():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
     text = "\n".join(ip._strip_ansi(row) for row in box)
     for group_name, entries in ip._HELP_GROUPS:
         assert group_name in text
-        for key, _ in entries:
+        for key, _, _ in entries:
             assert key in text
+    assert len(invokes) == len(box) - 2
 
 
 def test_help_box_never_exceeds_the_given_width():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     assert all(len(ip._strip_ansi(row)) <= 100 for row in box)
 
 
 def test_help_box_has_a_blank_row_above_every_header_but_the_first():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     for i, (group_name, _) in enumerate(ip._HELP_GROUPS):
         header_i = next(j for j, row in enumerate(box) if group_name in row)
         prev_inner = ip._strip_ansi(box[header_i - 1]).strip("│").strip()
@@ -364,32 +1329,67 @@ def test_help_box_has_a_blank_row_above_every_header_but_the_first():
 
 
 def test_help_box_headers_and_keys_are_styled():
-    box = ip._help_box(term_w=100, avail_h=40)
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
     header_hits = sum(row.count(ip._HELP_HEADER_STYLE) for row in box)
     key_hits = sum(row.count(ip._HELP_KEY_STYLE) for row in box)
     assert header_hits == len(ip._HELP_GROUPS)
     assert key_hits == sum(len(entries) for _, entries in ip._HELP_GROUPS)
 
 
+def test_help_box_invokes_align_with_entries_that_have_one_unambiguous_action():
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    non_none = [inv for inv in invokes if inv is not None]
+    total_entries_with_invoke = sum(
+        1 for _, entries in ip._HELP_GROUPS for _, _, inv in entries if inv is not None
+    )
+    assert len(non_none) == total_entries_with_invoke
+    assert all(isinstance(inv, ip.Event) for inv in non_none)
+
+
 def test_help_box_scrolls_with_indicators_when_too_tall():
-    full = ip._help_box(term_w=100, avail_h=40)
-    short = ip._help_box(term_w=100, avail_h=12, scroll=0)
+    full, _full_invokes = ip._help_box(term_w=100, avail_h=40)
+    short, short_invokes = ip._help_box(term_w=100, avail_h=12, scroll=0)
     assert len(short) < len(full)
+    assert len(short_invokes) == len(short) - 2
     assert "▼" in "".join(short)
     assert "▲" not in "".join(short)
-    end = ip._help_box(term_w=100, avail_h=12, scroll=1000)
+    end, _end_invokes = ip._help_box(term_w=100, avail_h=12, scroll=1000)
     assert "▲" in "".join(end)
     assert "▼" not in "".join(end)
+
+
+def test_help_box_marks_a_hovered_actionable_row():
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is not None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG in hovered_box[1 + hover_i]
+    # No other row picks up the hover styling.
+    assert sum(1 for row in hovered_box if ip._POPUP_HOVER_BG in row) == 1
+
+
+def test_help_box_does_not_highlight_a_non_actionable_hovered_row():
+    # A header/blank/tip row (invoke is None) is a click no-op -- hovering it must not imply
+    # otherwise (requirement 2's "MUST NOT ... imply a target is clickable" reasoning, applied to
+    # the help table the same way `_help_box`'s own docstring states for the hover param).
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG not in "".join(hovered_box)
+
+
+def test_help_box_no_hover_by_default():
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
 
 
 def test_help_box_never_fills_the_full_body_edge_to_edge():
     # Regression: the popup must always leave at least one row of real document visible above
     # and below it -- callers pass `avail_h = max(3, body_h - 2)`, not the full body height.
-    full = ip._help_box(term_w=100, avail_h=40)
+    full, _full_invokes = ip._help_box(term_w=100, avail_h=40)
     body_h = len(full)
     body_rows = [f"document line {i}" for i in range(body_h)]
-    capped = ip._help_box(term_w=100, avail_h=max(3, body_h - 2))
-    overlaid = ip._overlay(body_rows, body_rows, capped, term_w=100)
+    capped, _capped_invokes = ip._help_box(term_w=100, avail_h=max(3, body_h - 2))
+    overlaid = ip._overlay(body_rows, capped, term_w=100)
     assert "┌" not in ip._strip_ansi(overlaid[0])
     assert "└" not in ip._strip_ansi(overlaid[-1])
 
@@ -427,6 +1427,16 @@ def test_mouse_on_off_are_a_real_enable_disable_pair():
     assert ip._MOUSE_ON != ip._MOUSE_OFF
     assert "1000h" in ip._MOUSE_ON
     assert "1000l" in ip._MOUSE_OFF
+
+
+def test_mouse_on_off_enable_motion_tracking_too():
+    # VIEWMD-0092 requirement 1: motion tracking (1003) is layered onto the same on/off toggle as
+    # click reporting (1000) and SGR coordinates (1006) -- 'm' (see `_dispatch_base`) turning
+    # mouse capture off must also stop motion reports, not just clicks/wheel, so there's no stray
+    # hover highlighting while the reader has deliberately dropped out of mouse capture to select
+    # text natively.
+    assert "1003h" in ip._MOUSE_ON
+    assert "1003l" in ip._MOUSE_OFF
 
 
 # --- wide characters (VIEWMD-0070) ------------------------------------------------------------
@@ -482,9 +1492,8 @@ def test_overlay_stays_column_aligned_around_a_wide_character():
     # popup's left border in a real terminal -- character-index splicing landed one column short
     # of where display-column splicing should have cut.
     body = [f"{_WIDE} viewmd demo" + " " * 88] * 5  # a 100-col-wide row with a wide char at col 0
-    plain = list(body)
     popup = ["┌────┐", "│ ok │", "└────┘"]
-    out = ip._overlay(body, plain, popup, term_w=100)
+    out = ip._overlay(body, popup, term_w=100)
     popup_w = max(ip._display_width(row) for row in popup)
     left = max(0, (100 - popup_w) // 2)
     box_top = (len(body) - len(popup)) // 2
@@ -497,7 +1506,7 @@ def test_overlay_stays_column_aligned_around_a_wide_character():
 
 def test_popup_box_sizes_itself_for_a_heading_containing_a_wide_character():
     headings = [ip.HeadingLoc(text=f"{_WIDE} Section", level=2, row=0)]
-    box = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
     widths = {ip._display_width(ip._strip_ansi(row)) for row in box}
     assert len(widths) == 1  # every row, borders included, is exactly the same display width
 
@@ -540,6 +1549,38 @@ def test_run_reads_input_from_dev_tty_not_stdin(monkeypatch):
     monkeypatch.setattr(ip.os, "open", fake_open)
     ip.run("# Hello\n", "-", width=80, color=False)
     assert opened == ["/dev/tty"]
+
+
+# --- run_directory_listing()/run_multi_file(): non-terminal fallback (VIEWMD-0072) ------------
+
+
+def test_run_directory_listing_falls_back_to_plain_print(monkeypatch, capsys, tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "a.md").write_text("# A\n")
+
+    def fake_open(path, flags):
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+
+
+def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
+    from viewmd.render import render_multi_file
+
+    def fake_open(path, flags):
+        raise OSError("no controlling terminal")
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    entries = [("a.md", "# A\n"), ("b.md", "# B\n")]
+    ip.run_multi_file(entries, width=80, directory_width=80, color=False,
+                      full_front_matter=False, toc=True)
+    out = capsys.readouterr().out
+    assert out == render_multi_file(entries, width=80, directory_width=80, color=False,
+                                    full_front_matter=False, toc=True)
 
 
 if __name__ == "__main__":

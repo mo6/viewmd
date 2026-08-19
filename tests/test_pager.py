@@ -1,5 +1,3 @@
-import subprocess
-
 from viewmd import pager
 
 
@@ -19,56 +17,16 @@ def test_should_page_false_when_not_a_tty(monkeypatch):
     assert pager.should_page(no_pager_flag=True) is False
 
 
-def test_display_prints_directly_when_not_paging(monkeypatch, capsys):
-    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: False)
-    pager.display("hello", no_pager=False)
-    assert capsys.readouterr().out == "hello"
+def test_pager_module_never_shells_out():
+    # VIEWMD-0072: viewmd never spawns an external pager -- no `subprocess` call anywhere in this
+    # module (source-level check, since a call could otherwise hide behind a local import) and no
+    # `$PAGER` environment variable read.
+    import inspect
 
-
-def test_default_pager_chops_long_lines():
-    # VIEWMD-0018: -S so less does not soft-wrap wide mermaid rows.
-    assert "-S" in pager.DEFAULT_PAGER
-
-
-def test_default_pager_enables_mouse_scroll():
-    # VIEWMD-0067: --mouse so wheel/trackpad scroll reaches less despite -X.
-    assert "--mouse" in pager.DEFAULT_PAGER
-
-
-def test_display_invokes_pager_when_paging(monkeypatch):
-    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
-    calls = []
-
-    def fake_run(cmd, input, check):  # noqa: A002
-        calls.append((cmd, input))
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    pager.display("hello", no_pager=False)
-    assert calls == [(pager.DEFAULT_PAGER, b"hello")]
-
-
-def test_display_respects_pager_env_override(monkeypatch):
-    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setenv("PAGER", "cat -A")
-    calls = []
-
-    def fake_run(cmd, input, check):  # noqa: A002
-        calls.append((cmd, input))
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    pager.display("hello", no_pager=False)
-    assert calls == [(["cat", "-A"], b"hello")]
-
-
-def test_display_falls_back_to_print_when_pager_missing(monkeypatch, capsys):
-    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
-
-    def fake_run(cmd, input, check):  # noqa: A002
-        raise FileNotFoundError
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    pager.display("hello", no_pager=False)
-    assert capsys.readouterr().out == "hello"
+    source = inspect.getsource(pager)
+    assert "import subprocess" not in source
+    assert "subprocess.run" not in source
+    assert "environ" not in source
 
 
 # --- display_document (VIEWMD-0007) ---------------------------------------------------------
@@ -94,44 +52,21 @@ def test_display_document_prints_directly_when_no_pager_flag_set(monkeypatch, ca
     assert out == render_markdown(text, width=80, color=False)
 
 
-def test_display_document_respects_pager_env_override(monkeypatch):
-    from viewmd.render import render_markdown
-
+def test_display_document_ignores_pager_env_var(monkeypatch):
+    # VIEWMD-0072: an explicit $PAGER no longer changes anything -- always the internal pager.
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     monkeypatch.setenv("PAGER", "cat -A")
     calls = []
 
-    def fake_run(cmd, input, check):  # noqa: A002
-        calls.append((cmd, input))
+    def fake_run(text, name, *, width, color, full_front_matter, toc):
+        calls.append((text, name, width, color, full_front_matter, toc))
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    text = "# Hello\n\nbody\n"
-    pager.display_document(text, "file.md", no_pager=False, width=80, color=True)
-    expected = render_markdown(text, width=80, color=True).encode()
-    assert calls == [(["cat", "-A"], expected)]
-
-
-def test_display_document_pager_env_override_falls_back_to_print_when_missing(
-    monkeypatch, capsys
-):
-    from viewmd.render import render_markdown
-
-    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setenv("PAGER", "nonexistent-pager")
-
-    def fake_run(cmd, input, check):  # noqa: A002
-        raise FileNotFoundError
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    text = "# Hello\n\nbody\n"
-    pager.display_document(text, "file.md", no_pager=False, width=80, color=False)
-    out = capsys.readouterr().out
-    assert out == render_markdown(text, width=80, color=False)
+    monkeypatch.setattr("viewmd.interactive_pager.run", fake_run)
+    pager.display_document("# Hi\n", "file.md", no_pager=False, width=80, color=True)
+    assert calls == [("# Hi\n", "file.md", 80, True, False, True)]
 
 
 def test_display_document_uses_interactive_pager_by_default(monkeypatch):
-    # VIEWMD-0007: no $PAGER set is the one case that no longer spawns `less` -- viewmd owns the
-    # terminal itself instead.
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     monkeypatch.delenv("PAGER", raising=False)
     calls = []
@@ -145,3 +80,57 @@ def test_display_document_uses_interactive_pager_by_default(monkeypatch):
         full_front_matter=True, toc=False,
     )
     assert calls == [("# Hi\n", "file.md", 80, True, True, False)]
+
+
+# --- display_directory_listing (VIEWMD-0072) ------------------------------------------------
+
+
+def test_display_directory_listing_prints_directly_when_not_paging(monkeypatch, capsys, tmp_path):
+    from viewmd.render import render_directory_listing
+
+    (tmp_path / "a.md").write_text("# A\n")
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: False)
+    pager.display_directory_listing(str(tmp_path), no_pager=False, width=80, color=False)
+    out = capsys.readouterr().out
+    assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+
+
+def test_display_directory_listing_uses_interactive_pager_when_paging(monkeypatch, tmp_path):
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    calls = []
+
+    def fake_run(dir_path, *, width, color):
+        calls.append((dir_path, width, color))
+
+    monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
+    pager.display_directory_listing(str(tmp_path), no_pager=False, width=80, color=True)
+    assert calls == [(str(tmp_path), 80, True)]
+
+
+# --- display_multi_file (VIEWMD-0072) --------------------------------------------------------
+
+
+def test_display_multi_file_prints_directly_when_not_paging(monkeypatch, capsys):
+    from viewmd.render import render_multi_file
+
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: False)
+    entries = [("a.md", "# A\n"), ("b.md", "# B\n")]
+    pager.display_multi_file(entries, no_pager=False, width=80, directory_width=80, color=False,
+                             full_front_matter=False, toc=True)
+    out = capsys.readouterr().out
+    assert out == render_multi_file(entries, width=80, directory_width=80, color=False,
+                                    full_front_matter=False, toc=True)
+
+
+def test_display_multi_file_uses_interactive_pager_when_paging(monkeypatch):
+    monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
+    calls = []
+
+    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc):
+        calls.append((entries, width, directory_width, color, full_front_matter, toc))
+
+    monkeypatch.setattr("viewmd.interactive_pager.run_multi_file", fake_run)
+    entries = [("a.md", "# A\n"), ("sub", None)]
+    pager.display_multi_file(entries, no_pager=False, width=80, directory_width=120, color=True,
+                             full_front_matter=True, toc=False)
+    assert calls == [(entries, 80, 120, True, True, False)]

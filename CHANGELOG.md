@@ -4,6 +4,106 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.4] — 2026-08-19
+
+- **Fix the ToC/help popup corrupting content and color in the rows around it** (VIEWMD-0102, bug): `_overlay` no longer rebuilds a popup-touched row's margins from a separately-rendered `color=False` twin of the document — for a pie chart (VIEWMD-0043), whose no-color rendering is a structurally different bar-chart layout, that twin diverged in both content and total row count from the colored one, corrupting the diagram with unrelated bar-chart text and misaligning every row below it. Margins are now sliced straight out of the real colored row via `_ansi_slice`, which also restores the row's own color there instead of leaving it monochrome.
+
+## [1.46.3] — 2026-08-19
+
+- **Fix horizontal scroll stopping one column short of a row's true right edge** (VIEWMD-0101, bug): scrolling all the way right on a row wider than the terminal now reaches the row's actual last column — the max-scroll cap (`max_left_col`, four call sites) previously didn't account for the `‹` truncation marker's own reserved column at the fully-scrolled position, so the rightmost content stayed permanently hidden with no `›` marker to hint at it. Factored into a shared `_max_left_col` helper.
+
+## [1.46.2] — 2026-08-19
+
+- **Mention the unrecognized-config-key warning in README.md** (VIEWMD-0100, docs): the "Configuration file" section now says an unrecognized key prints a `viewmd: ...` stderr warning (once per key) rather than just "is ignored" — stale since VIEWMD-0083 added that warning.
+
+## [1.46.1] — 2026-08-19
+
+- **Recognize blockquote-nested code fences in wikilink rewriting** (VIEWMD-0099, bug): `viewmd.wikilinks.rewrite_wikilinks` now strips leading `>` blockquote markers (any nesting depth), not just whitespace, before checking whether a line opens/closes a fenced code block — a fence quoted inside a blockquote (e.g. `` > ``` `` ) was previously missed, so `[[...]]`/`![[...]]` text inside it got wrongly rewritten instead of left literal.
+
+## [1.46.0] — 2026-08-19
+
+- **Shell completion for bash/zsh/fish** (VIEWMD-0087, feature): `completions/viewmd.{bash,zsh,fish}` — generated from viewmd's own `argparse` parser via the new `./tools.sh completions` (`tools/completions.py`), never hand-maintained — complete every CLI flag (including both spellings of a `--toc`/`--no-toc`-style pair), `--color`'s `auto`/`always`/`never`, `--width`'s `full` literal, and fall back to filesystem-path completion for `--config` and the positional path argument(s). No new runtime dependency. `./run-tests.sh` now asserts the checked-in scripts match what the parser would generate. README documents per-shell install steps.
+
+## [1.45.0] — 2026-08-19
+
+- **Render `![[Target]]` embed/transclusion wikilinks with a distinguishing glyph** (VIEWMD-0086, feature): Obsidian's embed syntax (`![[Target]]`, `![[Target|Display]]`, including `#Heading`/`#^block` suffixes) — previously falling through un-rewritten to Rich's Markdown parser with undefined rendering — now renders as a styled link prefixed with 📎, the same way a plain `[[Target]]` wikilink does, minus the `!`. Full transclusion (inlining the target note's content) remains out of scope. README's wikilinks paragraph documents the chosen behavior.
+
+## [1.44.1] — 2026-08-19
+
+- **Warn on unrecognized config-file keys** (VIEWMD-0083, bug): `viewmd.config.parse_config` now prints `viewmd: <path>:<line>: unrecognized config key <key>` to stderr for any config key it doesn't recognize, once per key, instead of silently ignoring it — a typo like `wdith = 80` no longer fails invisibly. Parsing still continues (forward compatibility with newer config files is preserved).
+
+## [1.44.0] — 2026-08-19
+
+- **Document the narrow fast-path exception for small docs/metadata fixes** (VIEWMD-0098, docs): `AGENTS.md` now sanctions, in writing, the pattern VIEWMD-0095/0096/0097 each used ad hoc — a single-file, few-line docs/metadata fix may skip the worktree/branch mechanics, still requires the same acceptance and landing-approval gates every issue goes through, asked each time rather than assumed.
+
+## [1.43.2] — 2026-08-19
+
+- **Mention mouse/scroll support in the package description** (VIEWMD-0097, docs): `pyproject.toml`'s `description` now names the interactive pager as mouse-driven and scrollable, not just "interactive."
+
+## [1.43.1] — 2026-08-19
+
+- **Fix stale directory-listing click-nav claim in the README** (VIEWMD-0096, docs): the Interactive pager section now mentions hover highlighting and documents that a bare directory listing's subdirectory and `.md` file rows are click-navigable, correcting a footnote that had claimed click-to-follow was inert there since before VIEWMD-0081 shipped it.
+
+## [1.43.0] — 2026-08-19
+
+- **Visible hover feedback for clickable targets in the interactive pager** (VIEWMD-0092, pager): the mouse now highlights whatever it's currently over -- a resolvable body-text link, a directory-listing row, a ToC-popup/help-screen row, or an echo-area keybinding chip -- via xterm any-motion tracking, so it's clear what's clickable before clicking it. Also fixed two related gaps found in testing: the echo area's `cancel`/`close help` chips (shown while a ToC popup or the help screen is open) were previously wired as unclickable "ambiguous" chips despite having one unambiguous outcome, so they're now clickable and hoverable like every other chip.
+
+## [1.42.2] — 2026-08-19
+
+- **Fix stray SGR mouse-report bytes after click-to-quit** (VIEWMD-0094, pager): quitting the interactive pager by clicking `q  quit` (the `?` help-screen row or the echo-area chip) no longer leaves a leftover SGR mouse-release (`0;69;46m`) sitting on the shell prompt; the paired release is now drained with the press. Keyboard-`q` quit is unchanged.
+
+## [1.42.1] — 2026-08-19
+
+- **Fix stale package description** (VIEWMD-0095, docs): `pyproject.toml`'s `description` no longer claims viewmd pages into `less` — VIEWMD-0072 removed the external pager entirely; the description now names viewmd's own built-in interactive pager instead.
+
+## [1.42.0] — 2026-08-19
+
+- **Clickable `.md` file rows in the directory listing pager** (VIEWMD-0093, pager/render): a `.md` file row in the interactive directory-listing view now carries a real hyperlink, matching the subdirectory rows VIEWMD-0081 already made clickable; clicking (or Enter-ing) it opens the file in the pager, with `B` returning to the listing afterward. Non-interactive rendering and subdirectory-row behavior are unchanged.
+
+## [1.41.0] — 2026-08-19
+
+- **Interactive pager opens past front matter, not on it** (VIEWMD-0080, pager): a document with a rendered front-matter table now starts (and `g`/`^` returns) at the first body line after the divider, instead of on the metadata table itself. The table stays reachable by scrolling up; a file with no table, and directory/multi-file views, still open at line 0.
+
+## [1.40.1] — 2026-08-18
+
+- **Fix click-to-follow for a path-qualified wikilink target outside the vault root** (VIEWMD-0082, pager): a `[[Target|Display]]` wikilink whose target is a full vault-relative path (Obsidian's own disambiguation form, used when two notes share a name) now resolves correctly when the linking note isn't itself sitting at the vault root -- resolution now walks upward from the linking note's own directory through each ancestor, nearest first, instead of only checking directly relative to that directory. A bare (no `/`) wikilink target's resolution is unchanged.
+
+## [1.40.0] — 2026-08-18
+
+- **Clickable subdirectory rows in the directory listing pager** (VIEWMD-0081, pager/render): a subdirectory row in the interactive directory listing view now carries a real hyperlink; clicking it navigates the pager into that subdirectory's own listing, replacing the current view. The existing `B` back key (VIEWMD-0076) returns to the parent listing, reusing the same back-stack `run()` already uses for file links -- no separate `..` row needed. `.md` file rows are unchanged, still not independently clickable.
+
+## [1.39.0] — 2026-08-18
+
+- **Scrollbar column in the interactive pager** (VIEWMD-0079, pager): the pager now reserves a one-character-wide scrollbar column at the left edge of the body, followed by a blank gap column, showing at a glance how much of the document is visible and where the viewport currently sits -- a solid block glyph in the accent color marks the visible ("thumb") range, a lighter shade-glyph in dim grey marks the rest of the document ("track"), so the two stay distinguishable under `--no-color`/a monochrome terminal too, not through color alone. Sized and positioned proportionally, the same way the mode line's own line-range/percentage text is derived, and recomputed on every scroll (arrow keys, mouse wheel, search jump, ToC jump, resize). Clicking anywhere in the scrollbar column jumps the viewport to roughly that proportional position, like dragging a GUI scrollbar's track. Omitted entirely (falling back to today's full-width layout) whenever the whole document already fits on one screen.
+
+## [1.38.0] — 2026-08-18
+
+- **The echo area's keybinding hint chips are now clickable** (VIEWMD-0078, pager): each keycap chip in the pager's bottom status row (e.g. `t contents`, `? help`, `q quit`) can now be clicked directly to invoke that action, the same as pressing the real key -- no need to open the full `?` help screen first, which VIEWMD-0076 already made click-to-invoke. A click while the echo area is showing something else (the search prompt, a one-shot message) is a no-op.
+
+## [1.37.0] — 2026-08-18
+
+- **Static table-of-contents entries are now clickable anchor links** (VIEWMD-0077, render/pager): each entry in the static table-of-contents block printed at the top of a document now carries a real hyperlink to its own heading, with no change to its visible appearance. Clicking one in the interactive pager scrolls straight to that heading, the same as picking it from the `t` popup already does. Correctly disambiguates two headings that share the exact same text.
+
+## [1.36.0] — 2026-08-18
+
+- **Mouse click-to-navigate in the interactive pager** (VIEWMD-0076, pager): clicking a rendered link (a `[[wikilink]]` or an ordinary Markdown link) whose target resolves to an existing local `.md` file now navigates the pager to that file in place; a new `B` key (with an echo-area hint once there's somewhere to go back to) returns to the file navigated from, at its prior scroll position. Clicking a row in the table-of-contents popup (`t`) now selects and jumps to it, same as Enter; clicking a keybinding row in the `?` help screen now performs that key's action directly. All three build on the same click-decoding and hit-testing mechanism, extending [1.31.0]'s interactive pager past its original scroll-only mouse support -- this was v1's deliberately deferred "v2".
+
+## [1.35.0] — 2026-08-17
+
+- **Horizontal mouse-wheel/trackpad scroll in the interactive pager** (VIEWMD-0075, pager): a horizontal scroll gesture now pans content wider than the terminal, the same distance per step as the existing `h`/`l` keys. Terminals that report native horizontal-wheel SGR mouse codes (e.g. iTerm2, Kitty) work directly; on terminals that don't (confirmed on macOS Terminal.app, which never sends the native codes even for a genuine trackpad swipe), holding Shift while scrolling the ordinary vertical wheel pans horizontally instead, the same fallback convention other GUI apps use for the same gap.
+
+## [1.34.0] — 2026-08-17
+
+- **Internal interactive pager for directory listings and multi-file views; external pager dependency dropped entirely** (VIEWMD-0072, cli/render): viewing a bare directory listing (no index file) or more than one path at once now pages through viewmd's own interactive pager -- mouse-wheel scroll, search, resize handling, and the render-width toggle all work the same as for a single document (VIEWMD-0007); the table-of-contents popup and next/previous-heading jump stay single-document-only, since neither case has a heading outline to build one from, and the popup key/hint are simply omitted rather than opening on an empty box. viewmd no longer spawns any external pager process under any circumstance -- no `less` default, and an explicit `$PAGER` override is no longer read or honored either; there is no `subprocess` call left anywhere in `viewmd/pager.py`. `--no-pager`/non-terminal output is unchanged for all three cases. See the README's "Interactive pager" section.
+
+## [1.33.0] — 2026-08-17
+
+- **Recognize `index.md` and `_index.md` as directory-index filenames alongside `_Index.md`** (VIEWMD-0074, cli/render): viewing a directory now also looks for `index.md` (plain/Jekyll-style) and `_index.md` (Hugo section-index style) when no `_Index.md` is present, checked in that priority order, each still an exact-case match. A directory with only `_Index.md` renders exactly as before; a directory with more than one candidate present renders the earliest match in priority order.
+
+## [1.32.0] — 2026-08-17
+
+- **Directory listings default to full terminal width** (VIEWMD-0071, cli/render): viewing a directory with no `_Index.md` note and no `--width`/config `width` given now renders its table-of-contents listing at the full detected terminal width, instead of the 100-column prose cap used for Markdown documents -- a wide terminal no longer truncates columns it has room to show. An explicit `--width <n>`, `--width full`, or config-file `width` still applies exactly as before; rendering an actual Markdown document is unchanged.
+
 ## [1.31.1] — 2026-08-17
 
 - **Fix wide-character (emoji/CJK) misalignment in the interactive pager** (VIEWMD-0070, cli/render): the table-of-contents/help popup and horizontal-scroll cropping now measure column width via `wcwidth`, matching `viewmd/render.py`'s own convention, instead of counting one column per character -- a double-width character (an emoji, most CJK text; Rich's own image-placeholder glyph is a real example) no longer throws the popup's borders off by a column on any row containing one. No behavior change for ordinary single-width content.

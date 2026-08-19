@@ -5,10 +5,11 @@ from viewmd.render import (
     render_directory_listing,
     render_divider,
     render_file_heading,
+    render_front_matter_block,
     render_markdown,
 )
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
 
 
 def strip_ansi(text: str) -> str:
@@ -131,6 +132,25 @@ def test_all_empty_fields_render_no_table_by_default_but_do_with_full_front_matt
     assert "reason" in full_out
 
 
+def test_front_matter_block_matches_render_markdown_prefix():
+    md = "---\ntitle: Hello\narea: [pager]\n---\n# Body heading\n\nbody text\n"
+    block = render_front_matter_block(md, width=80, color=False)
+    full = render_markdown(md, width=80, color=False, toc=False)
+    assert block
+    assert full.startswith(block)
+    assert "═" in block
+    assert "Body heading" not in block
+
+
+def test_front_matter_block_empty_when_no_table_would_render():
+    assert render_front_matter_block("# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block("---\n---\n# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block("---\ntitle: Hello\n# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block(
+        "---\naccepted_by:\n---\n# Body\n", width=80, color=False
+    ) == ""
+
+
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).
 LINK_URL_ANSI = re.compile(r"\x1b\[4;34m")
 
@@ -169,6 +189,34 @@ def test_converted_wikilink_with_space_in_target_still_renders_as_a_link():
     assert "Getting Started" in plain_text
     assert "[[" not in plain_text
     assert "](" not in plain_text
+
+
+# Baseline (pinned before this change was made, kept as a documented historical record -- see
+# tests/test_wikilinks.py for the corresponding rewrite-level baseline note): before
+# VIEWMD-0086, `![[Target]]` fell through un-rewritten as a `!` prefix on a plain wikilink,
+# producing valid Markdown *image* syntax pointing at the inert `wikilink:` scheme -- Rich never
+# resolves it and instead renders its "broken image" placeholder glyph plus the display text,
+# undefined/undocumented behavior this issue replaces with a deliberate, styled link (below).
+def test_embed_wikilink_uses_link_url_style_not_broken_image():
+    md = "see ![[Target]] and ![[Target|Display text]] here"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    plain_text = strip_ansi(colored)
+    assert LINK_URL_ANSI.search(colored) is not None
+    assert "Target" in plain_text
+    assert "Display text" in plain_text
+    assert "📎" in plain_text
+    assert "![[" not in plain_text
+    assert "]]" not in plain_text
+    assert ANSI_RE.search(plain) is None
+    assert "📎" in plain
+
+
+def test_embed_wikilink_inside_fenced_code_block_is_untouched():
+    md = "prose ![[Outside]]\n```\ncode ![[Inside]]\n```\n"
+    plain_text = strip_ansi(render_markdown(md, width=80, color=True))
+    assert "📎 Outside" in plain_text
+    assert "![[Inside]]" in plain_text
 
 
 def test_render_file_heading_shows_the_path():
@@ -240,6 +288,50 @@ def test_markdown_title_ignores_hash_comment_inside_a_code_fence(tmp_path):
     path.write_text("```python\n# comment not a heading\n```\n\n# Real Heading\n")
 
     assert _markdown_title(str(path)) == "Real Heading"
+
+
+def test_render_directory_listing_links_subdirectory_rows(tmp_path):
+    (tmp_path / "sub dir").mkdir()
+    (tmp_path / "a.md").write_text("# A\n")
+
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+
+    assert "viewmd-dir:sub%20dir" in colored
+    # A subdirectory row's href is scheme-tagged (`_DIR_ANCHOR_SCHEME`, resolved by
+    # `_resolve_dir_target`); an `.md` file row's own href (VIEWMD-0093) is a plain relative path
+    # with no such prefix (resolved by `_resolve_link_target` instead), so it never matches this
+    # scheme-qualified string.
+    assert "viewmd-dir:a.md" not in colored
+
+
+def test_render_directory_listing_no_dir_link_without_color(tmp_path):
+    (tmp_path / "sub").mkdir()
+
+    out = render_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert "viewmd-dir:" not in out
+    assert "sub" in out
+
+
+def test_render_directory_listing_links_md_file_rows(tmp_path):
+    # VIEWMD-0093: a `.md` file row now carries a clickable target too, a plain (percent-encoded)
+    # relative path -- not the `_DIR_ANCHOR_SCHEME`-tagged form subdirectory rows use, since it
+    # needs to resolve through `_resolve_link_target` like an ordinary in-document link.
+    (tmp_path / "a file.md").write_text("# A\n")
+
+    colored = render_directory_listing(str(tmp_path), width=80, color=True)
+
+    assert "a%20file.md" in colored
+    assert "viewmd-dir:a%20file.md" not in colored
+
+
+def test_render_directory_listing_no_file_link_without_color(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+
+    out = render_directory_listing(str(tmp_path), width=80, color=False)
+
+    assert "\x1b]8;" not in out
+    assert "a.md" in out
 
 
 def test_render_directory_listing_does_not_recurse(tmp_path):
@@ -616,6 +708,44 @@ def test_toc_entries_use_the_same_heading_styles_as_the_body():
     assert body_h3 and "\x1b[1;35mNested\x1b[0m" in body_h3[0]
     # Title is not repeated below the ToC.
     assert not any("Hello" in strip_ansi(line) for line in lines[1:])
+
+
+def test_toc_entries_are_osc8_links_to_their_own_heading():
+    # VIEWMD-0077: each ToC entry carries a real OSC8 hyperlink around just its heading text
+    # (not the bullet), targeting the viewmd-toc: scheme by occurrence-rank + heading text.
+    md = "# Title\n\n## Section\n\n### Nested\n"
+    colored = render_markdown(md, width=80, color=True)
+    assert "\x1b]8;" in colored
+    assert "viewmd-toc:0:Section" in colored
+    assert "viewmd-toc:0:Nested" in colored
+    # The bullet marker itself is not wrapped in the link -- only the heading text.
+    bullet_line = next(line for line in colored.splitlines() if "Section" in line)
+    link_start = bullet_line.index("\x1b]8;")
+    assert "•" not in bullet_line[link_start:]
+
+
+def test_toc_duplicate_heading_text_gets_distinct_ranked_hrefs():
+    # Regression (found in review): two different headings sharing the exact same text must not
+    # both link to the same "first match wins" target -- each gets its own occurrence rank.
+    md = "# Title\n\n## Overview\n\nfirst\n\n## Details\n\nmid\n\n## Overview\n\nsecond\n"
+    colored = render_markdown(md, width=80, color=True)
+    assert "viewmd-toc:0:Overview" in colored
+    assert "viewmd-toc:1:Overview" in colored
+
+
+def test_toc_entries_visible_text_unchanged_by_the_link_wrapper():
+    # VIEWMD-0077 requirement 2: the OSC8 wrapper must not change the entry's own visible
+    # text/styling -- diffing everything except the OSC8 bytes against the pre-link rendering.
+    md = "# Title\n\n## Section\n\n### Nested\n"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    assert strip_ansi(colored) == plain
+
+
+def test_toc_anchor_scheme_not_present_when_toc_is_off():
+    md = "# Title\n\n## Section\n"
+    colored = render_markdown(md, width=80, color=True, toc=False)
+    assert "viewmd-toc:" not in colored
 
 
 def test_toc_uses_plain_text_of_inline_markup_in_headings():

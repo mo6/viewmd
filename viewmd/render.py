@@ -3,6 +3,7 @@
 import io
 import os
 import re
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -25,9 +26,12 @@ from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matte
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
 
-# The per-directory landing note viewmd looks for when a `path` argument is a directory
-# (VIEWMD-0065), analogous to Obsidian-style vault index notes.
-INDEX_FILENAME = "_Index.md"
+# The per-directory landing note(s) viewmd looks for when a `path` argument is a directory
+# (VIEWMD-0065), analogous to Obsidian-style vault index notes. Checked in this order -- the
+# original Obsidian-style convention first, then the two lowercase static-site-generator
+# conventions (`index.md`: plain/Jekyll-style; `_index.md`: Hugo section index) -- so a directory
+# with more than one present picks the same file every time (VIEWMD-0074).
+INDEX_FILENAMES = ("_Index.md", "index.md", "_index.md")
 
 
 class ViewmdCodeBlock(CodeBlock):
@@ -36,8 +40,8 @@ class ViewmdCodeBlock(CodeBlock):
     Rich 15's default ``CodeBlock`` hardcodes ``Syntax(..., word_wrap=True,
     padding=1)``, which folds long lines onto extra rows instead of letting
     them run wide. A line longer than the render width should stay intact and
-    scroll horizontally in the pager (``less -S``, set in pager.py) rather
-    than being torn onto a second line -- or, as an earlier version of this
+    scroll horizontally in the pager rather than being torn onto a second
+    line -- or, as an earlier version of this
     class did, silently cropped and lost (VIEWMD-0019). Mermaid-rendered
     fences (tagged with ``MERMAID_RENDERED_INFO``) already got this treatment
     for VIEWMD-0018; ordinary fences now get the same one, via ``Syntax``
@@ -337,6 +341,20 @@ _TOC_NEST_COLUMNS = 3
 _TOC_LEVELS = {"h1": 1, "h2": 2, "h3": 3}
 # Cap on ToC *entries* (one per included heading), not wrapped terminal rows.
 _TOC_MAX_ENTRIES = 20
+# Same-document anchor-link scheme for the static ToC block's own entries (VIEWMD-0077), mirroring
+# `viewmd/wikilinks.py`'s `wikilink:` precedent -- inert outside viewmd, matching that docstring's
+# own "never opened" convention. The interactive pager (`viewmd/interactive_pager.py`) resolves it
+# by heading *text*, not position: this ToC can be a level-cut/truncated subset of the full
+# outline (`_fit_toc_outline`, below), so an index into *this* list wouldn't line up with the
+# pager's own full `HeadingLoc` list once truncation/level-cutting actually kicks in.
+_TOC_ANCHOR_SCHEME = "viewmd-toc:"
+
+# Directory-listing subdirectory row link scheme (VIEWMD-0081), same "inert outside viewmd"
+# precedent as `_TOC_ANCHOR_SCHEME`/`wikilink:` above -- the interactive pager
+# (`viewmd/interactive_pager.py`) recognizes this scheme and resolves it to a subdirectory name
+# relative to the listing's own directory, distinct from `.md` file rows, which carry no link
+# at all yet (VIEWMD-0081 Non-goals).
+_DIR_ANCHOR_SCHEME = "viewmd-dir:"
 
 
 @dataclass(frozen=True)
@@ -408,8 +426,28 @@ def _fit_toc_outline(outline: list[HeadingOutline]) -> tuple[list[HeadingOutline
     return selected[:_TOC_MAX_ENTRIES], omitted
 
 
-def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
-    """One bulleted, heading-styled line per outline entry, nested by level."""
+def _toc_occurrence_ranks(full_outline: list[HeadingOutline]) -> dict[int, int]:
+    """Maps `id(heading)` to its 0-indexed occurrence rank among same-*text* entries in
+    `full_outline` (VIEWMD-0077) -- two different headings can share the exact same text (e.g.
+    `## Overview` under two different sections), so a link resolved by text alone would always
+    land on the *first* one no matter which was actually clicked. `full_outline` must be the
+    *un-fitted* `heading_outline()` result (before `_fit_toc_outline` drops/truncates anything) --
+    `viewmd/interactive_pager.py`'s `_locate_headings()` builds its own `headings` list from that
+    same un-fitted outline, in the same order, so a rank computed here lines up with a rank-based
+    lookup there even when the *fitted* ToC block only shows a subset of the full outline."""
+    ranks: dict[int, int] = {}
+    seen: dict[str, int] = {}
+    for h in full_outline:
+        ranks[id(h)] = seen.get(h.text, 0)
+        seen[h.text] = ranks[id(h)] + 1
+    return ranks
+
+
+def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]) -> list[Text]:
+    """One bulleted, heading-styled line per outline entry, nested by level. `outline` is what's
+    actually rendered (post `_fit_toc_outline`); `full_outline` is the un-fitted result, needed
+    only to disambiguate a duplicate heading text's link target (see `_toc_occurrence_ranks`)."""
+    ranks = _toc_occurrence_ranks(full_outline)
     lines: list[Text] = []
     for heading in outline:
         indent = " " * (_TOC_NEST_COLUMNS * (heading.level - 1))
@@ -420,7 +458,18 @@ def _toc_lines(outline: list[HeadingOutline]) -> list[Text]:
         # flush-left with nest indent, not the body's centered h1.
         line = Text()
         line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
+        heading_start = len(line)
         line.append(heading.text, style=f"markdown.h{heading.level}")
+        # `stylize`, not folded into the `append` above's own `style=` -- a `Style(link=...)`
+        # carries no color/weight of its own, so layering it on top via a second span leaves the
+        # heading's visible styling completely unchanged (VIEWMD-0077 requirement 2) while still
+        # making Rich emit a real OSC8 hyperlink around just the heading text, not the bullet.
+        # The rank prefix (`<n>:<text>`) only matters for a duplicate heading text -- it's still
+        # included unconditionally (rather than only when actually ambiguous) so the href format
+        # is one predictable shape, not two.
+        rank = ranks.get(id(heading), 0)
+        href = f"{_TOC_ANCHOR_SCHEME}{rank}:{urllib.parse.quote(heading.text)}"
+        line.stylize(Style(link=href), heading_start, len(line))
         lines.append(line)
     return lines
 
@@ -458,11 +507,14 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
 
 
 def _print_toc(
-    console: Console, outline: list[HeadingOutline], omitted: int = 0
+    console: Console,
+    outline: list[HeadingOutline],
+    full_outline: list[HeadingOutline],
+    omitted: int = 0,
 ) -> None:
     if not outline:
         return
-    for line in _toc_lines(outline):
+    for line in _toc_lines(outline, full_outline):
         console.print(line)
     if omitted:
         console.print(f"... {omitted} more")
@@ -535,11 +587,15 @@ def render_markdown(
                 console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
                 console.print()
                 fitted, omitted = _fit_toc_outline(outline[1:])
-                _print_toc(console, fitted, omitted)
+                # `outline` (title included), not `outline[1:]` -- occurrence ranks (VIEWMD-0077)
+                # must be computed against the *same* full list `_locate_headings()`
+                # (`viewmd/interactive_pager.py`) builds its own `headings` from, which also
+                # includes the title.
+                _print_toc(console, fitted, outline, omitted)
                 console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
             else:
                 fitted, omitted = _fit_toc_outline(outline)
-                _print_toc(console, fitted, omitted)
+                _print_toc(console, fitted, outline, omitted)
                 console.print(markdown, crop=False)
             return buffer.getvalue()
     console.print(markdown, crop=False)
@@ -560,6 +616,28 @@ def render_divider(*, width: int, color: bool) -> str:
     reused here to separate consecutive files (VIEWMD-0013)."""
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
+    console.print(Rule(characters="═", style="dim"))
+    return buffer.getvalue()
+
+
+def render_front_matter_block(
+    text: str, *, width: int, color: bool = False, full_front_matter: bool = False
+) -> str:
+    """The front-matter table plus divider exactly as `render_markdown` would print them, or
+    empty string if it would print neither (no front matter, an unterminated `---` block, or a
+    block that parses to no pairs -- VIEWMD-0004/0005). Isolated so the interactive pager can
+    count those lines without depending on the body (VIEWMD-0080)."""
+    raw_front_matter, _ = split_front_matter(text)
+    if raw_front_matter is None:
+        return ""
+    front_matter = parse_front_matter(raw_front_matter)
+    if not full_front_matter:
+        front_matter = drop_empty(front_matter)
+    if not front_matter:
+        return ""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(_front_matter_table(front_matter))
     console.print(Rule(characters="═", style="dim"))
     return buffer.getvalue()
 
@@ -595,7 +673,7 @@ def _markdown_title(path: str) -> str:
 
 def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
     """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
-    directory with no `INDEX_FILENAME` note inside it (VIEWMD-0065). Lists immediate
+    directory with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
     subdirectories and Markdown files only (no recursion), subdirectories first then files, each
     alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
     to propagate, matching how an unreadable file is handled elsewhere in this module.
@@ -616,18 +694,64 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
     table.add_column("Modified", no_wrap=True)
 
     for name in dirs:
-        table.add_row(escape(name) + "/", "dir", "", "")
+        # A `Text` cell (rather than the plain, markup-escaped strings the other columns use)
+        # so a real OSC8 link can be layered on via `stylize` -- same pattern as the static ToC
+        # block's own heading links (`_toc_lines`, above). `Text` never parses console markup,
+        # so no `escape()` call is needed here the way the plain-string cells still need one.
+        name_cell = Text(name + "/")
+        href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
+        name_cell.stylize(Style(link=href))
+        table.add_row(name_cell, "dir", "", "")
     for name in files:
         full_path = os.path.join(dir_path, name)
         title = _markdown_title(full_path)
         modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
-        table.add_row(escape(name), "file", escape(title), modified)
+        # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use (VIEWMD-0081) --
+        # a plain relative-path href (no scheme prefix), unlike the `_DIR_ANCHOR_SCHEME`-tagged
+        # subdirectory hrefs, since this needs to resolve through `_resolve_link_target()`
+        # (`interactive_pager.py`) the same way an ordinary in-document relative link does, not
+        # through `_resolve_dir_target()` (VIEWMD-0093).
+        name_cell = Text(name)
+        name_cell.stylize(Style(link=urllib.parse.quote(name)))
+        table.add_row(name_cell, "file", escape(title), modified)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
     console.print(f"[bold]{escape(dir_path)}/[/bold]")
     console.print(table)
     return buffer.getvalue()
+
+
+def render_multi_file(
+    entries: list[tuple[str, str | None]],
+    *,
+    width: int,
+    directory_width: int,
+    color: bool,
+    full_front_matter: bool,
+    toc: bool,
+) -> str:
+    """Render a resolved multi-file concatenation (two or more `path` arguments, VIEWMD-0013),
+    each entry preceded by a heading naming its path and separated by a divider. `entries` is
+    `(display_path, text)` per already-read/resolved path -- `text` is `None` for a bare directory
+    listing among the paths (rendered at `directory_width`, VIEWMD-0071's own full-terminal-width
+    default), or the raw Markdown source otherwise (rendered at `width`). Callers do their own
+    file reading/error handling (`viewmd/__main__.py`) before building `entries`; this function is
+    pure re-rendering, so it can be called again at a different `width` for the interactive
+    pager's width toggle/resize reload (`viewmd.interactive_pager.run_multi_file`, VIEWMD-0072)
+    without re-reading anything from disk.
+    """
+    parts: list[str] = []
+    for display_path, text in entries:
+        if parts:
+            parts.append(render_divider(width=width, color=color))
+        parts.append(render_file_heading(display_path, width=width, color=color))
+        if text is None:
+            parts.append(render_directory_listing(display_path, width=directory_width, color=color))
+        else:
+            parts.append(render_markdown(text, width=width, color=color,
+                                         full_front_matter=full_front_matter, toc=toc))
+    return "".join(parts)
 
 
 def _front_matter_table(data: dict[str, str]) -> Table:

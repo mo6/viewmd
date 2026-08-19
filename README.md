@@ -45,19 +45,22 @@ A document with two or more `#` / `##` / `###` headings also gets a table of con
 
 Passing more than one path (or a glob the shell expands, like `*.md`) renders all of them, each
 preceded by a heading naming its path and separated by a divider, concatenated into a single
-`less` session — unlike `less` itself, there's no per-file navigation (`:n`/`:p`); it's one long
-scroll through every file in the order given. Mixing stdin (`-`) with a file path is rejected.
+scroll (see "Interactive pager" below). Mixing stdin (`-`) with a file path is rejected.
 
-Passing a directory renders its `_Index.md` if one exists (exact case match), exactly as if that
-file had been passed directly; otherwise it renders a table-of-contents listing of the
-directory's immediate entries (subdirectories first, then Markdown files, each alphabetically) —
+Passing a directory renders its index file if one exists — `_Index.md`, `index.md`, or
+`_index.md`, checked in that order (exact case match) — exactly as if that file had been passed
+directly; otherwise it renders a table-of-contents listing of the directory's immediate entries
+(subdirectories first, then Markdown files, each alphabetically) —
 a file's title (from front matter, its first heading, or its filename) and last-modified time,
 one level deep, no recursion. This applies the same way whether the directory is the only `path`
 argument or one of several.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
-spans, which are left untouched.
+spans, which are left untouched. Obsidian's embed/transclusion syntax (`![[Target]]`,
+`![[Target|Display text]]`, including a `#Heading`/`#^block` suffix) renders the same way but
+prefixed with a 📎 glyph to mark it as an embed reference — the target note's actual content is
+never inlined (no transclusion); that's out of scope.
 
 A GitHub-flavored-Markdown task list item (`- [x] label` / `- [ ] label`) renders with a ✅/⬜
 checkbox glyph in place of the plain bullet, the marker stripped from the label and a checked
@@ -74,30 +77,54 @@ Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` insi
 
 ## Interactive pager
 
-Viewing a single document (a file, stdin, or a directory's `_Index.md`) in a terminal pages into
-viewmd's own interactive pager, not an external `less` process — mouse-wheel/trackpad scrolling
-works the same as `less`, plus a table-of-contents popup, search with match highlighting,
-horizontal scrolling for a Mermaid diagram or code block wider than the terminal, and more. Press
-`?` at any time for the full keybinding reference; a few of the more useful ones:
+Viewing anything in a terminal — a single document (a file, stdin, or a directory's index file),
+a directory listing with no index file, or more than one path at once — pages into viewmd's own
+interactive pager. viewmd never spawns an external pager process: no `less` by default, and no
+`$PAGER` override either — mouse-wheel/trackpad scrolling, search with match highlighting,
+horizontal scrolling for a Mermaid diagram or code block wider than the terminal, hover highlighting
+of whatever clickable thing the mouse is over, and more are all built in. Press `?` at any time for
+the full keybinding reference; a few of the more useful ones:
 
 ```
-up/down, wheel, j/k     scroll one line                    t          open the table of contents
+up/down, wheel, j/k     scroll one line                    t          open the table of contents*
 space / b               page down / back up                /          search forward
 g / G                   jump to top / bottom                N          repeat the last search
-n / p                   jump to next / previous heading      w         toggle full terminal width
+n / p                   jump to next / previous heading*     w         toggle full terminal width
 left/right, h/l         scroll sideways (wide content)        m        toggle mouse capture
+click a link             follow it, if local†                 B        go back†
 q                       quit
 ```
 
 Toggling mouse capture off (`m`) lets a plain click-drag select text the normal way — enabling it
 (the default, needed for wheel scroll) is what stops the terminal's own native text selection from
 working; most terminals also support a modifier-drag bypass (Option on macOS, Shift elsewhere)
-that needs no toggling. Setting `$PAGER` still delegates to that external pager unchanged, exactly
-as before — only the *default* (no `$PAGER` set) no longer spawns `less`.
+that needs no toggling. Horizontal scroll also works via a horizontal wheel/trackpad swipe on
+terminals that report it natively; on ones that don't (macOS Terminal.app, notably), hold Shift
+while scrolling the ordinary wheel instead.
 
-Viewing more than one file at once (multiple paths, a directory listing with no `_Index.md`) still
-pages into `less` ($PAGER, default `less -R -F -X --mouse`) as before — the interactive pager's
-table of contents and search are scoped to a single document.
+The mouse highlights whatever clickable target it's currently over — a link, a directory-listing
+row, a table-of-contents/help-screen row, or a keybinding chip in the bottom status row — before
+you click it, so it's clear what will actually respond. Clicking a link (a `[[wikilink]]` or an
+ordinary Markdown link) that resolves to an existing local `.md` file navigates the pager to that
+file in place; `B` goes back to the file you navigated from. Clicking a row in the table-of-contents
+popup jumps to it, same as Enter; clicking a keybinding row in the `?` help screen performs that
+key's action directly, and the `cancel`/`close help` chip in the bottom row while either popup is
+open does the same as pressing Esc.
+
+A bare directory listing (no index file present) is click-navigable too: clicking a subdirectory
+row descends into that subdirectory's own listing, clicking a `.md` file row opens it in the pager,
+and `B` returns to the listing you came from either way.
+
+\* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
+they're only available for a single document; viewing more than one file at once or a bare
+directory listing pages the same way — mouse scroll, search, resize, the width toggle, all of
+it — just without those two, since there's no per-file/per-entry heading structure to build a
+table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
+it's one long continuous scroll through every file in the order given.
+
+† Click-to-follow and `B` work for a single document and for a bare directory listing; a multi-file
+view has no single current file/directory to resolve a relative link against, so a click on a link
+and `B` are both inert there.
 
 ## Configuration file
 
@@ -131,13 +158,39 @@ keys:
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
 
-An unrecognized key is ignored (forward-compatible with future options); a key with an invalid
-value, or a file that fails to parse, prints a `viewmd: ...` error and exits non-zero rather than
-silently falling back. `--config PATH` reads configuration from `PATH` instead of the default
+An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
+stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config
+file's keys don't break an older `viewmd`; a key with an invalid value, or a file that fails to
+parse, prints a `viewmd: ...` error and exits non-zero rather than silently falling back.
+`--config PATH` reads configuration from `PATH` instead of the default
 location — useful for a one-off alternate profile. Setting `VIEWMD_NO_CONFIG` to any non-empty
 value skips reading a config file entirely, regardless of what's on disk — handy for CI or a
 reproducible one-off run that must not pick up a developer's own file (`--config PATH` still wins
 even then, since it's explicit).
+
+## Shell completion
+
+Tab-completion scripts for bash, zsh, and fish are checked into [completions/](completions/) —
+`viewmd.bash`, `viewmd.zsh`, `viewmd.fish` — generated from viewmd's own `argparse` parser
+(`./tools.sh completions`, see "Development" below) rather than hand-maintained per shell, so
+they stay in sync with the actual flag surface. They complete every flag name (including both
+spellings of a `--toc`/`--no-toc`-style pair), `--color`'s three literal choices
+(`auto`/`always`/`never`), `--width`'s `full` literal, and fall back to normal filesystem-path
+completion for `--config` and for the positional Markdown-file argument(s).
+
+**bash**: source the script directly, e.g. add `source /path/to/viewmd/completions/viewmd.bash`
+to `~/.bashrc`; or copy/symlink it into a directory your `bash-completion` setup already sources,
+such as `/etc/bash_completion.d/` or `$(brew --prefix)/etc/bash_completion.d/` on a Homebrew
+install.
+
+**zsh**: copy or symlink `completions/viewmd.zsh` as `_viewmd` into a directory on your `$fpath`
+(e.g. `~/.zsh/completions/_viewmd`), then make sure that directory is on `$fpath` before
+`autoload -Uz compinit && compinit` runs in `~/.zshrc` (or just start a new shell if `compinit`
+already scans it).
+
+**fish**: copy or symlink `completions/viewmd.fish` to `~/.config/fish/completions/viewmd.fish`
+(or any other directory on `$fish_complete_path`); fish picks it up automatically in any new
+shell, no further configuration needed.
 
 ## Mermaid diagrams
 
@@ -246,9 +299,11 @@ An `xychart-beta` block (or its bare `xychart` alias) plots one bar dataset, one
 ## Development
 
 - `./run-tests.sh` — the full check gate (pytest, ruff incl. security rules, `pip-audit`,
-  `issues/` lint).
+  `issues/` lint, `completions/` freshness check).
 - `./tools.sh issues` — regenerate the `issues/README.md` index; `./tools.sh issues --check`
   lints without writing.
+- `./tools.sh completions` — regenerate `completions/viewmd.{bash,zsh,fish}` from the current
+  `argparse` parser; `./tools.sh completions --check` asserts they're current without writing.
 - See [AGENTS.md](AGENTS.md) for the issue-first development process,
   [docs/PLAN.md](docs/PLAN.md) for the rendering/paging design rationale, and
   [docs/SECURITY.md](docs/SECURITY.md) for the security gate's runbook,

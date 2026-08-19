@@ -33,15 +33,23 @@ def _width_arg(value: str) -> str:
     return value
 
 
-def _resolve_width(width_arg: str | None, terminal_width: int) -> int:
+def _resolve_width(width_arg: str | None, terminal_width: int, *,
+                   default_max_width: int = DEFAULT_MAX_WIDTH) -> int:
     if width_arg is None:
-        return min(DEFAULT_MAX_WIDTH, terminal_width)
+        return min(default_max_width, terminal_width)
     if width_arg == "full":
         return terminal_width
     return int(width_arg)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Builds viewmd's `ArgumentParser`, the single source of truth for its CLI flag surface.
+
+    Kept as its own function (rather than inlined in `main`) so `tools/completions.py` can
+    import and introspect the exact same parser `main` parses with, generating the checked-in
+    bash/zsh/fish completion scripts from it directly instead of a hand-maintained duplicate
+    flag list (VIEWMD-0087).
+    """
     parser = argparse.ArgumentParser(
         prog="viewmd", description="View a Markdown file in the terminal, paged interactively."
     )
@@ -70,6 +78,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", metavar="PATH", default=None,
                         help="read configuration from PATH instead of "
                              "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
     paths = args.path
 
@@ -84,7 +97,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     color = _resolve_color(coalesce(args.color, cfg.color, "auto"))
-    width = _resolve_width(coalesce(args.width, cfg.width), shutil.get_terminal_size().columns)
+    terminal_width = shutil.get_terminal_size().columns
+    width_arg = coalesce(args.width, cfg.width)
+    width = _resolve_width(width_arg, terminal_width)
+    # A bare directory listing (no --width given, VIEWMD-0071) defaults to the full terminal
+    # width rather than the prose cap: it's a table of entries, not prose to keep line-length-
+    # readable, and the cap only truncates columns a wide terminal has room to show. An explicit
+    # --width/config width still applies exactly as it does to documents.
+    directory_width = _resolve_width(width_arg, terminal_width, default_max_width=terminal_width)
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
     toc = coalesce(args.toc, cfg.toc, True)
 
@@ -111,20 +131,15 @@ def main(argv: list[str] | None = None) -> int:
                              color=color, full_front_matter=full_front_matter, toc=toc)
             return 0
 
-        from viewmd.render import render_directory_listing
-        ansi_text = render_directory_listing(path, width=width, color=color)
-        from viewmd.pager import display
-        display(ansi_text, no_pager=args.no_pager)
+        from viewmd.pager import display_directory_listing
+        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color)
         return 0
 
-    from viewmd.render import render_divider, render_file_heading
-
     had_error = False
-    parts: list[str] = []
+    entries: list[tuple[str, str | None]] = []
     for path in paths:
         try:
-            ansi_text = _render_path(path, width=width, color=color,
-                                     full_front_matter=full_front_matter, toc=toc)
+            resolved = _resolve_document(path)
         except OSError as e:
             print(f"viewmd: cannot read {path}: {e.strerror}", file=sys.stderr)
             had_error = True
@@ -134,62 +149,56 @@ def main(argv: list[str] | None = None) -> int:
             had_error = True
             continue
 
-        if parts:
-            parts.append(render_divider(width=width, color=color))
-        parts.append(render_file_heading(path, width=width, color=color))
-        parts.append(ansi_text)
+        if resolved is not None:
+            text, _name = resolved
+            # `path` (the original CLI argument), not `_name` (the resolved index-file path for a
+            # directory's `_Index.md` note, VIEWMD-0065) -- render_file_heading names the file
+            # heading after what the reader actually typed, matching pre-VIEWMD-0072 behavior.
+            entries.append((path, text))
+        else:
+            entries.append((path, None))
 
-    from viewmd.pager import display
-    display("".join(parts), no_pager=args.no_pager)
+    from viewmd.pager import display_multi_file
+    display_multi_file(entries, no_pager=args.no_pager, width=width,
+                       directory_width=directory_width, color=color,
+                       full_front_matter=full_front_matter, toc=toc)
     return 1 if had_error else 0
-
-
-def _render_path(path: str, *, width: int, color: bool, full_front_matter: bool,
-                 toc: bool) -> str:
-    """Resolve `path` to its rendered ANSI text.
-
-    A plain file (or '-' for stdin) renders as Markdown directly. A directory looks up
-    `viewmd.render.INDEX_FILENAME` inside it and renders that file if present (VIEWMD-0065);
-    otherwise it renders a table-of-contents listing of the directory's own entries instead of
-    raising `IsADirectoryError` the way a bare `open()` would. Raises `OSError`/
-    `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
-    """
-    from viewmd.render import INDEX_FILENAME, render_directory_listing, render_markdown
-
-    if path != "-" and os.path.isdir(path):
-        # `INDEX_FILENAME in os.listdir(path)` rather than `os.path.isfile()` on the joined path:
-        # the latter matches case-insensitively on the default macOS/Windows filesystems, but
-        # requirement 2 (VIEWMD-0065) is a case-sensitive match on the exact name.
-        index_path = os.path.join(path, INDEX_FILENAME)
-        if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
-            text = _read_input(index_path)
-            return render_markdown(text, width=width, color=color,
-                                   full_front_matter=full_front_matter, toc=toc)
-        return render_directory_listing(path, width=width, color=color)
-
-    text = _read_input(path)
-    return render_markdown(text, width=width, color=color,
-                           full_front_matter=full_front_matter, toc=toc)
 
 
 def _resolve_document(path: str) -> tuple[str, str] | None:
     """Returns `(source_markdown_text, display_name)` for `path` when it resolves to one real
     document -- a plain file, stdin, or a directory's index file (VIEWMD-0065) -- or `None` for a
     bare directory listing, which is a synthesized table, not a document with headings/content of
-    its own for `viewmd.pager.display_document`'s interactive pager to page. Mirrors
-    `_render_path`'s own resolution logic exactly, but returns the raw source text instead of an
-    already-rendered string -- the interactive pager needs to derive its own plain-render twin and
-    heading outline from that itself (`viewmd.interactive_pager._load`). Raises `OSError`/
-    `UnicodeDecodeError` the same as a direct read, for the caller's existing error handling.
+    its own for `viewmd.pager.display_document`'s interactive pager to page. Used for both the
+    single-path and multi-path cases -- the multi-path loop keeps the original CLI-argument
+    `path` as its own display name rather than this function's resolved index-file path (see its
+    call site). Raises `OSError`/`UnicodeDecodeError` the same as a direct read, for the caller's
+    existing error handling.
     """
-    from viewmd.render import INDEX_FILENAME
-
     if path != "-" and os.path.isdir(path):
-        index_path = os.path.join(path, INDEX_FILENAME)
-        if INDEX_FILENAME in os.listdir(path) and os.path.isfile(index_path):
+        index_path = _find_index_path(path)
+        if index_path is not None:
             return _read_input(index_path), index_path
         return None
     return _read_input(path), path
+
+
+def _find_index_path(dir_path: str) -> str | None:
+    """Returns the path to `dir_path`'s index file -- the first of `viewmd.render.INDEX_FILENAMES`
+    present, in priority order -- or `None` if it has none (VIEWMD-0065, VIEWMD-0074).
+
+    Checks `os.listdir()` membership rather than `os.path.isfile()` on the joined path: the
+    latter matches case-insensitively on the default macOS/Windows filesystems, but the match
+    here must be case-sensitive and exact (VIEWMD-0065 requirement 2).
+    """
+    from viewmd.render import INDEX_FILENAMES
+
+    entries = os.listdir(dir_path)
+    for name in INDEX_FILENAMES:
+        candidate = os.path.join(dir_path, name)
+        if name in entries and os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def _read_input(path: str) -> str:
