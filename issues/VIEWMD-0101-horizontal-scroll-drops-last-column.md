@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0101
 title: Fix horizontal scroll stopping one column short of a row's true right edge
-status: proposed
+status: in-progress
 area: [pager]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: []
 supersedes: []
