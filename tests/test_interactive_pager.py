@@ -200,6 +200,32 @@ def test_popup_box_no_indicators_when_everything_fits():
     assert scroll == 0
 
 
+def test_popup_box_marks_a_hovered_row_distinct_from_selected():
+    # VIEWMD-0092: hovering a *different* row than the current selection gets its own,
+    # dimmer highlight -- not the selected row's own `_POPUP_SELECTED_BG`.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20, hover=2)
+    content = box[1:-1]
+    assert ip._POPUP_HOVER_BG in content[2]
+    assert ip._POPUP_SELECTED_BG not in content[2]
+    assert ip._POPUP_HOVER_BG not in content[0]  # the selected row itself is untouched by hover
+
+
+def test_popup_box_selected_row_hover_keeps_selected_styling():
+    # Hovering the already-selected row must not demote it to the dimmer hover shade.
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=1, term_w=60, avail_h=20, hover=1)
+    content = box[1:-1]
+    assert ip._POPUP_SELECTED_BG in content[1]
+    assert ip._POPUP_HOVER_BG not in content[1]
+
+
+def test_popup_box_no_hover_by_default():
+    headings = _headings(3)
+    box, _scroll = ip._popup_box(headings, selected=0, term_w=60, avail_h=20)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
+
+
 # --- _overlay ------------------------------------------------------------------------------------
 
 
@@ -307,6 +333,68 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     wrong = ip._crop_row(row, mismatched_len, left_col=max(0, own_len - 10), width=80)
     assert "›" not in correct
     assert "›" in wrong
+
+
+# --- _wrap_hover (VIEWMD-0092) ------------------------------------------------------------------
+
+
+def test_wrap_hover_wraps_only_the_given_span():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 3, 6)
+    assert ip._strip_ansi(out) == line  # visible text is untouched, just re-styled
+    assert f"{ip._HOVER_STYLE}345{ip._RESET}" in out
+    assert not out.startswith(ip._HOVER_STYLE)  # prefix ("012") isn't wrapped
+
+
+def test_wrap_hover_preserves_a_links_own_color_around_the_span():
+    line = _first_colored_line("before [a link](B.md) after")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    out = ip._wrap_hover(line, start, end)
+    assert ip._strip_ansi(out) == ip._strip_ansi(line)
+    assert ip._HOVER_STYLE in out
+    assert ip._RESET in out
+
+
+def test_wrap_hover_at_the_very_end_of_the_line():
+    line = "0123456789"
+    out = ip._wrap_hover(line, 8, 10)
+    assert ip._strip_ansi(out) == line
+    assert f"{ip._HOVER_STYLE}89{ip._RESET}" in out
+
+
+def test_wrap_hover_survives_an_embedded_reset_mid_span():
+    # Regression (found in manual testing): a keycap chip (`_keycap`) closes with its own
+    # `_RESET` right after the key, e.g. "w full width" is `_KEYCAP_BG` + "w" + `_RESET` + "
+    # full width". That embedded `_RESET` sits inside the wrapped span and must not cancel
+    # `_HOVER_STYLE` for the rest of it -- previously only the "w" keycap itself showed reversed,
+    # not " full width".
+    text, spans = ip._keybind_help(popup_open=False, width_toggle="full width")
+    chip = next((s, e) for s, e, invoke in spans if invoke == ip.Event("key", "w"))
+    out = ip._wrap_hover(text, *chip)
+    assert ip._strip_ansi(out) == ip._strip_ansi(text)
+    # Exact expected rendering of the "w full width" chip once wrapped: the keycap's own
+    # trailing `_RESET` (right after "w") is immediately followed by another `_HOVER_STYLE`, so
+    # reverse video is never actually off anywhere inside the span -- not just "w", but
+    # " full width" too.
+    expected = (
+        f"{ip._HOVER_STYLE}{ip._KEYCAP_BG}w{ip._RESET}{ip._HOVER_STYLE} full width{ip._RESET}"
+    )
+    assert expected in out
+
+
+def test_compute_hover_style_matches_any_actionable_chip_not_only_w():
+    # Regression (found in manual testing): hovering chips other than "w full width" (e.g. "t
+    # contents", "? help", "q quit") never highlighted at all, because the hover-matching branch
+    # was hardcoded to only recognize `Event("key", "w")` instead of any chip with a real invoke
+    # -- mirrored here against `_chip_at`, the click-side counterpart that was never restricted
+    # this way, to pin the fix without needing a live `_run()` session (not unit-testable, see
+    # module docstring).
+    _text, spans = ip._keybind_help(popup_open=False, has_headings=True)
+    t_chip = next((s, e, i) for s, e, i in spans if i == ip.Event("key", "t"))
+    start, end, invoke = t_chip
+    assert invoke is not None
+    assert ip._chip_at(spans, start) == invoke
 
 
 # --- scrollbar column (VIEWMD-0079) -------------------------------------------------------------
@@ -432,6 +520,41 @@ def test_link_at_decodes_a_toc_anchor_href_with_a_percent_looking_heading():
     toc_line = next(line for line in colored if "Item" in ip._strip_ansi(line))
     col = _col_of(toc_line, "Item")
     assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:{heading_text}"
+
+
+# --- _link_span_at (VIEWMD-0092) ------------------------------------------------------------
+
+
+def test_link_span_at_resolves_href_and_span_inside_the_link():
+    line = _first_colored_line("[a link](B.md) after")
+    col = _col_of(line, "a link")
+    href, start, end = ip._link_span_at(line, col)
+    assert href == "B.md"
+    assert start <= col < end
+    # Every column across the link's own text resolves to the exact same span -- not just the
+    # one column `col_of` happened to land on.
+    for c in range(start, end):
+        assert ip._link_span_at(line, c) == (href, start, end)
+
+
+def test_link_span_at_returns_none_just_past_the_link():
+    line = _first_colored_line("[a link](B.md) zzz")
+    end_col = _col_of(line, "zzz")
+    assert ip._link_span_at(line, end_col) is None
+
+
+def test_link_span_at_returns_none_for_plain_text_with_no_link():
+    line = _first_colored_line("just plain text, no links here")
+    assert ip._link_span_at(line, 0) is None
+
+
+def test_link_span_at_span_excludes_neighboring_plain_text():
+    line = _first_colored_line("QQQ [a link](B.md) ZZZ")
+    col = _col_of(line, "a link")
+    _href, start, end = ip._link_span_at(line, col)
+    plain = ip._strip_ansi(line)
+    assert plain.index("QQQ") < start
+    assert end <= plain.index("ZZZ")
 
 
 def test_resolve_link_target_wikilink_direct_and_recursive(tmp_path):
@@ -885,6 +1008,33 @@ def test_non_quit_click_then_key_in_same_burst_is_not_stalled(monkeypatch):
     assert not ip._unread
 
 
+def test_read_event_sgr_mouse_motion_no_button(monkeypatch):
+    # VIEWMD-0092: xterm's own "motion, no button pressed" encoding is 32+3=35 -- confirmed
+    # empirically in macOS Terminal.app (see the issue's Design notes) as the report a bare mouse
+    # move (no click) produces once motion tracking (1003) is enabled.
+    fd = _pipe_with(b"\x1b[<35;15;7M")
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_with_button_held_is_still_motion():
+    # A drag (button held while moving) sets the same bit-32 motion flag, just with the held
+    # button's own low bits instead of 3 ("no button") -- still a "motion" event here, since
+    # this issue is about where the cursor currently sits, not whether a button happens to be
+    # down while it gets there.
+    fd = _pipe_with(b"\x1b[<32;15;7M")  # button 0 (left) held + moving
+    assert ip._read_event(fd) == ip.Event("motion", col=15, row=7)
+
+
+def test_read_event_sgr_mouse_motion_does_not_collide_with_wheel_or_click():
+    # Regression guard for the bit-32 check's own reasoning comment: wheel codes (64-69) and a
+    # plain click (0) must still parse exactly as before now that a motion branch sits between
+    # them in `_read_event`.
+    fd = _pipe_with(b"\x1b[<64;10;5M")
+    assert ip._read_event(fd) == ip.Event("wheel_up")
+    fd = _pipe_with(b"\x1b[<0;15;7M")
+    assert ip._read_event(fd) == ip.Event("click", col=15, row=7)
+
+
 # --- _mode_line ------------------------------------------------------------------------------
 
 
@@ -1007,14 +1157,29 @@ def test_keybind_help_base_layout_chip_invokes_match_their_key():
 
 
 def test_keybind_help_popup_layout_chips_have_no_ambiguous_invoke():
-    # Non-goal: the popup-open echo hint's move/jump/cancel chips share the same "no single
-    # unambiguous action" rule as their `_HELP_GROUPS` counterparts -- only the trailing `q`
-    # chip (always appended, popup or not) carries an invoke; the main loop never reaches the
-    # echo-row click handler while `popup_open` is true anyway (it has its own click handling
-    # for the ToC selection instead), so none of these chips are actually clickable in practice.
+    # `up/down,wheel,j/k` (which direction?) and `Enter` (confirms whichever heading happens to
+    # be `popup_selected`, not something a synthesized event alone can carry) stay genuinely
+    # ambiguous -- but `Esc/t cancel` and the trailing `q quit` both have one unambiguous outcome
+    # regardless of which listed key does it (VIEWMD-0092 follow-up: `Esc/t cancel` was wrongly
+    # grouped with the truly-ambiguous chips here, which is why it was inert to both hover and
+    # click while a ToC popup was open).
     _text, spans = ip._keybind_help(True)
-    assert [invoke for _start, _end, invoke in spans[:-1]] == [None, None, None]
-    assert spans[-1][2] == ip.Event("key", "q")
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[:2] == [None, None]
+    assert invokes[2] == ip.Event("key", "esc")
+    assert invokes[-1] == ip.Event("key", "q")
+
+
+def test_keybind_help_help_layout_close_chip_has_an_invoke():
+    # VIEWMD-0092 follow-up: the help-screen echo hint used to be a hardcoded plain string with
+    # no chip structure at all, so "Esc/?/q close help" was inert to both hover and click; now
+    # routed through the same `_keybind_help`/`_render_chips` machinery every other layout uses.
+    text, spans = ip._keybind_help(False, help_open=True)
+    assert "scroll" in ip._strip_ansi(text)
+    assert "close help" in ip._strip_ansi(text)
+    invokes = [invoke for _start, _end, invoke in spans]
+    assert invokes[0] is None  # up/down,wheel,j/k: scroll -- direction-ambiguous
+    assert invokes[1] == ip.Event("key", "esc")
 
 
 def test_chip_at_resolves_column_to_the_right_chip():
@@ -1024,6 +1189,25 @@ def test_chip_at_resolves_column_to_the_right_chip():
     assert ip._chip_at(spans, t_col) == ip.Event("key", "t")
     q_col = plain.rindex("q quit")
     assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+
+
+def test_chip_at_resolves_the_popup_cancel_and_quit_chips():
+    text, spans = ip._keybind_help(True)
+    plain = ip._strip_ansi(text)
+    cancel_col = plain.index("Esc/t cancel")
+    assert ip._chip_at(spans, cancel_col) == ip.Event("key", "esc")
+    q_col = plain.rindex("q quit")
+    assert ip._chip_at(spans, q_col) == ip.Event("key", "q")
+    # The still-ambiguous chips resolve to no invoke at all.
+    move_col = plain.index("move")
+    assert ip._chip_at(spans, move_col) is None
+
+
+def test_chip_at_resolves_the_help_screen_close_chip():
+    text, spans = ip._keybind_help(False, help_open=True)
+    plain = ip._strip_ansi(text)
+    close_col = plain.index("close help")
+    assert ip._chip_at(spans, close_col) == ip.Event("key", "esc")
 
 
 def test_chip_at_returns_none_between_chips_and_out_of_range():
@@ -1107,6 +1291,30 @@ def test_help_box_scrolls_with_indicators_when_too_tall():
     assert "▼" not in "".join(end)
 
 
+def test_help_box_marks_a_hovered_actionable_row():
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is not None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG in hovered_box[1 + hover_i]
+    # No other row picks up the hover styling.
+    assert sum(1 for row in hovered_box if ip._POPUP_HOVER_BG in row) == 1
+
+
+def test_help_box_does_not_highlight_a_non_actionable_hovered_row():
+    # A header/blank/tip row (invoke is None) is a click no-op -- hovering it must not imply
+    # otherwise (requirement 2's "MUST NOT ... imply a target is clickable" reasoning, applied to
+    # the help table the same way `_help_box`'s own docstring states for the hover param).
+    box, invokes = ip._help_box(term_w=100, avail_h=40)
+    hover_i = next(i for i, inv in enumerate(invokes) if inv is None)
+    hovered_box, _hovered_invokes = ip._help_box(term_w=100, avail_h=40, hover=hover_i)
+    assert ip._POPUP_HOVER_BG not in "".join(hovered_box)
+
+
+def test_help_box_no_hover_by_default():
+    box, _invokes = ip._help_box(term_w=100, avail_h=40)
+    assert ip._POPUP_HOVER_BG not in "".join(box)
+
+
 def test_help_box_never_fills_the_full_body_edge_to_edge():
     # Regression: the popup must always leave at least one row of real document visible above
     # and below it -- callers pass `avail_h = max(3, body_h - 2)`, not the full body height.
@@ -1152,6 +1360,16 @@ def test_mouse_on_off_are_a_real_enable_disable_pair():
     assert ip._MOUSE_ON != ip._MOUSE_OFF
     assert "1000h" in ip._MOUSE_ON
     assert "1000l" in ip._MOUSE_OFF
+
+
+def test_mouse_on_off_enable_motion_tracking_too():
+    # VIEWMD-0092 requirement 1: motion tracking (1003) is layered onto the same on/off toggle as
+    # click reporting (1000) and SGR coordinates (1006) -- 'm' (see `_dispatch_base`) turning
+    # mouse capture off must also stop motion reports, not just clicks/wheel, so there's no stray
+    # hover highlighting while the reader has deliberately dropped out of mouse capture to select
+    # text natively.
+    assert "1003h" in ip._MOUSE_ON
+    assert "1003l" in ip._MOUSE_OFF
 
 
 # --- wide characters (VIEWMD-0070) ------------------------------------------------------------

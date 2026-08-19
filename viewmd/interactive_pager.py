@@ -53,16 +53,24 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
 # mouse reporting with SGR (extended, non-ambiguous) coordinate encoding, which also carries
 # wheel-scroll events as synthetic "buttons" 64/65 (vertical) and 66/67 (horizontal tilt/swipe,
 # VIEWMD-0075) -- this is the same mechanism VIEWMD-0067 leaned on via `less --mouse`, now handled
-# here directly instead of by an external pager.
+# here directly instead of by an external pager. 1003 = any-motion tracking (VIEWMD-0092): layered
+# on top of 1000/1006, it makes xterm also report a synthetic "button 35" (32 + 3, "motion, no
+# button pressed") SGR event on every cursor move, not just clicks -- confirmed empirically to
+# work in macOS Terminal.app (`TERM_PROGRAM=Apple_Terminal`), which has a long-standing reputation
+# for click-only mouse support but does send these. A terminal that doesn't support 1003 simply
+# never sends the extra reports, which is inert here (see `_read_event`'s "motion" handling) --
+# there is nothing to detect or fall back on, degrading automatically to today's click-only
+# behavior (requirement 6).
 #
 # Enabling mouse reporting at all is also what stops a plain click-drag from doing the terminal's
 # own native text selection -- once the app is receiving mouse events, most terminals route every
 # button press/drag to it instead, not just wheel scroll. The 'm' key (see `run`) toggles
-# `_MOUSE_ON`/`_MOUSE_OFF` independently of the alternate screen so text can still be selected
-# without quitting the pager; most terminals also let a modifier key (Option on macOS, Shift on
-# Linux/Windows terminals) bypass app mouse capture for a single drag without toggling anything.
-_MOUSE_ON = "\x1b[?1000h\x1b[?1006h"
-_MOUSE_OFF = "\x1b[?1000l\x1b[?1006l"
+# `_MOUSE_ON`/`_MOUSE_OFF` (1003 included) independently of the alternate screen so text can still
+# be selected without quitting the pager; most terminals also let a modifier key (Option on macOS,
+# Shift on Linux/Windows terminals) bypass app mouse capture for a single drag without toggling
+# anything.
+_MOUSE_ON = "\x1b[?1000h\x1b[?1003h\x1b[?1006h"
+_MOUSE_OFF = "\x1b[?1000l\x1b[?1003l\x1b[?1006l"
 _ENTER_SCREEN = "\x1b[?1049h\x1b[?25l" + _MOUSE_ON
 _EXIT_SCREEN = _MOUSE_OFF + "\x1b[?25h\x1b[?1049l"
 _HOME = "\x1b[H"
@@ -74,6 +82,17 @@ _CLEAR_EOL = "\x1b[K"
 # already lifts it off the surrounding document.
 _POPUP_BG = "\x1b[48;5;24;38;5;231m"
 _POPUP_SELECTED_BG = "\x1b[48;5;33;1m"
+# Hover feedback (VIEWMD-0092): a body-text link/directory-listing row/echo-area chip under the
+# mouse gets plain reverse video -- it works over whatever color that span already carries (link
+# blue, a diagram's own palette, a keycap chip) without needing to know what that color is, unlike
+# the popup rows below. A ToC/help-popup row instead gets a dedicated background, same family as
+# `_POPUP_SELECTED_BG` (a dimmer, non-bold shade of the same blue) rather than reverse video --
+# reverse video inside the popup panel would swap to the *terminal's* default colors, breaking the
+# panel look, exactly the reason `_popup_box`'s own `selected` row styling avoids it too. Dimmer
+# than `_POPUP_SELECTED_BG` on purpose: hover is a preview, keyboard/click selection is the
+# stronger, more deliberate state.
+_HOVER_STYLE = "\x1b[7m"
+_POPUP_HOVER_BG = "\x1b[48;5;25m"
 # Mode line: an explicit teal background rather than reverse video or plain grey -- reverse video
 # swaps to the *terminal's own* current fg/bg (a plain-white bar on a light-on-dark theme, the
 # common case), and flat grey reads as merely dimmed rather than an intentional accent; a genuine
@@ -317,14 +336,23 @@ def _nearest_heading_index(headings: list[HeadingLoc], top: int) -> int:
 
 
 def _popup_box(
-    headings: list[HeadingLoc], selected: int, term_w: int, avail_h: int
+    headings: list[HeadingLoc],
+    selected: int,
+    term_w: int,
+    avail_h: int,
+    hover: int | None = None,
 ) -> tuple[list[str], int]:
     """Returns (box lines, scroll offset). When there are more headings than fit, the window
     scrolls to keep `selected` roughly centered (clamped at the top/bottom of the list rather
     than overscrolling past either end), and the row(s) at the very top/bottom of the box show
     `▲`/`▼` in the marker column whenever there's more content in that direction -- not just at
     the list's hard edges. `scroll` (VIEWMD-0076) is what a caller needs to map a clicked content
-    row (`_popup_hit`) back to a heading index: `scroll + content_row`."""
+    row (`_popup_hit`) back to a heading index: `scroll + content_row`.
+
+    `hover` (VIEWMD-0092), when given, is a *window-relative* content-row index -- the same units
+    `_popup_hit` returns, not an absolute heading index like `selected` -- for the row the mouse
+    is currently positioned over, styled with `_POPUP_HOVER_BG` unless it's also the selected row
+    (selection already has its own, stronger styling)."""
     entries = [h.text for h in headings]
     # `_display_width`, not `len()` -- a heading can contain a wide character (an emoji in
     # prose, or Rich's own image-placeholder glyph, VIEWMD-0070's motivating case), and sizing
@@ -369,6 +397,8 @@ def _popup_box(
             # would swap to the *terminal's* default colors, not the box's, breaking the panel
             # look precisely on the one row meant to stand out most.
             text = f"{_POPUP_SELECTED_BG}{text}{_POPUP_BG}"
+        elif pos == hover:
+            text = f"{_POPUP_HOVER_BG}{text}{_POPUP_BG}"
         box.append(styled("│" + text + "│"))
     box.append(styled("└" + ("─" * box_w) + "┘"))
     return box, scroll
@@ -520,6 +550,41 @@ def _link_at(colored_line: str, col: int) -> str | None:
         if c <= col < c + w:
             return active_link
         c += w
+    return None
+
+
+def _link_span_at(colored_line: str, col: int) -> tuple[str, int, int] | None:
+    """Like `_link_at`, but also returns the display-column span `[start, end)` the matched link
+    covers, not just its href -- the hover highlight (VIEWMD-0092) needs the whole span to wrap in
+    `_HOVER_STYLE`, not merely confirmation that `col` falls inside one. Collects every link span
+    in the line first (a link's extent isn't known until its OSC8 close token -- or the line's end
+    -- is reached), then looks up which one (if any) contains `col`, rather than trying to detect
+    the match token-by-token as `_link_at` does; a single row is short enough that the extra pass
+    is inconsequential, and this stays a straightforward second reader of the same token stream
+    rather than a variant of `_link_at`'s own walk."""
+    spans: list[tuple[str, int, int]] = []
+    active_link: str | None = None
+    link_start = 0
+    c = 0
+    for tok in _ANSI_TOKEN_RE.findall(colored_line):
+        if tok.startswith("\x1b]"):
+            if tok == _OSC8_CLOSE:
+                if active_link is not None:
+                    spans.append((active_link, link_start, c))
+                active_link = None
+            else:
+                m = _OSC8_OPEN_RE.match(tok)
+                active_link = urllib.parse.unquote(m.group(1)) if m else None
+                link_start = c
+            continue
+        if tok.startswith("\x1b["):
+            continue
+        c += _char_width(tok)
+    if active_link is not None:
+        spans.append((active_link, link_start, c))
+    for href, start, end in spans:
+        if start <= col < end:
+            return href, start, end
     return None
 
 
@@ -684,6 +749,35 @@ def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> st
     return sliced
 
 
+def _wrap_hover(colored_line: str, start_col: int, end_col: int) -> str:
+    """`colored_line` with display columns `[start_col, end_col)` wrapped in `_HOVER_STYLE`
+    (VIEWMD-0092) -- reverse video works over whatever color that span already carries (link
+    color, a keycap chip's own background) without this needing to know or parse what that color
+    is, unlike the popup rows' dedicated hover background.
+
+    Built the same way `_crop_row` crops a row into pieces -- three independent `_ansi_slice`
+    calls, prefix/middle/suffix -- rather than string-splicing directly: each call already
+    re-establishes whatever color/link state was active at its own start column and closes with
+    `_RESET` at its own end if it opened one (`_ansi_slice`'s own doc), so simple concatenation of
+    the three reproduces the original line exactly, with `_HOVER_STYLE` just added around the
+    middle piece -- the same reasoning `_overlay`'s docstring gives for why slicing through live
+    color state needs care in general.
+
+    `middle` can itself contain a full `_RESET` mid-span -- a keycap chip (`_keycap`) closes with
+    one right after its key, and a multi-segment styled span (bold text inside a link, say) can
+    carry its own too -- which would otherwise cancel the reverse video applied just before
+    `middle` began partway through the span (observed: hovering the echo area's `w full width`
+    chip only reversed the `w` keycap itself, not ` full width`, because `_keycap`'s own trailing
+    `_RESET` wiped the SGR state `_HOVER_STYLE` had just turned on). Re-asserting `_HOVER_STYLE`
+    after every embedded reset keeps the whole span reversed end to end."""
+    total_w = _display_width(_strip_ansi(colored_line))
+    prefix = _ansi_slice(colored_line, 0, start_col)
+    middle = _ansi_slice(colored_line, start_col, max(0, end_col - start_col))
+    middle = middle.replace(_RESET, _RESET + _HOVER_STYLE)
+    suffix = _ansi_slice(colored_line, end_col, max(0, total_w - end_col))
+    return f"{prefix}{_HOVER_STYLE}{middle}{_RESET}{suffix}"
+
+
 # ---------------------------------------------------------------------------
 # Input: raw bytes -> logical events, including SGR mouse wheel reports
 # ---------------------------------------------------------------------------
@@ -691,10 +785,10 @@ def _crop_row(colored_row: str, plain_len: int, left_col: int, width: int) -> st
 
 @dataclass
 class Event:
-    kind: str  # "key" | "wheel_up" | "wheel_down" | "wheel_left" | "wheel_right" | "click"
+    kind: str  # "key"|"wheel_up"|"wheel_down"|"wheel_left"|"wheel_right"|"click"|"motion"
     value: str = ""
-    col: int = 0  # 1-indexed terminal column ("click" only, from the SGR report's Cx)
-    row: int = 0  # 1-indexed terminal row ("click" only, from the SGR report's Cy)
+    col: int = 0  # 1-indexed terminal column ("click"/"motion", from the SGR report's Cx)
+    row: int = 0  # 1-indexed terminal row ("click"/"motion", from the SGR report's Cy)
 
 
 # Bytes `_drain_paired_sgr_release` read past a complete mouse-release report (a following
@@ -796,6 +890,15 @@ def _read_event(fd: int) -> Event:
                 return Event("wheel_left")
             if btn == 69:
                 return Event("wheel_right")
+            # Motion tracking (SGR bit 32, VIEWMD-0092): xterm sets this bit on any mouse-move
+            # report -- 35 (32 + 3, "no button") for a plain hover, 32-34 for a drag with a button
+            # held. Both are treated as "motion" here alike -- this issue is about where the mouse
+            # currently sits, not which button (if any) is down while it moves there; a held-button
+            # drag still updates the hover highlight the same way a plain hover does. This can
+            # never collide with the wheel codes (64-69) or the plain-click check below (`btn ==
+            # 0`), since none of those set bit 32 (`64 & 32 == 0`, `0 & 32 == 0`).
+            if btn & 32:
+                return Event("motion", col=int(m.group(2)), row=int(m.group(3)))
             # A plain (unmodified) left-click press (VIEWMD-0076) -- the release ('m') is ignored
             # as an event (VIEWMD-0076 only acts on the press), but drained from the fd here
             # when already queued (VIEWMD-0094) so a click that quits doesn't leak it to the
@@ -961,6 +1064,7 @@ def _keybind_help(
     *,
     has_headings: bool = True,
     has_back: bool = False,
+    help_open: bool = False,
 ) -> tuple[str, list[tuple[int, int, Event | None]]]:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
     for the complete reference (`_HELP_GROUPS`/`_help_box`) rather than trying to cram every
@@ -987,16 +1091,26 @@ def _keybind_help(
     None)` triple per chip, 0-indexed and aligned to `text`'s own display columns -- the echo
     line always starts at column 0 of its terminal row, so a caller resolving a click there needs
     only a column-range lookup (`_chip_at`), simpler than the help screen's box-relative
-    `_popup_hit`. The `Event` is `None` for a chip with no single unambiguous action to invoke,
-    the same rule and the same reasoning `_HELP_GROUPS`' own third element documents -- currently
-    only the always-ambiguous `popup_open` layout's chips (out of scope per this issue's
-    Non-goals) and the base layout's `up/down,wheel` chip (direction-ambiguous, same as its
-    `_HELP_GROUPS` row)."""
-    if popup_open:
+    `_popup_hit`. The `Event` is `None` for a chip with no single unambiguous action to invoke --
+    `up/down,wheel(,j/k)` (direction-ambiguous, same as its `_HELP_GROUPS` row) and, in the
+    `popup_open` layout, `Enter` (which of several possible headings it confirms depends on
+    `popup_selected`, not something a synthesized event alone can carry). A chip whose several
+    listed keys all produce the *same* effect isn't ambiguous in that sense, just multi-key, so it
+    still gets a real invoke -- `popup_open`'s `Esc/t cancel` and `help_open`'s `Esc/?/q close
+    help` both close their overlay identically regardless of which listed key does it, found
+    missing in manual testing (VIEWMD-0092 follow-up: these two chips rendered but were inert to
+    both hover and click, unlike every other chip on this line)."""
+    if help_open:
         pairs: list[tuple[str, str, Event | None]] = [
+            ("up/down,wheel,j/k", "scroll", None),
+            ("Esc/?/q", "close help", Event("key", "esc")),
+        ]
+        return _render_chips(pairs)
+    if popup_open:
+        pairs = [
             ("up/down,wheel,j/k", "move", None),
             ("Enter", "jump", None),
-            ("Esc/t", "cancel", None),
+            ("Esc/t", "cancel", Event("key", "esc")),
         ]
     else:
         pairs = [("up/down,wheel", "scroll", None), ("/", "search", Event("key", "/"))]
@@ -1010,7 +1124,15 @@ def _keybind_help(
             pairs.append(("Esc", "clear hl", Event("key", "esc")))
         pairs.append(("?", "help", Event("key", "?")))
     pairs.append(("q", "quit", Event("key", "q")))
+    return _render_chips(pairs)
 
+
+def _render_chips(
+    pairs: list[tuple[str, str, Event | None]],
+) -> tuple[str, list[tuple[int, int, Event | None]]]:
+    """`(key, label, invoke)` triples -> `(text, spans)`, the shared rendering step behind every
+    `_keybind_help` layout (base, `popup_open`, `help_open`) -- factored out so each layout's own
+    `pairs` list is the only thing that differs between them."""
     parts: list[str] = []
     spans: list[tuple[int, int, Event | None]] = []
     col = 0
@@ -1036,7 +1158,7 @@ def _chip_at(spans: list[tuple[int, int, Event | None]], col: int) -> Event | No
 
 
 def _help_box(
-    term_w: int, avail_h: int, scroll: int = 0
+    term_w: int, avail_h: int, scroll: int = 0, hover: int | None = None
 ) -> tuple[list[str], list[Event | None]]:
     """Returns (box lines, per-content-row invoke events). The '?' help screen: every binding
     from `_HELP_GROUPS`, in a table, overlaid the same way as the ToC popup (`_popup_box`/
@@ -1065,6 +1187,12 @@ def _help_box(
     real document visible above and below the box, rather than the box filling the entire screen
     edge-to-edge whenever the table is long enough to want to. The caller (`draw`) is responsible
     for that margin decision; this function just fills whatever budget it's handed.
+
+    `hover` (VIEWMD-0092), when given, is the *visible-window* content-row index (same units
+    `_popup_hit`/the second return value are already aligned to) currently under the mouse --
+    styled with `_POPUP_HOVER_BG`, but only for a row with an actual invoke (a header/spacer/tip
+    row getting a hover highlight would visually imply it's clickable when a click there is a
+    no-op, same reasoning requirement 2 states for body-text links).
     """
     key_w = max(len(key) for _, entries in _HELP_GROUPS for key, _, _ in entries)
     action_w = max(len(action) for _, entries in _HELP_GROUPS for _, action, _ in entries)
@@ -1117,7 +1245,16 @@ def _help_box(
             colored_row = "▲" + colored_row[1:]
         elif i == len(window) - 1 and more_below:
             colored_row = "▼" + colored_row[1:]
-        box.append(styled("│" + colored_row + "│"))
+        if hover is not None and i == hover and window_invokes[i] is not None:
+            # `colored_row` already carries its own internal `_POPUP_BG` switches (the key/action
+            # two-tone styling above) -- swapping those for `_POPUP_HOVER_BG` too, not just the
+            # row's own leading background, keeps the whole row one consistent hover shade instead
+            # of reverting to the plain box background partway through.
+            box.append(
+                f"{_POPUP_HOVER_BG}│{colored_row.replace(_POPUP_BG, _POPUP_HOVER_BG)}│{_RESET}"
+            )
+        else:
+            box.append(styled("│" + colored_row + "│"))
     box.append(styled("└" + ("─" * box_w) + "┘"))
     return box, window_invokes
 
@@ -1387,6 +1524,20 @@ def _run(
     last_search_query = ""
     echo_message: str | None = None
     mouse_enabled = True
+    # Hover feedback (VIEWMD-0092): what the mouse is currently positioned over, or `None` -- one
+    # of `("body", doc_row, start_col, end_col)` (a resolvable body-text link/directory row,
+    # `start_col`/`end_col` its display-column span pre-horizontal-scroll), `("toc", content_row)`
+    # / `("help", content_row)` (a ToC-popup/help-screen row, `content_row` in `_popup_hit`'s own
+    # window-relative units), or `("chip", start_col, end_col)` (the echo area's width-toggle
+    # chip). Recomputed by `_compute_hover` on every "motion" event and compared against its prior
+    # value so a redraw only happens when the hovered target actually changes (see the main loop)
+    # -- the cheap way to avoid a full-screen repaint on every single motion report (requirement 5)
+    # without any new partial-redraw machinery, given `draw()` itself has none to begin with.
+    # Cleared (forcing the next redraw to drop any stale highlight) on every non-motion event and
+    # on resize -- requirement 3's "moves off during a scroll/resize" case -- since the document
+    # under a fixed screen position can change out from under the cursor without a new motion
+    # report ever arriving to say so.
+    hover: tuple | None = None
 
     # Resize handling: SIGWINCH's own Python-level handler only needs to exist (its body can be a
     # no-op) so the signal isn't SIG_DFL/SIG_IGN -- `signal.set_wakeup_fd` is what actually makes
@@ -1417,6 +1568,7 @@ def _run(
             bool(last_search_query),
             has_headings=bool(headings),
             has_back=bool(nav_stack),
+            help_open=help_open,
         )
 
     def _content_w() -> int:
@@ -1425,6 +1577,78 @@ def _run(
         `lines`/`body_h` every call so it's always current, the same reasoning `max_top` gets
         recomputed fresh at the top of `_dispatch_base` rather than cached."""
         return term_w - _scrollbar_reserved(len(lines), body_h)
+
+    def _compute_hover(ev: Event) -> tuple | None:
+        """The hover descriptor (see `hover`'s own comment for the shape) for a "motion" event's
+        `(col, row)`, or `None` if it isn't over anything clickable -- deliberately a read-only
+        query, reusing exactly the same hit-testing/resolution calls the click handlers below make
+        (`_popup_hit`, `_resolve_link_target`/`_resolve_dir_target`, `_echo_hint`'s own spans)
+        rather than a second copy of that logic (this issue's Design notes), just without any of
+        the side effects (opening a file, jumping to a heading) a click would have.
+
+        Mirrors the click dispatch's own state precedence exactly -- help screen, then ToC popup,
+        then (nothing while actively typing a search query, since there's no meaningful "hovered
+        target" while the mouse isn't what's driving input), then the base view's echo-area chip
+        and body-text/directory-row links -- so hovering only ever lights up whatever a click at
+        that exact position would actually do.
+
+        Help/ToC-popup states have their own echo-area row too (`Esc/?/q close help`, `Esc/t
+        cancel`) -- a miss against the overlay box itself (the cursor is on the bottom row, not
+        inside the box) falls through to the same echo-chip check the base state uses, rather than
+        returning `None` outright, so those two rows hover-highlight like every other chip
+        (VIEWMD-0092 follow-up: found not hovering, or clicking, at all)."""
+
+        def echo_chip_hover() -> tuple | None:
+            if ev.row - 1 == body_h + 1 and echo_message is None:
+                _, spans = _echo_hint()
+                for start, end, invoke in spans:
+                    if invoke is not None and start <= ev.col - 1 < end:
+                        return ("chip", start, end)
+            return None
+
+        if help_open:
+            box, invokes = _help_box(term_w, max(3, body_h - 2), help_scroll)
+            hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
+            if hit is not None and hit < len(invokes) and invokes[hit] is not None:
+                return ("help", hit)
+            return echo_chip_hover()
+        if popup_open:
+            box, scroll = _popup_box(headings, popup_selected, term_w, body_h)
+            hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
+            if hit is not None and scroll + hit < len(headings):
+                return ("toc", hit)
+            return echo_chip_hover()
+        if search_active:
+            return None
+        chip_hover = echo_chip_hover()
+        if chip_hover is not None:
+            return chip_hover
+        body_row = ev.row - 1
+        reserved = _scrollbar_reserved(len(lines), body_h)
+        if not (0 <= body_row < body_h and ev.col - 1 >= reserved):
+            return None
+        doc_row = top + body_row
+        if not (0 <= doc_row < len(lines)):
+            return None
+        plain_len = _display_width(_strip_ansi(lines[doc_row]))
+        content_col = _content_col(plain_len, left_col, _content_w(), ev.col - 1 - reserved)
+        if content_col is None:
+            return None
+        span = _link_span_at(lines[doc_row], content_col)
+        if span is None:
+            return None
+        href, start_col, end_col = span
+        if href.startswith(_TOC_ANCHOR_SCHEME):
+            return ("body", doc_row, start_col, end_col)
+        if doc_dir is not None and open_path is not None:
+            target = (
+                _resolve_dir_target(href, doc_dir)
+                if href.startswith(_DIR_ANCHOR_SCHEME)
+                else _resolve_link_target(href, doc_dir)
+            )
+            if target is not None:
+                return ("body", doc_row, start_col, end_col)
+        return None
 
     def draw() -> None:
         reserved = _scrollbar_reserved(len(lines), body_h)
@@ -1446,6 +1670,8 @@ def _run(
             if last_search_query:
                 row = _highlight_matches(plain_lines[i], last_search_query)
             row = row or lines[i]
+            if hover is not None and hover[0] == "body" and hover[1] == i:
+                row = _wrap_hover(row, hover[2], hover[3])
             # `_crop_row`'s truncation-marker decision must be based on *this row's own* visible
             # length, not `len(plain_lines[i])` -- most diagram types render identical text with
             # color on/off (so the two would agree), but not all of them do (`render_markdown`'s
@@ -1480,11 +1706,16 @@ def _run(
             if reserved:
                 plain_prefix = _scrollbar_prefix(len(lines), body_h, top, colored=False)
                 plain_visible = [plain_prefix[i] + plain_visible[i] for i in range(body_h)]
-            overlay_box = (
-                _popup_box(headings, popup_selected, term_w, body_h)[0]
-                if popup_open
-                else _help_box(term_w, max(3, body_h - 2), help_scroll)[0]
-            )
+            if popup_open:
+                toc_hover = hover[1] if hover is not None and hover[0] == "toc" else None
+                overlay_box = _popup_box(
+                    headings, popup_selected, term_w, body_h, hover=toc_hover
+                )[0]
+            else:
+                help_hover = hover[1] if hover is not None and hover[0] == "help" else None
+                overlay_box = _help_box(
+                    term_w, max(3, body_h - 2), help_scroll, hover=help_hover
+                )[0]
             visible = _overlay(visible, plain_visible, overlay_box, term_w)
         # `_CLEAR_EOL` only when the row is genuinely shorter than the terminal -- a row cropped
         # to *exactly* `term_w` (any wide diagram line, `_crop_row`'s whole point) leaves the
@@ -1506,9 +1737,7 @@ def _run(
             display_name, len(lines), top, end, term_w, section, left_col
         )
         mode_line = f"{_MODE_LINE_BG}{mode_line_text}{_RESET}"
-        if help_open:
-            echo_text = f"{_keycap('up/down,wheel,j/k')} scroll  {_keycap('Esc/?/q')} close help"
-        elif search_active:
+        if search_active:
             # A literal block glyph, not a real cursor position -- the real terminal cursor is
             # hidden for the whole session (`_ENTER_SCREEN`'s `\x1b[?25l`), and any attempt to
             # mimic one with reverse-video SGR here would hit the same "slicing through live
@@ -1518,7 +1747,14 @@ def _run(
         elif echo_message:
             echo_text = echo_message
         else:
+            # Covers the base layout, the ToC-popup layout, and the help-screen layout alike --
+            # `_echo_hint()` reads `help_open`/`popup_open` itself (VIEWMD-0092 follow-up: the
+            # help layout used to be a separate hardcoded string here, bypassing both this hover
+            # wrap and the click-invoke spans `_echo_hint()`'s callers rely on, which is why its
+            # "Esc/?/q close help" chip was inert to both).
             echo_text, _ = _echo_hint()
+            if hover is not None and hover[0] == "chip":
+                echo_text = _wrap_hover(echo_text, hover[1], hover[2])
         # `_pad_ansi` always fills exactly `term_w` columns, so there's never real trailing space
         # left to erase -- no `_CLEAR_EOL` here, for the same pending-wrap-cursor reason `visible`
         # only appends one conditionally above.
@@ -1802,11 +2038,35 @@ def _run(
                         top = min(top, max(0, len(lines) - body_h))
                         left_col = min(left_col, max(0, max_content_width - _content_w()))
                         popup_selected = min(popup_selected, max(0, len(headings) - 1))
+                        # A resize can shift which document row/column a fixed screen position now
+                        # shows (requirement 3) -- the highlight is cleared rather than re-resolved
+                        # against the new layout, since no new "motion" report necessarily follows a
+                        # resize to trigger that; the next actual mouse move re-establishes it.
+                        hover = None
                     draw()
                     continue
                 if tty_fd not in ready:
                     continue
             ev = _read_event(tty_fd)
+            if ev.kind == "motion":
+                # Pure hover-position update (VIEWMD-0092): resolved read-only, then only redrawn
+                # if the hovered target actually changed -- motion-tracking mode reports every
+                # cursor move, including a drag across a wide swath of the terminal, so skipping
+                # the (otherwise full-screen) `draw()` write whenever nothing visible would change
+                # is what keeps this from noticeably degrading redraw performance (requirement 5),
+                # in the absence of any finer-grained partial-redraw machinery in `draw()` itself.
+                new_hover = _compute_hover(ev)
+                if new_hover != hover:
+                    hover = new_hover
+                    draw()
+                continue
+            if hover is not None:
+                # Any non-motion event (a keypress, a click, a scroll) can change what's on screen
+                # under the cursor's fixed position without a new "motion" report ever arriving to
+                # say so (requirement 3) -- cleared unconditionally; the next real mouse move
+                # re-establishes whatever's actually there now. `draw()` at the bottom of this
+                # loop iteration (reached via every branch below) picks up the cleared value.
+                hover = None
             max_top = max(0, len(lines) - body_h)
             # Captured before `echo_message` is cleared below (VIEWMD-0078 requirement 4): the
             # echo-row click handling in the base `else` branch needs to know whether the row this
@@ -1845,6 +2105,17 @@ def _run(
                         help_scroll = 0
                         if _dispatch_base(invokes[hit]):
                             break
+                    elif ev.row - 1 == body_h + 1:
+                        # Echo-area click-invoke while the help screen is open (VIEWMD-0092
+                        # follow-up): the only actionable chip on this row is "Esc/?/q close
+                        # help" -- its one unambiguous outcome closes the screen the same as
+                        # pressing any of those three keys directly, matched against `_chip_at`
+                        # rather than `_dispatch_base` since closing help isn't itself a
+                        # base-state action.
+                        _, spans = _echo_hint()
+                        if _chip_at(spans, ev.col - 1) is not None:
+                            help_open = False
+                            help_scroll = 0
             elif search_active:
                 if ev.kind == "key" and ev.value == "esc":
                     search_active = False
@@ -1890,7 +2161,8 @@ def _run(
                     # Click-select-and-confirm (VIEWMD-0076, requirement 7): a click on an entry
                     # row picks it and jumps immediately, same as arrowing to it then Enter -- a
                     # click on the box's own border/title row, or outside the box entirely,
-                    # is a no-op (`_popup_hit` returns `None` for both).
+                    # is a no-op (`_popup_hit` returns `None` for both) unless it's the echo-area
+                    # row below, handled next.
                     box, scroll = _popup_box(headings, popup_selected, term_w, body_h)
                     hit = _popup_hit(box, body_h, term_w, ev.col - 1, ev.row - 1)
                     if hit is not None:
@@ -1899,6 +2171,20 @@ def _run(
                             popup_selected = idx
                             top = min(max_top, headings[popup_selected].row)
                             popup_open = False
+                    elif ev.row - 1 == body_h + 1:
+                        # Echo-area click-invoke while the ToC popup is open (VIEWMD-0092
+                        # follow-up): "Esc/t cancel" and "q quit" both have one unambiguous
+                        # outcome regardless of which listed key does it -- `q` quits the whole
+                        # pager (matching the real `q` keypress above, not `_dispatch_base`, which
+                        # is the base-state dispatcher and has no notion of this popup), anything
+                        # else with a real invoke just cancels back to where the popup was opened.
+                        _, spans = _echo_hint()
+                        invoke = _chip_at(spans, ev.col - 1)
+                        if invoke == Event("key", "q"):
+                            break
+                        if invoke is not None:
+                            popup_open = False
+                            top = saved_top
             else:
                 # Echo-area click-invoke (VIEWMD-0078): the echo area is the terminal's last row
                 # (`body_h` rows of content, then the mode line, then this one) -- resolve which
