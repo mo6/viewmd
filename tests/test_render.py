@@ -191,6 +191,34 @@ def test_converted_wikilink_with_space_in_target_still_renders_as_a_link():
     assert "](" not in plain_text
 
 
+# Baseline (pinned before this change was made, kept as a documented historical record -- see
+# tests/test_wikilinks.py for the corresponding rewrite-level baseline note): before
+# VIEWMD-0086, `![[Target]]` fell through un-rewritten as a `!` prefix on a plain wikilink,
+# producing valid Markdown *image* syntax pointing at the inert `wikilink:` scheme -- Rich never
+# resolves it and instead renders its "broken image" placeholder glyph plus the display text,
+# undefined/undocumented behavior this issue replaces with a deliberate, styled link (below).
+def test_embed_wikilink_uses_link_url_style_not_broken_image():
+    md = "see ![[Target]] and ![[Target|Display text]] here"
+    colored = render_markdown(md, width=80, color=True)
+    plain = render_markdown(md, width=80, color=False)
+    plain_text = strip_ansi(colored)
+    assert LINK_URL_ANSI.search(colored) is not None
+    assert "Target" in plain_text
+    assert "Display text" in plain_text
+    assert "📎" in plain_text
+    assert "![[" not in plain_text
+    assert "]]" not in plain_text
+    assert ANSI_RE.search(plain) is None
+    assert "📎" in plain
+
+
+def test_embed_wikilink_inside_fenced_code_block_is_untouched():
+    md = "prose ![[Outside]]\n```\ncode ![[Inside]]\n```\n"
+    plain_text = strip_ansi(render_markdown(md, width=80, color=True))
+    assert "📎 Outside" in plain_text
+    assert "![[Inside]]" in plain_text
+
+
 def test_render_file_heading_shows_the_path():
     out = strip_ansi(render_file_heading("notes/one.md", width=80, color=False))
     assert "notes/one.md" in out

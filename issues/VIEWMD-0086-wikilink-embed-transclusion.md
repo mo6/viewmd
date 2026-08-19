@@ -3,7 +3,7 @@ id: VIEWMD-0086
 title: Decide and document how Obsidian embed/transclusion syntax (![[Target]]) is handled
 status: in-progress
 area: [wikilinks, render, docs]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
@@ -46,4 +46,6 @@ Sits next to `viewmd/wikilinks.py`'s existing `_WIKILINK_RE`; the `!` prefix is 
 New/updated tests in `tests/test_wikilinks.py` and `tests/test_render.py` covering the chosen rendering for `![[Target]]`, `![[Target|Display]]`, inside/outside code fences. `./run-tests.sh` green.
 
 ## Peer review
+
+- (agent, implementer) Implemented treatment (a): `![[Target]]`/`![[Target|Display]]` (and `#Heading`/`#^block` suffixes) now rewrite to the same `[Display](<wikilink:Target>)` link form as a plain wikilink, with display text prefixed by a distinguishing 📎 glyph; no target content is inlined. Pinned the pre-change baseline (un-rewritten `!` fell through to Rich's broken-image-placeholder rendering of `![Target](<wikilink:Target>)`) as a documented historical note in `tests/test_wikilinks.py`/`tests/test_render.py` before changing behavior. `./run-tests.sh` pytest/ruff/pip-audit all green; this is a work summary from the implementing agent, not an independent review -- a genuinely independent pass is still needed before the maintainer's sign-off per `issues/AGILE.md`.
 
