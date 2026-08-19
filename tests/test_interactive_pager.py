@@ -62,7 +62,7 @@ def test_highlight_matches_returns_none_for_empty_query():
 
 
 def test_load_locates_every_heading_at_the_correct_row():
-    colored, plain, headings = ip._load(_DOC, 80, color_kwargs=_KW)
+    colored, plain, headings, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     assert [h.text for h in headings] == ["Title", "Alpha", "Beta", "Gamma"]
     for h in headings:
         assert ip._strip_ansi(plain[h.row]).strip() == h.text
@@ -70,12 +70,12 @@ def test_load_locates_every_heading_at_the_correct_row():
 
 
 def test_load_colored_and_plain_agree_in_length_for_ordinary_markdown():
-    colored, plain, _ = ip._load(_DOC, 80, color_kwargs=_KW)
+    colored, plain, _, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     assert len(colored) == len(plain)
 
 
 def test_nearest_heading_index_picks_the_section_currently_in_view():
-    _, _, headings = ip._load(_DOC, 80, color_kwargs=_KW)
+    _, _, headings, _ = ip._load(_DOC, 80, color_kwargs=_KW)
     beta_row = next(h.row for h in headings if h.text == "Beta")
     assert ip._nearest_heading_index(headings, top=beta_row + 2) == 2
     assert ip._nearest_heading_index(headings, top=0) == 0
@@ -83,6 +83,79 @@ def test_nearest_heading_index_picks_the_section_currently_in_view():
 
 def test_nearest_heading_index_empty_headings_is_zero():
     assert ip._nearest_heading_index([], top=5) == 0
+
+
+# --- body_start / _home_top (VIEWMD-0080) -------------------------------------------------------
+
+
+def test_load_body_start_skips_the_front_matter_table():
+    _, plain, headings, body_start = ip._load(_DOC, 80, color_kwargs=_KW)
+    assert body_start > 0
+    assert "═" in plain[body_start - 1]
+    assert ip._strip_ansi(plain[body_start]).strip() == "Title"
+    title_row = next(h.row for h in headings if h.text == "Title")
+    assert body_start == title_row
+    # Rows above body_start are the table, still in the document -- scrolling up reaches them.
+    assert any("title" in ip._strip_ansi(row) for row in plain[:body_start])
+
+
+def test_load_body_start_zero_without_front_matter():
+    _, _, _, body_start = ip._load("# Just a heading\n\nsome text\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_for_unterminated_front_matter():
+    _, _, _, body_start = ip._load("---\ntitle: Hello\n\n# Body\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_for_empty_front_matter_block():
+    _, _, _, body_start = ip._load("---\n---\n# Body\n", 80, color_kwargs=_KW)
+    assert body_start == 0
+
+
+def test_load_body_start_zero_when_all_fields_are_empty_unless_full():
+    md = "---\naccepted_by:\nreason:\n---\n# Body\n"
+    _, _, _, body_start = ip._load(md, 80, color_kwargs=_KW)
+    assert body_start == 0
+    _, plain, _, body_start = ip._load(md, 80, color_kwargs={**_KW, "full_front_matter": True})
+    assert body_start > 0
+    assert "═" in plain[body_start - 1]
+
+
+def test_load_body_start_recomputes_when_the_table_wraps():
+    keys = "\n".join(f"k{i}: v{i}" for i in range(20))
+    md = f"---\n{keys}\nlong: {'word ' * 40}\n---\n# Body\n"
+    _, _, _, wide = ip._load(md, 120, color_kwargs=_KW)
+    _, _, _, narrow = ip._load(md, 40, color_kwargs=_KW)
+    assert wide > 0
+    assert narrow > wide
+
+
+def test_home_top_is_body_start_when_the_document_overflows():
+    assert ip._home_top(body_start=10, max_top=50) == 10
+    assert ip._home_top(body_start=0, max_top=50) == 0
+
+
+def test_home_top_clamps_when_the_document_fits_on_screen():
+    # max_top == 0 means every line is already visible, so "skip the table" would just leave
+    # blank rows at the bottom -- open at 0 instead, matching every other jump's clamp.
+    assert ip._home_top(body_start=10, max_top=0) == 0
+
+
+def test_run_loader_reports_front_matter_body_start(monkeypatch):
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(_DOC, "test.md", width=80, color=False, toc=False)
+    _, plain, _, body_start = captured["loader"](80)
+    assert body_start > 0
+    assert ip._strip_ansi(plain[body_start]).strip() == "Title"
+    assert ip._home_top(body_start, max_top=50) == body_start
+    assert ip._home_top(body_start, max_top=0) == 0
 
 
 # --- _popup_box --------------------------------------------------------------------------------
@@ -217,7 +290,7 @@ def test_crop_row_call_site_uses_the_rows_own_length_not_a_mismatched_twin():
     doc = (
         "```mermaid\nkanban\n  Todo\n    a[first]\n    b[second]\n  Done\n    c[third]\n```\n"
     )
-    colored, plain, _ = ip._load(doc, 40, color_kwargs=_KW)
+    colored, plain, _, _ = ip._load(doc, 40, color_kwargs=_KW)
     divergent = [
         i for i in range(len(colored)) if len(ip._strip_ansi(colored[i])) != len(plain[i])
     ]
@@ -339,7 +412,7 @@ def test_link_at_decodes_a_toc_anchor_href():
     # href, scheme-agnostic; the interactive pager's click dispatch is what treats this scheme
     # specially (resolved by heading text + rank into `top`, never through `_resolve_link_target`).
     kw = {**_KW, "toc": True}
-    colored, _plain, _headings = ip._load("# Title\n\n## Section\n", 80, color_kwargs=kw)
+    colored, _plain, _headings, _ = ip._load("# Title\n\n## Section\n", 80, color_kwargs=kw)
     toc_line = next(line for line in colored if "Section" in ip._strip_ansi(line))
     col = _col_of(toc_line, "Section")
     assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:Section"
@@ -352,7 +425,7 @@ def test_link_at_decodes_a_toc_anchor_href_with_a_percent_looking_heading():
     # correct single decode gives back "%41", not a further-decoded "A").
     kw = {**_KW, "toc": True}
     heading_text = "Item %41 Spec"
-    colored, _plain, _headings = ip._load(f"# Title\n\n## {heading_text}\n", 80, color_kwargs=kw)
+    colored, _plain, _headings, _ = ip._load(f"# Title\n\n## {heading_text}\n", 80, color_kwargs=kw)
     toc_line = next(line for line in colored if "Item" in ip._strip_ansi(line))
     col = _col_of(toc_line, "Item")
     assert ip._link_at(toc_line, col) == f"{ip._TOC_ANCHOR_SCHEME}0:{heading_text}"
@@ -508,9 +581,10 @@ def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypa
     new_loader, new_display_name, new_doc_dir = captured["open_path"](str(sub))
     assert new_display_name == "sub/"
     assert new_doc_dir == str(sub)
-    colored, _plain, headings = new_loader(80)
+    colored, _plain, headings, body_start = new_loader(80)
     assert any("nested.md" in ip._strip_ansi(line) for line in colored)
     assert headings == []
+    assert body_start == 0
 
 
 def test_content_col_maps_through_no_scroll():

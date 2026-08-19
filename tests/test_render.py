@@ -5,6 +5,7 @@ from viewmd.render import (
     render_directory_listing,
     render_divider,
     render_file_heading,
+    render_front_matter_block,
     render_markdown,
 )
 
@@ -129,6 +130,25 @@ def test_all_empty_fields_render_no_table_by_default_but_do_with_full_front_matt
     full_out = strip_ansi(render_markdown(md, width=80, color=False, full_front_matter=True))
     assert "accepted_by" in full_out
     assert "reason" in full_out
+
+
+def test_front_matter_block_matches_render_markdown_prefix():
+    md = "---\ntitle: Hello\narea: [pager]\n---\n# Body heading\n\nbody text\n"
+    block = render_front_matter_block(md, width=80, color=False)
+    full = render_markdown(md, width=80, color=False, toc=False)
+    assert block
+    assert full.startswith(block)
+    assert "═" in block
+    assert "Body heading" not in block
+
+
+def test_front_matter_block_empty_when_no_table_would_render():
+    assert render_front_matter_block("# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block("---\n---\n# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block("---\ntitle: Hello\n# Body\n", width=80, color=False) == ""
+    assert render_front_matter_block(
+        "---\naccepted_by:\n---\n# Body\n", width=80, color=False
+    ) == ""
 
 
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).

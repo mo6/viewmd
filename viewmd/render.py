@@ -620,6 +620,28 @@ def render_divider(*, width: int, color: bool) -> str:
     return buffer.getvalue()
 
 
+def render_front_matter_block(
+    text: str, *, width: int, color: bool = False, full_front_matter: bool = False
+) -> str:
+    """The front-matter table plus divider exactly as `render_markdown` would print them, or
+    empty string if it would print neither (no front matter, an unterminated `---` block, or a
+    block that parses to no pairs -- VIEWMD-0004/0005). Isolated so the interactive pager can
+    count those lines without depending on the body (VIEWMD-0080)."""
+    raw_front_matter, _ = split_front_matter(text)
+    if raw_front_matter is None:
+        return ""
+    front_matter = parse_front_matter(raw_front_matter)
+    if not full_front_matter:
+        front_matter = drop_empty(front_matter)
+    if not front_matter:
+        return ""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(_front_matter_table(front_matter))
+    console.print(Rule(characters="═", style="dim"))
+    return buffer.getvalue()
+
+
 def _markdown_title(path: str) -> str:
     """Best-effort display title for a Markdown file at `path`: front-matter `title`, else the
     first heading, else the filename -- used by `render_directory_listing`'s per-entry metadata.
