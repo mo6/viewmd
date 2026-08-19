@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.42.0] — 2026-08-19
+
+- **Clickable `.md` file rows in the directory listing pager** (VIEWMD-0093, pager/render): a `.md` file row in the interactive directory-listing view now carries a real hyperlink, matching the subdirectory rows VIEWMD-0081 already made clickable; clicking (or Enter-ing) it opens the file in the pager, with `B` returning to the listing afterward. Non-interactive rendering and subdirectory-row behavior are unchanged.
+
 ## [1.41.0] — 2026-08-19
 
 - **Interactive pager opens past front matter, not on it** (VIEWMD-0080, pager): a document with a rendered front-matter table now starts (and `g`/`^` returns) at the first body line after the divider, instead of on the metadata table itself. The table stays reachable by scrolling up; a file with no table, and directory/multi-file views, still open at line 0.

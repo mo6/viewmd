@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0093
 title: Make .md filenames clickable in the directory listing pager
-status: in-progress
+status: implemented
 area: [pager, render]
 effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [26171d0]
 related: [VIEWMD-0081]
 supersedes: []
-changelog:
+changelog: "[1.42.0]"
 reason:
 ---
 
