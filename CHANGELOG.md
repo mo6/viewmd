@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.42.2] — 2026-08-19
+
+- **Fix stray SGR mouse-report bytes after click-to-quit** (VIEWMD-0094, pager): quitting the interactive pager by clicking `q  quit` (the `?` help-screen row or the echo-area chip) no longer leaves a leftover SGR mouse-release (`0;69;46m`) sitting on the shell prompt; the paired release is now drained with the press. Keyboard-`q` quit is unchanged.
+
 ## [1.42.1] — 2026-08-19
 
 - **Fix stale package description** (VIEWMD-0095, docs): `pyproject.toml`'s `description` no longer claims viewmd pages into `less` — VIEWMD-0072 removed the external pager entirely; the description now names viewmd's own built-in interactive pager instead.

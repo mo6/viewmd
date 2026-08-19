@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0094
 title: Clicking the 'q quit' keybinding row leaves stray SGR mouse-report bytes on the terminal after exit
-status: in-progress
+status: implemented
 area: [pager]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [a955bf4]
 related: [VIEWMD-0076, VIEWMD-0078]
 supersedes: []
-changelog:
+changelog: "[1.42.2]"
 reason:
 ---
 
