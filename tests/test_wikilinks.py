@@ -33,6 +33,27 @@ def test_wikilink_inside_indented_fenced_code_block_is_untouched():
     )
 
 
+def test_wikilink_inside_blockquote_nested_fenced_code_block_is_untouched():
+    # A fence quoted inside a blockquote (`> ` prefix) must still count as a fence (VIEWMD-0099).
+    md = "> ```\n> code [[Inside]]\n> ```\nafter [[After]]\n"
+    assert rewrite_wikilinks(md) == (
+        "> ```\n> code [[Inside]]\n> ```\nafter [After](<wikilink:After>)\n"
+    )
+
+
+def test_embed_wikilink_inside_blockquote_nested_fenced_code_block_is_untouched():
+    md = "> ```\n> code ![[Inside]]\n> ```\nafter ![[After]]\n"
+    assert rewrite_wikilinks(md) == (
+        "> ```\n> code ![[Inside]]\n> ```\nafter [📎 After](<wikilink:After>)\n"
+    )
+
+
+def test_wikilink_inside_nested_blockquote_fenced_code_block_is_untouched():
+    # A fence quoted inside two levels of blockquote nesting (`> > ` prefix).
+    md = "> > ```\n> > code [[Inside]]\n> > ```\n"
+    assert rewrite_wikilinks(md) == md
+
+
 def test_wikilink_shaped_string_inside_inline_code_is_untouched():
     md = "call `des.map([[...]])` then [[Real]]"
     assert rewrite_wikilinks(md) == "call `des.map([[...]])` then [Real](<wikilink:Real>)"
