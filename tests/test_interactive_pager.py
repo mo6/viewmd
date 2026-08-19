@@ -627,7 +627,7 @@ def test_run_directory_listing_open_path_opens_an_md_file(monkeypatch, tmp_path)
     new_loader, new_display_name, new_doc_dir = opened
     assert new_display_name == "a.md"
     assert new_doc_dir == str(tmp_path)
-    colored, _plain, headings = new_loader(80)
+    colored, _plain, headings, _body_start = new_loader(80)
     assert any("Body text." in ip._strip_ansi(line) for line in colored)
     assert len(headings) == 1
 
