@@ -295,21 +295,20 @@ def _scrollbar_thumb_range(total_lines: int, body_h: int, top: int) -> tuple[int
     return thumb_start, thumb_start + thumb_h
 
 
-def _scrollbar_prefix(total_lines: int, body_h: int, top: int, *, colored: bool) -> list[str]:
+def _scrollbar_prefix(total_lines: int, body_h: int, top: int) -> list[str]:
     """One `_SCROLLBAR_RESERVED_W`-wide prefix string per row of the `body_h`-row body, ready to
     prepend to each already-cropped content row -- the thumb glyph/color for rows the thumb
     covers, the track glyph/color everywhere else, each followed by one blank gap column
-    (VIEWMD-0079 requirement 1). `colored` is `False` for the plain (`color=False`) twin rows
-    `_overlay` needs (`draw()`'s `plain_visible`), matching how every other rendered row already
-    carries a plain-text counterpart."""
+    (VIEWMD-0079 requirement 1).
+
+    Colored unconditionally: `_overlay` slices its popup-adjacent margins straight out of the real
+    colored `visible` rows now (VIEWMD-0102), so there is no remaining caller that wants an
+    uncolored prefix on its own."""
     thumb_start, thumb_end = _scrollbar_thumb_range(total_lines, body_h, top)
     out = []
     for i in range(body_h):
         thumb = thumb_start <= i < thumb_end
         glyph = _SCROLLBAR_THUMB_GLYPH if thumb else _SCROLLBAR_TRACK_GLYPH
-        if not colored:
-            out.append(glyph + " ")
-            continue
         style = _SCROLLBAR_THUMB_STYLE if thumb else _SCROLLBAR_TRACK_STYLE
         out.append(f"{style}{glyph}{_RESET} ")
     return out
@@ -404,20 +403,28 @@ def _popup_box(
     return box, scroll
 
 
-def _overlay(
-    body_rows: list[str], plain_rows: list[str], popup: list[str], term_w: int
-) -> list[str]:
+def _overlay(body_rows: list[str], popup: list[str], term_w: int) -> list[str]:
     """Paste `popup`'s rows centered over `body_rows`, leaving everything outside the box
     untouched.
 
     Rows the popup doesn't touch are returned exactly as given, colors and all. A row the popup
-    *does* touch is rebuilt from `plain_rows` (the color=False twin of the same line, see `_load`)
-    instead of `body_rows` -- slicing a colored row at an arbitrary column is unsafe in general: a
-    color span or OSC8 hyperlink can start before the cut and still be "open" after it, so the
-    surviving fragment either leaks color/link state past the box into the popup's own text or
-    loses its own styling with no code left to restore it. Rebuilding from the plain row sidesteps
-    that at the cost of the affected row's own styling outside the box, which is invisible or a
-    minor readability trade-off -- exactly the row(s) the box sits on are the ones losing color.
+    *does* touch keeps its own real color/link state in the margins on either side of the box too
+    -- both margins are cut straight out of `body_rows[r]` itself via `_ansi_slice`, the same
+    token-walking slice `_crop_row`'s horizontal-scroll cropping already relies on to cut a
+    colored line at an arbitrary column without leaking or losing SGR/OSC8 state across the cut
+    (see `_ansi_slice`'s own docstring).
+
+    VIEWMD-0102: an earlier version rebuilt the margins from a separately-rendered `color=False`
+    twin of the document instead (`_load`'s `plain_lines`) rather than slicing the colored row
+    directly, reasoning that slicing through live color state was unsafe -- true of a naive
+    `line[start:start+width]`, but not of `_ansi_slice`, which exists precisely to do this safely.
+    That plain twin cost more than the "loses its own styling outside the box" trade-off its
+    docstring described: most diagram types render identical layouts with color on or off, but a
+    pie chart (VIEWMD-0043) renders a *structurally different* one -- a bar chart, not a de-colored
+    circle, differing even in row count from its colored twin -- so slicing it in for the margins
+    spliced in unrelated, misaligned bar-chart text on every row from the pie chart onward, not
+    merely dropped color on the popup's own rows. Slicing the real colored row directly sidesteps
+    the whole class of mismatch, for every diagram type, with no second render needed at all.
     """
     if not popup:
         return body_rows
@@ -430,17 +437,12 @@ def _overlay(
     for i, prow in enumerate(popup):
         r = top + i
         if 0 <= r < len(out):
-            base = plain_rows[r] if r < len(plain_rows) else ""
+            base = out[r]
             # The resume column after the popup must be based on `prow`'s *visible* width, not
             # its raw character count -- the selected row wraps its whole width in background-
             # color SGR codes (`_popup_box`), which would otherwise push the splice point past
             # where the box actually ends on screen and eat into the row's right-hand text.
             visible_w = _display_width(_strip_ansi(prow))
-            # `_ansi_slice`, not raw character-index slicing -- `base` is the underlying document
-            # row (`plain_rows`), which can have a wide character anywhere in it (VIEWMD-0070);
-            # cutting it at character offset `left` would land on the wrong terminal column
-            # whenever one appears before that point, the same reason `_ansi_slice` itself exists
-            # rather than a plain `line[start:start+width]`.
             left_part = _ansi_slice(base, 0, left)
             # Pad only far enough to reach the box's own left edge, as plain trailing spaces
             # (never inside a color span, and always appended after real content) -- never all
@@ -1711,17 +1713,9 @@ def _run(
         # (either from the loop above, or the padding just added), one prefix cell per row index,
         # so no `top`-relative offset is needed: row `i` here already *is* on-screen row `i`.
         if reserved:
-            prefix = _scrollbar_prefix(len(lines), body_h, top, colored=True)
+            prefix = _scrollbar_prefix(len(lines), body_h, top)
             visible = [prefix[i] + visible[i] for i in range(body_h)]
         if popup_open or help_open:
-            plain_visible = [
-                _crop_row(row, _display_width(row.rstrip(" ")), left_col, cw)
-                for row in plain_lines[top:end]
-            ]
-            plain_visible += [""] * (body_h - len(plain_visible))
-            if reserved:
-                plain_prefix = _scrollbar_prefix(len(lines), body_h, top, colored=False)
-                plain_visible = [plain_prefix[i] + plain_visible[i] for i in range(body_h)]
             if popup_open:
                 toc_hover = hover[1] if hover is not None and hover[0] == "toc" else None
                 overlay_box = _popup_box(
@@ -1732,7 +1726,9 @@ def _run(
                 overlay_box = _help_box(
                     term_w, max(3, body_h - 2), help_scroll, hover=help_hover
                 )[0]
-            visible = _overlay(visible, plain_visible, overlay_box, term_w)
+            # `_overlay` slices `visible`'s own colored rows directly (VIEWMD-0102) -- no separate
+            # plain twin needed.
+            visible = _overlay(visible, overlay_box, term_w)
         # `_CLEAR_EOL` only when the row is genuinely shorter than the terminal -- a row cropped
         # to *exactly* `term_w` (any wide diagram line, `_crop_row`'s whole point) leaves the
         # cursor sitting in a "pending wrap" state at the last column, and many terminals' erase-

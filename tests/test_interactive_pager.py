@@ -231,30 +231,72 @@ def test_popup_box_no_hover_by_default():
 
 def test_overlay_leaves_untouched_rows_exactly_as_given():
     body = [f"row {i}" for i in range(10)]
-    plain = list(body)
     popup = ["┌──┐", "│ok│", "└──┘"]
-    out = ip._overlay(body, plain, popup, term_w=20)
+    out = ip._overlay(body, popup, term_w=20)
     assert out[0] == body[0]
     assert out[-1] == body[-1]
 
 
 def test_overlay_no_popup_returns_body_unchanged():
     body = ["a", "b"]
-    assert ip._overlay(body, body, [], term_w=20) is body
+    assert ip._overlay(body, [], term_w=20) is body
 
 
 def test_overlay_does_not_pad_past_real_content():
     # Regression: an earlier version padded touched rows all the way to term_w with literal
     # spaces, painting over the terminal's own background where an erase should have been used.
     body = ["short"] * 5
-    plain = list(body)
     popup = ["┌──┐", "│ok│", "└──┘"]
-    out = ip._overlay(body, plain, popup, term_w=100)
+    out = ip._overlay(body, popup, term_w=100)
     box_top = (len(body) - len(popup)) // 2
     row = out[box_top]
     left = (100 - 4) // 2
     tail = ip._strip_ansi(row)[left + 4 :]
-    assert tail == plain[box_top][left + 4 :]
+    assert tail == body[box_top][left + 4 :]
+
+
+def test_overlay_margins_come_from_the_real_colored_row():
+    # VIEWMD-0102 regression, part 1 (content): a pie chart (VIEWMD-0043) renders a *structurally
+    # different* horizontal-bar-chart layout with color off, not a de-colored circle -- so
+    # rebuilding the popup's margins from a separately-rendered `color=False` document (as an
+    # earlier version of `_overlay` did) spliced unrelated, misaligned bar-chart text into the
+    # margins around the box, even on rows the popup never covered. Slicing the real colored row
+    # directly (this test's subject) can't drift from itself the way a second render can.
+    doc = "```mermaid\npie\n  \"A\" : 70\n  \"B\" : 30\n```\n"
+    colored, plain, _headings, _body_start = ip._load(doc, 40, color_kwargs=_KW)
+    # Fixture assumption: pie's no-color rendering really is a different layout, not just the same
+    # text minus color -- if this ever stops holding, the bug this test guards against can't recur.
+    assert plain != [ip._strip_ansi(row) for row in colored]
+
+    popup = ["┌──┐", "│ok│", "└──┘"]
+    term_w = 40
+    out = ip._overlay(colored, popup, term_w)
+    top, left = ip._popup_origin(popup, len(colored), term_w)
+    popup_w = max(ip._display_width(ip._strip_ansi(r)) for r in popup)
+    for r in range(top, top + len(popup)):
+        margin_after = ip._strip_ansi(out[r])[left + popup_w :]
+        real_after = ip._strip_ansi(colored[r])[left + popup_w :]
+        assert margin_after == real_after
+
+
+def test_overlay_margins_keep_their_own_color():
+    # VIEWMD-0102 regression, part 2 (color): even once the margin *text* matched the real row
+    # (part 1 above), an earlier fix still rebuilt margins from a colorless twin (`_strip_ansi` of
+    # the colored row) -- correct content, but every popup-adjacent row visibly lost all color,
+    # most noticeably on a color-filled diagram like a pie chart where color *is* the content, not
+    # just a highlight on top of it. `_ansi_slice` can cut the real colored row directly without
+    # that trade-off (reopening/closing whatever SGR span the cut lands inside, the same way
+    # `_crop_row`'s horizontal-scroll cropping already relies on it to), so the margins should
+    # carry the row's real color, not just its real text.
+    row = f"{ip._TRUNCATION_STYLE}" + ("x" * 30) + ip._RESET
+    popup = ["┌──┐", "│ok│", "└──┘"]
+    term_w = 40
+    body = [row] * 10
+    out = ip._overlay(body, popup, term_w)
+    top, left = ip._popup_origin(popup, len(body), term_w)
+    assert left > 0  # a left margin actually exists to check color in
+    touched = out[top]
+    assert ip._TRUNCATION_STYLE in touched, "margin around the popup lost the row's real color"
 
 
 # --- _ansi_slice / _crop_row -----------------------------------------------------------------
@@ -467,8 +509,8 @@ def test_scrollbar_thumb_range_never_exceeds_body_h():
     assert 0 <= start < end <= 20
 
 
-def test_scrollbar_prefix_colored_marks_thumb_and_track_distinctly():
-    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=True)
+def test_scrollbar_prefix_marks_thumb_and_track_distinctly():
+    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0)
     assert len(prefix) == 10
     thumb_start, thumb_end = ip._scrollbar_thumb_range(100, 10, 0)
     for i, cell in enumerate(prefix):
@@ -476,14 +518,6 @@ def test_scrollbar_prefix_colored_marks_thumb_and_track_distinctly():
         glyph = ip._SCROLLBAR_THUMB_GLYPH if is_thumb else ip._SCROLLBAR_TRACK_GLYPH
         assert glyph in cell
         assert "\x1b[" in cell  # colored
-
-
-def test_scrollbar_prefix_plain_has_no_color_but_keeps_glyphs():
-    prefix = ip._scrollbar_prefix(total_lines=100, body_h=10, top=0, colored=False)
-    assert len(prefix) == 10
-    for cell in prefix:
-        assert "\x1b[" not in cell
-        assert ip._SCROLLBAR_THUMB_GLYPH in cell or ip._SCROLLBAR_TRACK_GLYPH in cell
 
 
 # --- _link_at / _resolve_link_target / _content_col (VIEWMD-0076) ------------------------------
@@ -1355,7 +1389,7 @@ def test_help_box_never_fills_the_full_body_edge_to_edge():
     body_h = len(full)
     body_rows = [f"document line {i}" for i in range(body_h)]
     capped, _capped_invokes = ip._help_box(term_w=100, avail_h=max(3, body_h - 2))
-    overlaid = ip._overlay(body_rows, body_rows, capped, term_w=100)
+    overlaid = ip._overlay(body_rows, capped, term_w=100)
     assert "┌" not in ip._strip_ansi(overlaid[0])
     assert "└" not in ip._strip_ansi(overlaid[-1])
 
@@ -1458,9 +1492,8 @@ def test_overlay_stays_column_aligned_around_a_wide_character():
     # popup's left border in a real terminal -- character-index splicing landed one column short
     # of where display-column splicing should have cut.
     body = [f"{_WIDE} viewmd demo" + " " * 88] * 5  # a 100-col-wide row with a wide char at col 0
-    plain = list(body)
     popup = ["┌────┐", "│ ok │", "└────┘"]
-    out = ip._overlay(body, plain, popup, term_w=100)
+    out = ip._overlay(body, popup, term_w=100)
     popup_w = max(ip._display_width(row) for row in popup)
     left = max(0, (100 - popup_w) // 2)
     box_top = (len(body) - len(popup)) // 2
