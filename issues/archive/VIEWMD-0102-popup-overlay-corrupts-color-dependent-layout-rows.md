@@ -1,21 +1,21 @@
 ---
 id: VIEWMD-0102
-title: Fix ToC/help popup corrupting rows whose no-color layout differs from its colored one
-status: in-progress
+title: Fix ToC/help popup corrupting content and color in the rows around it
+status: implemented
 area: [pager, render]
 effort: medium
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [6167522, 914deac]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.46.4]"
 reason:
 ---
 
-# Fix ToC/help popup corrupting rows whose no-color layout differs from its colored one
+# Fix ToC/help popup corrupting content and color in the rows around it
 
 ## Summary
 

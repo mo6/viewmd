@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.46.4] — 2026-08-19
+
+- **Fix the ToC/help popup corrupting content and color in the rows around it** (VIEWMD-0102, bug): `_overlay` no longer rebuilds a popup-touched row's margins from a separately-rendered `color=False` twin of the document — for a pie chart (VIEWMD-0043), whose no-color rendering is a structurally different bar-chart layout, that twin diverged in both content and total row count from the colored one, corrupting the diagram with unrelated bar-chart text and misaligning every row below it. Margins are now sliced straight out of the real colored row via `_ansi_slice`, which also restores the row's own color there instead of leaving it monochrome.
+
 ## [1.46.3] — 2026-08-19
 
 - **Fix horizontal scroll stopping one column short of a row's true right edge** (VIEWMD-0101, bug): scrolling all the way right on a row wider than the terminal now reaches the row's actual last column — the max-scroll cap (`max_left_col`, four call sites) previously didn't account for the `‹` truncation marker's own reserved column at the fully-scrolled position, so the rightmost content stayed permanently hidden with no `›` marker to hint at it. Factored into a shared `_max_left_col` helper.
