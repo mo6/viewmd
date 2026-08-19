@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0099
 title: Wikilink fence detection misses code fences indented under a blockquote marker
-status: proposed
+status: in-progress
 area: [wikilinks]
-effort:
+effort: low
 created: 2026-08-19
 updated: 2026-08-19
-accepted_by:
-accepted_at:
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-19
 commits: []
 related: [VIEWMD-0006, VIEWMD-0086]
 supersedes: []
