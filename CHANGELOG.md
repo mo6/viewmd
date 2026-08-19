@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.43.2] — 2026-08-19
+
+- **Mention mouse/scroll support in the package description** (VIEWMD-0097, docs): `pyproject.toml`'s `description` now names the interactive pager as mouse-driven and scrollable, not just "interactive."
+
 ## [1.43.1] — 2026-08-19
 
 - **Fix stale directory-listing click-nav claim in the README** (VIEWMD-0096, docs): the Interactive pager section now mentions hover highlighting and documents that a bare directory listing's subdirectory and `.md` file rows are click-navigable, correcting a footnote that had claimed click-to-follow was inert there since before VIEWMD-0081 shipped it.

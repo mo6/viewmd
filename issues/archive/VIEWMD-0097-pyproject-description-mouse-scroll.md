@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0097
 title: Mention mouse/scroll support in pyproject.toml's package description
-status: in-progress
+status: implemented
 area: [docs]
 effort: low
 created: 2026-08-19
 updated: 2026-08-19
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-19
-commits: []
+commits: [a9b225d]
 related: [VIEWMD-0095]
 supersedes: []
-changelog:
+changelog: "[1.43.2]"
 reason:
 ---
 
