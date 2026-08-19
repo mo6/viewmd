@@ -82,8 +82,11 @@ a directory listing with no index file, or more than one path at once — pages 
 interactive pager. viewmd never spawns an external pager process: no `less` by default, and no
 `$PAGER` override either — mouse-wheel/trackpad scrolling, search with match highlighting,
 horizontal scrolling for a Mermaid diagram or code block wider than the terminal, hover highlighting
-of whatever clickable thing the mouse is over, and more are all built in. Press `?` at any time for
-the full keybinding reference; a few of the more useful ones:
+of whatever clickable thing the mouse is over, and more are all built in. The pager is Unix-only
+(macOS, Linux, BSD, WSL); native Windows is not supported, because it talks to the terminal via
+`termios` and `/dev/tty`, which Windows Python does not provide.
+
+Press `?` at any time for the full keybinding reference; a few of the more useful ones:
 
 ```
 up/down, wheel, j/k     scroll one line                    t        open the table of contents*
