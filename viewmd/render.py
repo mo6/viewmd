@@ -763,7 +763,15 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: i
     than widening that resolver's contract.
     """
     table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    table.add_column("Name", style="cyan", no_wrap=True)
+    # `max_width` caps how much a long filename can squeeze the wrapping `Title` column: Rich's
+    # column-sizing algorithm treats a `no_wrap` column's minimum width as its full content width
+    # (so without a cap, one long name forces every other column, including `Title`, into
+    # whatever's left -- observed wrapping a short title across 6 lines). 55 comfortably fits this
+    # project's own real issue filenames (median ~40 chars, all but the single longest of the 27
+    # files under `issues/` at the time this was chosen) while still leaving meaningful room for
+    # `Title`; `overflow="ellipsis"` truncates the rare longer name with a trailing `…` rather than
+    # reverting to the old unbounded-width behavior.
+    table.add_column("Name", style="cyan", no_wrap=True, max_width=55, overflow="ellipsis")
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
     table.add_column("Size", no_wrap=True)

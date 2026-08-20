@@ -805,6 +805,43 @@ def test_run_directory_listing_depth_carries_over_into_a_navigated_subdirectory(
     assert any("deepest.md" in ip._strip_ansi(line) for line in colored)
 
 
+def test_run_directory_listing_loader_narrows_for_scrollbar_when_listing_overflows(
+    monkeypatch, tmp_path
+):
+    # Bug found in manual maintainer testing: `render_directory_listing`'s table used to be
+    # rendered at the *full* width `w` inside `make_loader`, with no way to know yet whether
+    # `_run` would end up reserving `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079)
+    # -- once there were enough rows to trigger one, `draw()`'s crop silently truncated the
+    # table's own right border/rightmost column on every single row (a `›` marker on every
+    # line). `make_loader` now checks the rendered line count against the terminal's available
+    # body height and, if it overflows, re-renders at `w - _SCROLLBAR_RESERVED_W` so the table
+    # already fits the space the scrollbar will actually leave.
+    for i in range(30):
+        (tmp_path / f"file-{i:02d}.md").write_text(f"# File {i}\n")
+
+    # A small terminal (`lines=10` -> `body_h = 10 - 2 = 8`) so 30 files' worth of rows overflow.
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10))
+    )
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=100, color=False)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
 # --- .md file rows clickable in the directory listing (VIEWMD-0093) -----------------------------
 
 
@@ -1591,6 +1628,49 @@ def test_run_directory_listing_falls_back_to_plain_print(monkeypatch, capsys, tm
     ip.run_directory_listing(str(tmp_path), width=80, color=False)
     out = capsys.readouterr().out
     assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+
+
+def test_run_multi_file_loader_narrows_directory_width_for_scrollbar_when_overflowing(
+    monkeypatch, tmp_path
+):
+    # Same two-pass scrollbar problem as `run_directory_listing`, applied to a bare directory
+    # listing embedded among a multi-file concatenation's entries: `directory_width` is a fixed
+    # full-terminal-width value that doesn't shrink for the 'w' toggle, so if the whole
+    # concatenation ends up tall enough to need a scrollbar, the embedded listing's own table
+    # (rendered at the un-reduced `directory_width`) would get silently cropped by `draw()` the
+    # same way. `run_multi_file`'s loader now re-renders at `directory_width -
+    # _SCROLLBAR_RESERVED_W` once it detects the whole thing overflows the body.
+    for i in range(30):
+        (tmp_path / f"file-{i:02d}.md").write_text(f"# File {i}\n")
+    entries = [(str(tmp_path), None)]
+
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10))
+    )
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=100, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    # Only the embedded directory-listing table's own rows are under test here (its own file
+    # heading line above it is a long absolute `tmp_path`, unrelated pre-existing overflow with
+    # nothing to do with the scrollbar-cropping bug this test targets).
+    table_plain = [line for line in plain if line[:1] in "│╭├╰"]
+    table_colored = [line for line in colored if ip._strip_ansi(line)[:1] in "│╭├╰"]
+    assert table_plain
+    for line in table_plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in table_colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
 
 
 def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):

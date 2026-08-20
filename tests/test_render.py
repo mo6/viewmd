@@ -337,6 +337,66 @@ def test_render_directory_listing_no_file_link_without_color(tmp_path):
     assert "a.md" in out
 
 
+def _column_widths(out: str) -> list[int]:
+    """Segment widths (Name, Type, Title, Size, Modified) of a `render_directory_listing` table,
+    read off its own top border row (`╭─...─┬─...─┬...─╮`) rather than the header text, since a
+    column's rendered width (its actual constraint on wrapping) includes the padding either side
+    of the label, not just the label's own length."""
+    border = next(line for line in out.split("\n") if line.startswith("╭"))
+    return [len(seg) for seg in border.strip("╭╮").split("┬")]
+
+
+def test_render_directory_listing_caps_a_long_name_with_an_ellipsis(tmp_path):
+    # Bug found in manual maintainer testing: `Name` had no `max_width`, so Rich's column-sizing
+    # algorithm treated a `no_wrap` column's minimum width as its full content width, meaning a
+    # long filename never shrank and squeezed every wrapping column (`Title`) into whatever was
+    # left instead. `Name` now caps at 55 with `overflow="ellipsis"`.
+    long_name = "a" * 80 + ".md"
+    (tmp_path / long_name).write_text("# Heading\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=160, color=False))
+
+    assert long_name not in out  # the full 83-char name never appears uncapped
+    assert "a" * 54 + "…" in out  # truncated to the 55-char cap, last char replaced by the marker
+    name_col_w = _column_widths(out)[0]
+    assert name_col_w <= 55 + 2  # +2 for Rich's one-space padding either side of the cell
+
+
+def test_render_directory_listing_title_column_wider_with_a_long_name_present(tmp_path):
+    # Companion to the cap test above: verify the *point* of the cap actually holds -- with the
+    # `Name` column no longer able to grow past 55, `Title` gets materially more of the remaining
+    # width than an uncapped `Name` column (built the same way `render_directory_listing` used to,
+    # before this fix) would have left it. Reproduces the maintainer's own screenshot scenario: a
+    # long filename alongside a long title sentence that used to wrap across 6 narrow lines.
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    long_name = "VIEWMD-0031-er-layout-legibility-review-with-a-really-long-filename-example.md"
+    title = ("Review Mermaid ER diagram entity placement and connector routing for "
+             "unnecessary visual clutter on small diagrams")
+    (tmp_path / long_name).write_text(f"---\ntitle: {title}\n---\n\nbody\n")
+
+    fixed_out = render_directory_listing(str(tmp_path), width=120, color=False)
+    fixed_title_w = _column_widths(fixed_out)[2]
+
+    # The pre-fix shape: the same five columns, but `Name` with no `max_width`/`overflow`.
+    old_table = Table(show_header=True, box=box.ROUNDED, expand=False)
+    old_table.add_column("Name", no_wrap=True)
+    old_table.add_column("Type", no_wrap=True)
+    old_table.add_column("Title")
+    old_table.add_column("Size", no_wrap=True)
+    old_table.add_column("Modified", no_wrap=True)
+    old_table.add_row(long_name, "file", title, "135B", "2026-08-20 20:25")
+    import io
+    buf = io.StringIO()
+    Console(file=buf, width=120, force_terminal=False).print(old_table)
+    old_out = buf.getvalue()
+    old_title_w = _column_widths(old_out)[2]
+
+    assert fixed_title_w > old_title_w
+
+
 def test_render_directory_listing_does_not_recurse(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()

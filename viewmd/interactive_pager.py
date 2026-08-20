@@ -1394,6 +1394,24 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool, depth: int 
             plain = render_directory_listing(
                 d, width=w, color=False, depth=depth
             ).rstrip("\n").split("\n")
+            # The table above was rendered at the *full* width `w`, but `draw()` only knows
+            # whether `_run` will actually reserve `_SCROLLBAR_RESERVED_W` columns for a
+            # scrollbar (VIEWMD-0079) after seeing how many lines this listing came out to --
+            # a two-pass problem. If it turns out a scrollbar will be shown (this listing has
+            # more rows than fit in the body), re-render both versions at the narrower width the
+            # scrollbar will actually leave available, so the table's own right border and
+            # rightmost column already fit inside that space and `draw()`'s crop becomes a no-op
+            # for this content instead of silently truncating every row (matches how `_run`
+            # itself computes `body_h`: terminal lines minus the mode line and echo area).
+            body_h = shutil.get_terminal_size().lines - 2
+            if len(plain) > body_h:
+                narrow_w = w - _SCROLLBAR_RESERVED_W
+                colored = render_directory_listing(
+                    d, width=narrow_w, color=True, depth=depth
+                ).rstrip("\n").split("\n")
+                plain = render_directory_listing(
+                    d, width=narrow_w, color=False, depth=depth
+                ).rstrip("\n").split("\n")
             return colored, plain, [], 0
 
         return loader
@@ -1459,7 +1477,27 @@ def run_multi_file(
                                     full_front_matter=full_front_matter, toc=toc)
         plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
                                   full_front_matter=full_front_matter, toc=toc)
-        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), [], 0
+        colored_lines = colored.rstrip("\n").split("\n")
+        plain_lines = plain.rstrip("\n").split("\n")
+        # Same two-pass scrollbar problem as `run_directory_listing.make_loader` above, applied to
+        # any embedded bare directory listing's own table: `directory_width` is a fixed
+        # full-terminal-width value that doesn't shrink for the 'w' toggle, so if the whole
+        # concatenation ends up tall enough to need a scrollbar, an embedded listing's table
+        # (rendered at the un-reduced `directory_width`) gets its right border/column silently
+        # cropped by `draw()` exactly like the single-listing case. Only re-render when there's
+        # actually a directory listing among the entries -- other content already wraps to `w`.
+        body_h = shutil.get_terminal_size().lines - 2
+        if len(plain_lines) > body_h and any(text is None for _, text in entries):
+            narrow_dw = directory_width - _SCROLLBAR_RESERVED_W
+            colored_lines = render_multi_file(
+                entries, width=w, directory_width=narrow_dw, color=True,
+                full_front_matter=full_front_matter, toc=toc
+            ).rstrip("\n").split("\n")
+            plain_lines = render_multi_file(
+                entries, width=w, directory_width=narrow_dw, color=False,
+                full_front_matter=full_front_matter, toc=toc
+            ).rstrip("\n").split("\n")
+        return colored_lines, plain_lines, [], 0
 
     display_name = f"{len(entries)} files"
     _run(
