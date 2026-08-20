@@ -90,21 +90,28 @@ def test_display_directory_listing_prints_directly_when_not_paging(monkeypatch, 
 
     (tmp_path / "a.md").write_text("# A\n")
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: False)
-    pager.display_directory_listing(str(tmp_path), no_pager=False, width=80, color=False)
+    # `directory_width` (60) is what the non-interactive fallback prints at -- `width` (80, the
+    # document default) is unused on this path, deliberately different here to prove that
+    # (VIEWMD-0089).
+    pager.display_directory_listing(
+        str(tmp_path), no_pager=False, width=80, directory_width=60, color=False
+    )
     out = capsys.readouterr().out
-    assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+    assert out == render_directory_listing(str(tmp_path), width=60, color=False)
 
 
 def test_display_directory_listing_uses_interactive_pager_when_paging(monkeypatch, tmp_path):
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color, depth):
-        calls.append((dir_path, width, color, depth))
+    def fake_run(dir_path, *, width, directory_width, color, depth):
+        calls.append((dir_path, width, directory_width, color, depth))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
-    pager.display_directory_listing(str(tmp_path), no_pager=False, width=80, color=True)
-    assert calls == [(str(tmp_path), 80, True, 1)]
+    pager.display_directory_listing(
+        str(tmp_path), no_pager=False, width=80, directory_width=60, color=True
+    )
+    assert calls == [(str(tmp_path), 80, 60, True, 1)]
 
 
 # --- display_multi_file (VIEWMD-0072) --------------------------------------------------------

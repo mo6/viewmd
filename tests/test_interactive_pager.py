@@ -768,12 +768,16 @@ def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypa
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    # `width` (document default) and `directory_width` (listing default) deliberately differ so a
+    # subdirectory target's returned default width (VIEWMD-0089) can be told apart from a
+    # document's -- a subdirectory row should get `directory_width` back, not `width`.
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=120, color=False)
 
     assert captured["doc_dir"] == str(tmp_path)
-    new_loader, new_display_name, new_doc_dir = captured["open_path"](str(sub))
+    new_loader, new_display_name, new_doc_dir, new_default_width = captured["open_path"](str(sub))
     assert new_display_name == "sub/"
     assert new_doc_dir == str(sub)
+    assert new_default_width == 120
     colored, _plain, headings, body_start = new_loader(80)
     assert any("nested.md" in ip._strip_ansi(line) for line in colored)
     assert headings == []
@@ -798,9 +802,11 @@ def test_run_directory_listing_depth_carries_over_into_a_navigated_subdirectory(
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False, depth=2)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False, depth=2)
 
-    new_loader, _new_display_name, _new_doc_dir = captured["open_path"](str(sub))
+    new_loader, _new_display_name, _new_doc_dir, _new_default_width = captured["open_path"](
+        str(sub)
+    )
     colored, _plain, _headings, _body_start = new_loader(80)
     assert any("deepest.md" in ip._strip_ansi(line) for line in colored)
 
@@ -830,7 +836,7 @@ def test_run_directory_listing_loader_narrows_for_scrollbar_when_listing_overflo
         captured["loader"] = loader
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=100, color=False)
+    ip.run_directory_listing(str(tmp_path), width=100, directory_width=100, color=False)
 
     w = 100
     colored, plain, _headings, _body_start = captured["loader"](w)
@@ -875,13 +881,17 @@ def test_run_directory_listing_open_path_opens_an_md_file(monkeypatch, tmp_path)
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    # `width` (document default) and `directory_width` (listing default) deliberately differ, the
+    # same way they do in real usage when `--width` is omitted (VIEWMD-0089) -- a `.md` file
+    # target must get `width` back, not `directory_width`.
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=200, color=False)
 
     opened = captured["open_path"](str(tmp_path / "a.md"))
     assert opened is not None
-    new_loader, new_display_name, new_doc_dir = opened
+    new_loader, new_display_name, new_doc_dir, new_default_width = opened
     assert new_display_name == "a.md"
     assert new_doc_dir == str(tmp_path)
+    assert new_default_width == 80
     colored, _plain, headings, _body_start = new_loader(80)
     assert any("Body text." in ip._strip_ansi(line) for line in colored)
     assert len(headings) == 1
@@ -894,11 +904,191 @@ def test_run_directory_listing_open_path_returns_none_for_unreadable_file(monkey
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False)
 
     # Never written -- resolved and then removed/never-existed by the time open_path runs, the
     # same race `run()`'s own open_path guards against (VIEWMD-0076).
     assert captured["open_path"](str(tmp_path / "missing.md")) is None
+
+
+# --- width-reset-on-navigation bug (VIEWMD-0089, per maintainer's manual testing) --------------
+#
+# Opening a directory listing with no explicit --width defaults its own table to the full
+# terminal width (VIEWMD-0071's `directory_width`), while a plain `.md` file defaults to a
+# narrower, prose-readability-capped width. Before this fix, `_run`'s `configured_width` was set
+# once at the top of the session and never updated on navigation -- so a `.md` file clicked open
+# from inside a directory listing kept inheriting the *listing's* full-width baseline instead of
+# getting its own default, and going back with 'B' would then apply whatever width was active at
+# that moment rather than restoring the width the target being returned to actually used. These
+# tests drive the real event loop (via a pipe standing in for /dev/tty, the same technique
+# `_run_pager_with_input` above uses for `run()`) rather than only checking `open_path`'s return
+# value in isolation, so they also cover `_run`'s own click-dispatch/`nav_stack` wiring, not just
+# the contract `open_path` promises to satisfy.
+
+
+def _run_dir_pager_with_input(
+    monkeypatch, dir_path: str, data: bytes, *, term_size, width, directory_width, depth=1
+) -> None:
+    """Drive `run_directory_listing()` against a pipe standing in for `/dev/tty`, feeding `data`
+    as the pager's input -- the `run_directory_listing()` analogue of `_run_pager_with_input`
+    above."""
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
+    pager_fd = os.dup(r)
+
+    real_open = ip.os.open
+
+    def fake_open(path, flags, *args, **kwargs):
+        if path == "/dev/tty":
+            return pager_fd
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    monkeypatch.setattr(ip.termios, "tcgetattr", lambda fd: [0, 0, 0, 0, 0, 0, [0] * 32])
+    monkeypatch.setattr(ip.termios, "tcsetattr", lambda fd, when, mode: None)
+    monkeypatch.setattr(ip.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
+    )
+
+    ip.run_directory_listing(
+        dir_path, width=width, directory_width=directory_width, color=False, depth=depth
+    )
+    os.close(r)
+
+
+def _click_bytes(col: int, row: int) -> bytes:
+    """A press+release SGR mouse-click pair at 1-indexed screen column/row -- the same encoding
+    `test_echo_area_click_quit_consumes_paired_sgr_release` above uses."""
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    return press + release
+
+
+def test_navigating_into_a_file_from_a_directory_listing_uses_the_files_own_default_width(
+    monkeypatch, tmp_path
+):
+    # The exact bug scenario: `--width` omitted, so `directory_width` (the listing's own default,
+    # full terminal width) and `width` (a document's own default, prose-capped) genuinely differ
+    # -- clicking a `.md` file row must render it at `width`, not `directory_width`.
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    directory_width, doc_width = 200, 100
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=directory_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1  # 1-indexed SGR column
+    row = line_no + 1  # 1-indexed SGR row (top == 0, so doc_row == body_row)
+
+    load_calls: list[int] = []
+    real_load = ip._load
+
+    def spy_load(text, w, *, color_kwargs):
+        load_calls.append(w)
+        return real_load(text, w, color_kwargs=color_kwargs)
+
+    monkeypatch.setattr(ip, "_load", spy_load)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"q",
+        term_size=(term_w, term_h),
+        width=doc_width,
+        directory_width=directory_width,
+    )
+
+    assert load_calls == [doc_width]
+
+
+def test_going_back_from_a_navigated_file_restores_the_listings_own_width(monkeypatch, tmp_path):
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    directory_width, doc_width = 200, 100
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=directory_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1
+    row = line_no + 1
+
+    import viewmd.render as render_mod
+
+    render_calls: list[int] = []
+    real_render = render_mod.render_directory_listing
+
+    def spy_render(d, *, width, color, depth=1):
+        render_calls.append(width)
+        return real_render(d, width=width, color=color, depth=depth)
+
+    # `run_directory_listing()`'s `make_loader` does `from viewmd.render import
+    # render_directory_listing` *inside* the function body on every call, so it always resolves
+    # against `viewmd.render`'s own module attribute at call time -- patching that module
+    # attribute (not any name on `ip`, which never binds it at module scope) is what's needed for
+    # the spy to actually intercept it.
+    monkeypatch.setattr(render_mod, "render_directory_listing", spy_render)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"Bq",
+        term_size=(term_w, term_h),
+        width=doc_width,
+        directory_width=directory_width,
+    )
+
+    # The listing is re-rendered (colored + plain twin) once up front and once more on 'B' going
+    # back to it -- every one of those calls must be at `directory_width`, never the document's
+    # `doc_width` that was briefly `configured_width` while the file was open.
+    assert len(render_calls) >= 2
+    assert all(w == directory_width for w in render_calls)
+
+
+def test_navigating_into_a_file_with_explicit_width_is_unchanged(monkeypatch, tmp_path):
+    # No visible behavior change when --width was explicitly passed: `width` and `directory_width`
+    # already come out equal in that case (viewmd/__main__.py), so this locks in that a future
+    # regression here (e.g. `width`/`directory_width` accidentally diverging when both were
+    # supplied explicitly) would be caught.
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    same_width = 80
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=same_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1
+    row = line_no + 1
+
+    load_calls: list[int] = []
+    real_load = ip._load
+
+    def spy_load(text, w, *, color_kwargs):
+        load_calls.append(w)
+        return real_load(text, w, color_kwargs=color_kwargs)
+
+    monkeypatch.setattr(ip, "_load", spy_load)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"q",
+        term_size=(term_w, term_h),
+        width=same_width,
+        directory_width=same_width,
+    )
+
+    assert load_calls == [same_width]
 
 
 def test_content_col_maps_through_no_scroll():
@@ -1625,7 +1815,7 @@ def test_run_directory_listing_falls_back_to_plain_print(monkeypatch, capsys, tm
         raise OSError("no controlling terminal")
 
     monkeypatch.setattr(ip.os, "open", fake_open)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False)
     out = capsys.readouterr().out
     assert out == render_directory_listing(str(tmp_path), width=80, color=False)
 

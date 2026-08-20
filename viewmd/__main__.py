@@ -173,8 +173,8 @@ def main(argv: list[str] | None = None) -> int:
         # print that warning even for a `--depth` value that goes on to have no effect at all.
         from viewmd.pager import display_directory_listing
         depth = _resolve_depth(coalesce(args.depth, cfg.depth))
-        display_directory_listing(path, no_pager=args.no_pager, width=directory_width,
-                                  color=color, depth=depth)
+        display_directory_listing(path, no_pager=args.no_pager, width=width,
+                                  directory_width=directory_width, color=color, depth=depth)
         return 0
 
     had_error = False

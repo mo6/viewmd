@@ -373,15 +373,18 @@ def test_directory_listing_pages_via_the_interactive_pager_when_tty(tmp_path, mo
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color, depth):
-        calls.append((dir_path, width, color, depth))
+    def fake_run(dir_path, *, width, directory_width, color, depth):
+        calls.append((dir_path, width, directory_width, color, depth))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
 
     rc = main(["--color", "never", "--width", "80", str(tmp_path)])
 
     assert rc == 0
-    assert calls == [(str(tmp_path), 80, False, 1)]
+    # An explicit --width applies identically to both the document default and the listing's own
+    # width (VIEWMD-0089) -- they only diverge when --width is *omitted* (see
+    # test_interactive_pager.py's width-reset-on-navigation coverage for that case).
+    assert calls == [(str(tmp_path), 80, 80, False, 1)]
 
 
 def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
