@@ -772,12 +772,19 @@ def _markdown_title(path: str) -> str:
     return os.path.basename(path)
 
 
-def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
+def render_directory_listing(
+    dir_path: str, *, width: int, color: bool, theme: str = "dark"
+) -> str:
     """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
     directory with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
     subdirectories and Markdown files only (no recursion), subdirectories first then files, each
     alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
     to propagate, matching how an unreadable file is handled elsewhere in this module.
+
+    NOTE for whoever merges this branch with VIEWMD-0089 (not yet merged as of this change): that
+    branch independently extends this same function (a `depth` parameter, a `Size` column,
+    filename truncation) without any theme awareness -- reconciling the two branches' changes to
+    `render_directory_listing` is expected merge work, out of scope here.
     """
     entry_names = os.listdir(dir_path)
     dirs = sorted(
@@ -788,8 +795,11 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
         if name.lower().endswith(".md") and os.path.isfile(os.path.join(dir_path, name))
     )
 
-    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    table.add_column("Name", style="cyan", no_wrap=True)
+    header_style, column_style = _TABLE_STYLE_BY_THEME.get(
+        theme, _TABLE_STYLE_BY_THEME["dark"]
+    )
+    table = Table(show_header=True, header_style=header_style, box=box.ROUNDED, expand=False)
+    table.add_column("Name", style=column_style, no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
     table.add_column("Modified", no_wrap=True)
@@ -849,7 +859,8 @@ def render_multi_file(
             parts.append(render_divider(width=width, color=color))
         parts.append(render_file_heading(display_path, width=width, color=color))
         if text is None:
-            parts.append(render_directory_listing(display_path, width=directory_width, color=color))
+            parts.append(render_directory_listing(display_path, width=directory_width,
+                                                    color=color, theme=theme))
         else:
             parts.append(render_markdown(text, width=width, color=color,
                                          full_front_matter=full_front_matter, toc=toc,

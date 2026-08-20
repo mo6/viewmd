@@ -46,16 +46,18 @@ def display_document(
        theme=theme)
 
 
-def display_directory_listing(dir_path: str, *, no_pager: bool, width: int, color: bool) -> None:
+def display_directory_listing(
+    dir_path: str, *, no_pager: bool, width: int, color: bool, theme: str = "dark"
+) -> None:
     """Page a bare directory listing (VIEWMD-0065, no `_Index.md` note), interactively via
     `viewmd.interactive_pager.run_directory_listing` (VIEWMD-0072) when paging applies."""
     if not should_page(no_pager):
-        print(render_directory_listing(dir_path, width=width, color=color), end="")
+        print(render_directory_listing(dir_path, width=width, color=color, theme=theme), end="")
         return
 
     from viewmd.interactive_pager import run_directory_listing
 
-    run_directory_listing(dir_path, width=width, color=color)
+    run_directory_listing(dir_path, width=width, color=color, theme=theme)
 
 
 def display_multi_file(

@@ -529,6 +529,51 @@ def test_render_directory_listing_does_not_recurse(tmp_path):
     assert "nested.md" not in out
 
 
+def test_directory_listing_theme_light_differs_from_dark_and_is_not_the_old_cyan_codes(tmp_path):
+    # VIEWMD-0091 (amended requirement 6): the directory-listing table's header/Name-column accent
+    # reuses `_TABLE_STYLE_BY_THEME`, the same dict the front-matter table already uses -- dark
+    # stays plain-cyan (today's unchanged SGR 36 codes), light switches to the Primer NOTE blue
+    # `#0969da` (a truecolor `38;2;9;105;218`/`48;...` sequence), so the two must render with
+    # disjoint color codes, not just "differ" for some unrelated reason.
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    # "\x1b[0m" (plain reset) and "\x1b[1m" (plain bold, shared by the header style in both
+    # themes) are excluded -- neither is specific to a theme's own accent color, unlike the
+    # actual color codes below. OSC8 hyperlinks carry a random `id=` (VIEWMD-0081), so are
+    # excluded from this particular comparison too.
+    _neutral = ("\x1b[0m", "\x1b[1m", "\x1b]8;;\x1b\\")
+    dark_codes = {
+        c for c in ANSI_RE.findall(dark) if c not in _neutral and "id=" not in c
+    }
+    light_codes = {
+        c for c in ANSI_RE.findall(light) if c not in _neutral and "id=" not in c
+    }
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+    assert "9;105;218" in light  # #0969da's truecolor RGB triplet
+    assert "\x1b[36m" not in light and "\x1b[1;36m" not in light
+
+
+def test_directory_listing_theme_defaults_to_dark_cyan_unchanged(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    omitted = render_directory_listing(str(tmp_path), width=80, color=True)
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    # Normalize the OSC8 hyperlink's random `id=` (VIEWMD-0081) before comparing, the same way
+    # prior VIEWMD-0091 verification passes did when diffing full renders.
+    id_re = re.compile(r"id=\d+")
+    assert id_re.sub("id=X", omitted) == id_re.sub("id=X", dark)
+
+
+def test_directory_listing_no_color_output_is_unaffected_by_theme(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=False, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=False, theme="light")
+    assert dark == light
+
+
 def test_render_divider_matches_the_front_matter_divider_style():
     md = "---\ntitle: Hello\n---\n# Body\n"
     front_matter_out = render_markdown(md, width=80, color=False)

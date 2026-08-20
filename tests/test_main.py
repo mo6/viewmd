@@ -282,15 +282,15 @@ def test_directory_listing_pages_via_the_interactive_pager_when_tty(tmp_path, mo
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color):
-        calls.append((dir_path, width, color))
+    def fake_run(dir_path, *, width, color, theme):
+        calls.append((dir_path, width, color, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
 
     rc = main(["--color", "never", "--width", "80", str(tmp_path)])
 
     assert rc == 0
-    assert calls == [(str(tmp_path), 80, False)]
+    assert calls == [(str(tmp_path), 80, False, "dark")]
 
 
 def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
@@ -328,9 +328,9 @@ def test_directory_listing_defaults_to_full_terminal_width(tmp_path, capsys, mon
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, theme):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, theme=theme)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
@@ -348,9 +348,9 @@ def test_directory_listing_explicit_width_overrides_the_full_default(tmp_path, c
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, theme):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, theme=theme)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
@@ -800,3 +800,34 @@ def test_cli_theme_light_reaches_code_fence_highlighting_end_to_end(tmp_path, ca
     light_codes = set(re.findall(r"\x1b\[[0-9;]*m", light_out)) - {"\x1b[0m"}
     assert dark_codes and light_codes
     assert not (light_codes & dark_codes)
+
+
+# VIEWMD-0091 amended requirement 6: `--theme light` must reach the bare-directory-listing
+# table's header/Name-column accent color *through the actual CLI entry point* --
+# `render_directory_listing`'s `Table(..., header_style="bold cyan")`/`add_column("Name",
+# style="cyan")` used to be hardcoded regardless of `--theme`, invisible to any test that hands
+# `theme=` directly to `render_directory_listing` rather than tracing the flag all the way from
+# `main()` (the same VIEWMD-0043-class plumbing gap AGENTS.md documents; this issue's own
+# amended-requirement-4 and -6/7 reviews already established this end-to-end pattern for the
+# quadrant background fill and code-fence highlighting above).
+def test_cli_theme_light_reaches_directory_listing_end_to_end(tmp_path, capsys):
+    import re
+
+    (tmp_path / "a.md").write_text("# A\n")
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(tmp_path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(tmp_path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    id_re = re.compile(r"id=\d+")
+    _neutral = {"\x1b[0m", "\x1b[1m"}
+    dark_codes = set(re.findall(r"\x1b\[[0-9;]*m", id_re.sub("id=X", dark_out))) - _neutral
+    light_codes = set(re.findall(r"\x1b\[[0-9;]*m", id_re.sub("id=X", light_out))) - _neutral
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+    assert "\x1b[38;2;9;105;218m" in light_codes or "\x1b[1;38;2;9;105;218m" in light_codes

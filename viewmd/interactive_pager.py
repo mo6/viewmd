@@ -1373,7 +1373,7 @@ def run(
     )
 
 
-def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
+def run_directory_listing(dir_path: str, *, width: int, color: bool, theme: str = "dark") -> None:
     """Page a bare directory listing interactively (VIEWMD-0065's table-of-contents view, no
     `_Index.md` note present). No heading outline to build a ToC popup from (VIEWMD-0072
     Non-goals: no per-entry ToC) -- the 't' key is inert and omitted from the keybinding summary,
@@ -1392,8 +1392,12 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
 
     def make_loader(d: str):
         def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
-            colored = render_directory_listing(d, width=w, color=True).rstrip("\n").split("\n")
-            plain = render_directory_listing(d, width=w, color=False).rstrip("\n").split("\n")
+            colored = render_directory_listing(
+                d, width=w, color=True, theme=theme
+            ).rstrip("\n").split("\n")
+            plain = render_directory_listing(d, width=w, color=False, theme=theme).rstrip(
+                "\n"
+            ).split("\n")
             return colored, plain, [], 0
 
         return loader
@@ -1430,7 +1434,7 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
         make_loader(dir_path),
         display_name,
         width=width,
-        fallback=lambda: render_directory_listing(dir_path, width=width, color=color),
+        fallback=lambda: render_directory_listing(dir_path, width=width, color=color, theme=theme),
         doc_dir=dir_path,
         open_path=open_path,
     )

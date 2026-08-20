@@ -99,12 +99,12 @@ def test_display_directory_listing_uses_interactive_pager_when_paging(monkeypatc
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color):
-        calls.append((dir_path, width, color))
+    def fake_run(dir_path, *, width, color, theme):
+        calls.append((dir_path, width, color, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
     pager.display_directory_listing(str(tmp_path), no_pager=False, width=80, color=True)
-    assert calls == [(str(tmp_path), 80, True)]
+    assert calls == [(str(tmp_path), 80, True, "dark")]
 
 
 # --- display_multi_file (VIEWMD-0072) --------------------------------------------------------

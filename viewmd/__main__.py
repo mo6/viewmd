@@ -139,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         from viewmd.pager import display_directory_listing
-        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color)
+        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color,
+                                  theme=theme)
         return 0
 
     had_error = False
