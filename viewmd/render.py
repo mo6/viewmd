@@ -217,14 +217,16 @@ _TABLE_STYLE_BY_THEME: dict[str, tuple[str, str]] = {
 
 # VIEWMD-0091 (amended requirement 6): Pygments theme for fenced-code-block (and, via
 # rich's own inline_code_theme-defaults-to-code_theme fallback, inline-code-span) syntax
-# highlighting -- "monokai" (dark) is today's existing, unchanged default; "friendly" is a
-# well-regarded built-in light Pygments theme (surveyed from this worktree's own
-# `.venv/lib/python*/site-packages/pygments/styles/`, not guessed) with an off-white
-# `#f0f0f0` background and full syntax-color highlighting (not just black-on-white), giving
-# adequate contrast on a light terminal without the near-white starkness of "default"/"xcode".
+# highlighting -- "monokai" (dark) is today's existing, unchanged default. "friendly"
+# (`#f0f0f0`) was tried first but read as barely-off-white against a real light terminal
+# background, not enough contrast (maintainer testing feedback); "paraiso-light" is a
+# built-in light Pygments theme (surveyed from this worktree's own
+# `.venv/lib/python*/site-packages/pygments/styles/`, not guessed) with a visibly grey-tinted
+# `#e7e9db` background and full syntax-color highlighting, giving clearer contrast on a light
+# terminal while still reading as a light theme.
 _CODE_THEME_BY_THEME: dict[str, str] = {
     "dark": "monokai",
-    "light": "friendly",
+    "light": "paraiso-light",
 }
 
 # VIEWMD-0091: the table-of-contents entry text normally reuses rich's own named

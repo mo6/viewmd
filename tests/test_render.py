@@ -303,7 +303,7 @@ def test_pie_chart_rendering_is_unaffected_by_theme():
 # code blocks (and, via rich's own inline_code_theme-defaults-to-code_theme fallback, inline
 # code spans) -- `render_markdown`'s `ViewmdMarkdown(body, code_theme="monokai")` used to be
 # hardcoded regardless of `theme`; "dark" now maps to the same "monokai" as before (unchanged),
-# "light" to Pygments' built-in "friendly" theme. A fenced block using a real lexer (Python) is
+# "light" to Pygments' built-in "paraiso-light" theme. A fenced block using a real lexer (Python) is
 # needed here, not a bare ``` fence -- Pygments only emits per-token color codes when there's a
 # lexer with a syntax to highlight, so a codeless fence wouldn't actually exercise a theme's
 # palette differences the way this issue's own acceptance criteria calls for.
