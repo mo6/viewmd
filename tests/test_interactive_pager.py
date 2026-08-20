@@ -1215,7 +1215,7 @@ def test_keybind_help_omits_prev_file_hint_before_any_navigation():
 
 
 def test_keybind_help_shows_back_hint_with_trail_depth_once_back_count_is_positive():
-    # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to;
+    # VIEWMD-0076: 'b' is only advertised once there's actually something to go back to;
     # VIEWMD-0090 extends this to a full stack, so the hint's label carries the depth
     # (requirement 6 -- a discoverable trail position) rather than just "yes/no".
     line, _spans = ip._keybind_help(False, None, False, back_count=2)
@@ -1228,7 +1228,7 @@ def test_keybind_help_omits_forward_hint_with_nothing_ahead():
 
 
 def test_keybind_help_shows_forward_hint_with_trail_depth_once_forward_count_is_positive():
-    # VIEWMD-0090 requirement 3/6: 'F' is only advertised once there's somewhere to go forward
+    # VIEWMD-0090 requirement 3/6: 'f' is only advertised once there's somewhere to go forward
     # to, and its label carries the depth the same way the back hint's does.
     line, _spans = ip._keybind_help(False, None, False, forward_count=3)
     assert "fwd (3)" in ip._strip_ansi(line)
@@ -1269,8 +1269,8 @@ def test_keybind_help_base_layout_chip_invokes_match_their_key():
     invokes = {inv.value: inv for _s, _e, inv in spans if inv is not None}
     assert invokes["/"] == ip.Event("key", "/")
     assert invokes["t"] == ip.Event("key", "t")
-    assert invokes["B"] == ip.Event("key", "B")
-    assert invokes["F"] == ip.Event("key", "F")
+    assert invokes["b"] == ip.Event("key", "b")
+    assert invokes["f"] == ip.Event("key", "f")
     assert invokes["w"] == ip.Event("key", "w")
     assert invokes["esc"] == ip.Event("key", "esc")
     assert invokes["?"] == ip.Event("key", "?")
@@ -1640,7 +1640,7 @@ def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
                                     full_front_matter=False, toc=True)
 
 
-# --- Multi-level B/F trail (VIEWMD-0090) --------------------------------------------------
+# --- Multi-level b/f trail (VIEWMD-0090) --------------------------------------------------
 
 
 def _sgr_click(col: int, row: int) -> bytes:
@@ -1725,7 +1725,7 @@ def test_multilevel_back_and_forward_walk_a_three_document_trail(monkeypatch, ca
     chunks = [
         b"j" * top_a + _sgr_click(col_a + 1, (link_row_a - top_a) + 1),  # A -> B
         b"j" * top_b + _sgr_click(col_b + 1, (link_row_b - top_b) + 1),  # B -> C
-        b"j" * top_c + b"BB" + b"FF" + b"q",  # C -> B -> A -> B -> C, then quit
+        b"j" * top_c + b"bb" + b"ff" + b"q",  # C -> B -> A -> B -> C, then quit
     ]
 
     _run_pager_with_input(
@@ -1759,11 +1759,11 @@ def test_multilevel_back_and_forward_walk_a_three_document_trail(monkeypatch, ca
 
 
 def test_forward_is_a_no_op_with_nothing_ahead(monkeypatch, capsys, tmp_path):
-    # VIEWMD-0090 requirement 3: 'F' with nothing on the forward stack (no 'B' yet pressed, or
-    # after a fresh navigation has discarded it) is inert, same as 'B' already is at the start of
+    # VIEWMD-0090 requirement 3: 'f' with nothing on the forward stack (no 'b' yet pressed, or
+    # after a fresh navigation has discarded it) is inert, same as 'b' already is at the start of
     # a session -- an echo-area message, not a crash or an unexplained no-op.
     (tmp_path / "a.md").write_text("# A\n")
-    data = b"F" + b"q"
+    data = b"f" + b"q"
     _run_pager_with_input(
         monkeypatch, data, text="# A\n", name=str(tmp_path / "a.md")
     )
@@ -1773,7 +1773,7 @@ def test_forward_is_a_no_op_with_nothing_ahead(monkeypatch, capsys, tmp_path):
 
 def test_new_navigation_clears_the_forward_stack(monkeypatch, capsys, tmp_path):
     # VIEWMD-0090 design decision: following a new link after backing up discards whatever was
-    # ahead on the trail (the same rule a browser's own forward history follows) -- 'F' must not
+    # ahead on the trail (the same rule a browser's own forward history follows) -- 'f' must not
     # resurrect a document the reader has since navigated away from through a different link.
     text_a = "# A\n\n[to B](b.md)\n"
     text_c = "# C\n\nonly C\n"
@@ -1791,13 +1791,63 @@ def test_new_navigation_clears_the_forward_stack(monkeypatch, capsys, tmp_path):
     # everything is available on the pipe from the very start).
     chunks = [
         _sgr_click(col + 1, row),  # A -> B
-        b"B",  # B -> A (now something to go forward to)
+        b"b",  # B -> A (now something to go forward to)
         _sgr_click(col + 1, row),  # A -> B again, a *new* navigation
-        b"F" + b"q",  # nothing ahead any more -- must be inert
+        b"f" + b"q",  # nothing ahead any more -- must be inert
     ]
     _run_pager_with_input(monkeypatch, chunks=chunks, text=text_a, name=str(tmp_path / "a.md"))
     out = capsys.readouterr().out
     assert "No next file to go forward to" in ip._strip_ansi(out)
+
+
+# --- page-back-up key remap (maintainer review, VIEWMD-0090) --------------------------------
+#
+# The maintainer asked for lowercase 'b'/'f' as the trail keys instead of 'B'/'F', which
+# collided with lowercase 'b' already meaning "page back up" (the standard `less`-style
+# binding). Resolution (maintainer's explicit call): drop 'b' from page-back-up entirely,
+# leaving only '-'/Backspace for it, freeing 'b' for trail-back.
+
+
+def test_page_back_up_still_works_via_dash_and_backspace(monkeypatch, capsys):
+    # '-' and Backspace must still page back up exactly as before the remap.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    for key in (b"-", b"\x7f"):  # '-' and Backspace (DEL)
+        data = b" " + key + b"q"  # page down, then page back up, then quit
+        _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+        out = capsys.readouterr().out
+        frames = out.split(ip._HOME)[1:]
+        assert len(frames) == 3
+        after_page_down = first_body_row(frames[1])
+        after_page_back = first_body_row(frames[2])
+        # Paging down then back up returns to the same first body row it started from.
+        assert after_page_back == first_body_row(frames[0])
+        assert after_page_down != after_page_back
+
+
+def test_lowercase_b_alone_no_longer_pages_back_up(monkeypatch, capsys):
+    # Lowercase 'b' is now the trail-back key, not page-back-up -- with an empty history stack
+    # it must be an inert no-op (an echo-area message), never scrolling the viewport at all.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    data = b" " + b"b" + b"q"  # page down, then 'b' (no trail to go back to), then quit
+    _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+    out = capsys.readouterr().out
+    frames = out.split(ip._HOME)[1:]
+    assert len(frames) == 3
+    after_page_down = first_body_row(frames[1])
+    after_b = first_body_row(frames[2])
+    # 'b' left the viewport exactly where it was -- no page-back-up happened.
+    assert after_b == after_page_down
+    assert "No previous file to go back to" in ip._strip_ansi(out)
 
 
 if __name__ == "__main__":
