@@ -742,6 +742,57 @@ def _iter_listing_rows(
     return rows
 
 
+def _truncate_filename(name: str, max_len: int = 25) -> str:
+    """Truncate a bare filename (or `name + "/"` directory display string) to at most `max_len`
+    characters, always preserving its extension in full, with the `...` ellipsis placed right
+    before the extension rather than at the very end of the whole string -- e.g.
+    `"VIEWMD-0031-er-layout-legibility-review.md"` (44 chars) becomes `"VIEWMD-0031-er-layo....md"`
+    (25 chars: a 19-char stem fragment, `...`, then the full `.md` extension), per the maintainer's
+    second round of manual testing feedback on VIEWMD-0089 (superseding the earlier Rich
+    `max_width=55, overflow="ellipsis"` column-width-based approach, which truncated by raw display
+    width with no awareness of extensions or a fixed character budget).
+
+    `name` is expected to be just the filename/directory-name portion, with no `--depth` indent
+    prefix -- callers must truncate first and prepend the (structural, not part of the "name")
+    indent afterward, so the budget is always spent on the name itself, not swallowed by
+    indentation at deeper levels.
+
+    A trailing `/` (this module's convention for a subdirectory row's display name) is treated as
+    the "extension" that always survives truncation, the same way a file's `.md` does -- so a long
+    subdirectory name doesn't lose its trailing slash, keeping the row visually identifiable as a
+    directory at a glance, and keeping directory/file truncation one consistent rule rather than a
+    special case.
+
+    A name with no extension at all (no `.`) or a dotfile like `.gitignore` (a leading dot with
+    nothing before it, so there's no real "stem") falls back to treating the whole name as the
+    stem, with the ellipsis at the very end and no separate extension to preserve -- there's
+    nothing to protect it from.
+
+    If the extension itself is long enough that `max_len - len(extension) - len("...")` would be
+    non-positive (a pathological input, not expected from any real filename this project handles),
+    the ellipsis-plus-extension scheme is abandoned entirely and the whole string is hard-truncated
+    to `max_len` characters -- a plain, if unhelpful, floor rather than a negative-length slice or
+    an over-length result.
+    """
+    if len(name) <= max_len:
+        return name
+
+    if name.endswith("/"):
+        stem, ext = name[:-1], "/"
+    else:
+        stem, dot, ext_part = name.rpartition(".")
+        if dot and stem:
+            ext = dot + ext_part
+        else:
+            stem, ext = name, ""
+
+    ellipsis = "..."
+    budget = max_len - len(ext) - len(ellipsis)
+    if budget < 1:
+        return name[:max_len]
+    return stem[:budget] + ellipsis + ext
+
+
 def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: int = 1) -> str:
     """Render a table-of-contents view of `dir_path`, used when a `path` argument is a directory
     with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
@@ -763,15 +814,14 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: i
     than widening that resolver's contract.
     """
     table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    # `max_width` caps how much a long filename can squeeze the wrapping `Title` column: Rich's
-    # column-sizing algorithm treats a `no_wrap` column's minimum width as its full content width
-    # (so without a cap, one long name forces every other column, including `Title`, into
-    # whatever's left -- observed wrapping a short title across 6 lines). 55 comfortably fits this
-    # project's own real issue filenames (median ~40 chars, all but the single longest of the 27
-    # files under `issues/` at the time this was chosen) while still leaving meaningful room for
-    # `Title`; `overflow="ellipsis"` truncates the rare longer name with a trailing `…` rather than
-    # reverting to the old unbounded-width behavior.
-    table.add_column("Name", style="cyan", no_wrap=True, max_width=55, overflow="ellipsis")
+    # No `max_width`/`overflow` here: Rich's own column-width truncation crops by raw display
+    # width with no awareness of file extensions or a fixed character budget (the earlier
+    # `max_width=55, overflow="ellipsis"` attempt at this same problem, superseded per the
+    # maintainer's second round of manual testing feedback). Instead, `_truncate_filename` caps
+    # each bare name to 25 characters *before* it ever reaches the table, always preserving the
+    # extension (or a directory's trailing `/`) in full with the `...` ellipsis placed right
+    # before it -- `no_wrap=True` is kept only so Rich never re-wraps the (already short) result.
+    table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
     table.add_column("Size", no_wrap=True)
@@ -780,17 +830,18 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: i
     for level, kind, name, full_path in _iter_listing_rows(dir_path, depth):
         indent = "  " * level
         if kind == "dir":
+            display_name = _truncate_filename(name + "/")
             if level == 0:
                 # A `Text` cell (rather than the plain, markup-escaped strings the other columns
                 # use) so a real OSC8 link can be layered on via `stylize` -- same pattern as the
                 # static ToC block's own heading links (`_toc_lines`, above). `Text` never parses
                 # console markup, so no `escape()` call is needed here the way the plain-string
                 # cells still need one.
-                name_cell: Text | str = Text(indent + name + "/")
+                name_cell: Text | str = Text(indent + display_name)
                 href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
                 name_cell.stylize(Style(link=href))
             else:
-                name_cell = escape(indent + name + "/")
+                name_cell = escape(indent + display_name)
             table.add_row(name_cell, "dir", "", _entry_count(full_path), "")
         else:
             title = _markdown_title(full_path)
@@ -798,17 +849,19 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: i
             modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime(
                 "%Y-%m-%d %H:%M"
             )
+            display_name = _truncate_filename(name)
             if level == 0:
                 # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use
                 # (VIEWMD-0081) -- a plain relative-path href (no scheme prefix), unlike the
                 # `_DIR_ANCHOR_SCHEME`-tagged subdirectory hrefs, since this needs to resolve
                 # through `_resolve_link_target()` (`interactive_pager.py`) the same way an
                 # ordinary in-document relative link does, not through `_resolve_dir_target()`
-                # (VIEWMD-0093).
-                name_cell = Text(indent + name)
+                # (VIEWMD-0093). The href uses the untruncated `name` -- only the displayed text
+                # is shortened, navigation still targets the real file.
+                name_cell = Text(indent + display_name)
                 name_cell.stylize(Style(link=urllib.parse.quote(name)))
             else:
-                name_cell = escape(indent + name)
+                name_cell = escape(indent + display_name)
             table.add_row(name_cell, "file", escape(title), size, modified)
 
     buffer = io.StringIO()

@@ -4,6 +4,7 @@ import re
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import (
     _format_size,
+    _truncate_filename,
     render_directory_listing,
     render_divider,
     render_file_heading,
@@ -346,28 +347,31 @@ def _column_widths(out: str) -> list[int]:
     return [len(seg) for seg in border.strip("╭╮").split("┬")]
 
 
-def test_render_directory_listing_caps_a_long_name_with_an_ellipsis(tmp_path):
-    # Bug found in manual maintainer testing: `Name` had no `max_width`, so Rich's column-sizing
-    # algorithm treated a `no_wrap` column's minimum width as its full content width, meaning a
-    # long filename never shrank and squeezed every wrapping column (`Title`) into whatever was
-    # left instead. `Name` now caps at 55 with `overflow="ellipsis"`.
+def test_render_directory_listing_caps_a_long_name_at_25_chars_preserving_extension(tmp_path):
+    # Bug found in manual maintainer testing (first fix attempt, `max_width=55,
+    # overflow="ellipsis"`, was insufficient -- the maintainer wanted a specific 25-char,
+    # extension-preserving scheme instead of Rich's generic column-width truncation). A name's
+    # extension must always survive in full, with `...` right before it, and the whole displayed
+    # name capped at exactly 25 characters.
     long_name = "a" * 80 + ".md"
     (tmp_path / long_name).write_text("# Heading\n")
 
     out = strip_ansi(render_directory_listing(str(tmp_path), width=160, color=False))
 
     assert long_name not in out  # the full 83-char name never appears uncapped
-    assert "a" * 54 + "…" in out  # truncated to the 55-char cap, last char replaced by the marker
-    name_col_w = _column_widths(out)[0]
-    assert name_col_w <= 55 + 2  # +2 for Rich's one-space padding either side of the cell
+    expected = "a" * 19 + "..." + ".md"  # budget: 25 - len(".md") - len("...") = 19 stem chars
+    assert len(expected) == 25
+    assert expected in out
+    assert ".md" in out  # extension survives in full
 
 
 def test_render_directory_listing_title_column_wider_with_a_long_name_present(tmp_path):
     # Companion to the cap test above: verify the *point* of the cap actually holds -- with the
-    # `Name` column no longer able to grow past 55, `Title` gets materially more of the remaining
-    # width than an uncapped `Name` column (built the same way `render_directory_listing` used to,
-    # before this fix) would have left it. Reproduces the maintainer's own screenshot scenario: a
-    # long filename alongside a long title sentence that used to wrap across 6 narrow lines.
+    # `Name` column now capped to 25 characters by `_truncate_filename` before it ever reaches the
+    # table, `Title` gets materially more of the remaining width than an uncapped `Name` column
+    # (built the same way `render_directory_listing` used to, before either fix) would have left
+    # it. Reproduces the maintainer's own screenshot scenario: a long filename alongside a long
+    # title sentence that used to wrap across 6 narrow lines.
     from rich import box
     from rich.console import Console
     from rich.table import Table
@@ -380,7 +384,7 @@ def test_render_directory_listing_title_column_wider_with_a_long_name_present(tm
     fixed_out = render_directory_listing(str(tmp_path), width=120, color=False)
     fixed_title_w = _column_widths(fixed_out)[2]
 
-    # The pre-fix shape: the same five columns, but `Name` with no `max_width`/`overflow`.
+    # The pre-fix shape: the same five columns, but `Name` with no cap at all.
     old_table = Table(show_header=True, box=box.ROUNDED, expand=False)
     old_table.add_column("Name", no_wrap=True)
     old_table.add_column("Type", no_wrap=True)
@@ -395,6 +399,68 @@ def test_render_directory_listing_title_column_wider_with_a_long_name_present(tm
     old_title_w = _column_widths(old_out)[2]
 
     assert fixed_title_w > old_title_w
+
+
+# --- _truncate_filename (VIEWMD-0089, second-round manual testing feedback) -----------------
+
+
+def test_truncate_filename_leaves_a_short_name_untouched():
+    name = "short-name.md"  # well under 25 chars
+    assert _truncate_filename(name) == name
+
+
+def test_truncate_filename_truncates_a_long_name_to_25_preserving_extension():
+    name = "VIEWMD-0031-er-layout-legibility-review.md"  # 43 chars, well over 25
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result.endswith(".md")
+    assert "..." in result
+    assert result.index("...") + 3 == len(result) - 3  # ellipsis sits right before the extension
+
+
+def test_truncate_filename_boundary_at_exactly_25_chars_is_untouched():
+    name = "a" * 22 + ".md"  # exactly 25 chars
+    assert len(name) == 25
+    assert _truncate_filename(name) == name  # "already <= 25" -- shown as-is, no truncation
+
+    name_over = "a" * 23 + ".md"  # 26 chars, one over the boundary
+    result = _truncate_filename(name_over)
+    assert len(result) == 25
+    assert result.endswith(".md")
+
+
+def test_truncate_filename_with_no_extension():
+    name = "a" * 30  # no "." anywhere
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == "a" * 22 + "..."  # ellipsis at the very end, whole name treated as the stem
+
+
+def test_truncate_filename_dotfile_with_no_real_stem_has_no_extension_to_preserve():
+    # A leading-dot name like ".gitignore" has nothing before the dot -- treated as "no
+    # extension" (whole name is the stem), not as an empty-stem extension of ".gitignore".
+    name = "." + "a" * 30
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == "." + "a" * 21 + "..."
+
+
+def test_truncate_filename_preserves_a_long_directory_name_trailing_slash():
+    name = "a" * 30 + "/"  # a subdirectory display name, 31 chars
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result.endswith("/")
+    assert result == "a" * 21 + ".../"
+
+
+def test_truncate_filename_degenerate_budget_falls_back_to_a_hard_truncation():
+    # Extension alone (30 chars incl. leading dot) leaves no room for a stem fragment plus "...".
+    # Documented floor behavior: abandon the ellipsis/extension scheme, hard-truncate the whole
+    # string to max_len instead of producing a negative-length slice or an over-length result.
+    name = "a" + "." + "x" * 29  # ext is ".xxx...x" (30 chars), name is 31 chars total
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == name[:25]
 
 
 def test_render_directory_listing_does_not_recurse(tmp_path):
