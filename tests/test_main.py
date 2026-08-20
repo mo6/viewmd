@@ -660,3 +660,69 @@ def test_invalid_config_toc_exits_nonzero_without_traceback(tmp_path, capsys):
     assert captured.err.startswith("viewmd:")
     assert "invalid toc 'maybe'" in captured.err
     assert "Traceback" not in captured.err
+
+
+# VIEWMD-0091: `--theme {dark,light}`/`theme` follows the same `coalesce(CLI, config, default)`
+# precedence as `--toc`/`toc` above -- these three tests are its end-to-end equivalent of
+# test_cli_toc_overrides_config_false / test_config_toc_false_omits_the_toc /
+# test_toc_is_on_by_default_for_a_multi_heading_document, proving the flag actually reaches
+# rendering through `main()` itself rather than only through a unit test that hands `theme=`
+# directly to `render_markdown` (the exact class of gap AGENTS.md documents from VIEWMD-0043).
+# `--color always` is required throughout since `--theme` only changes emitted SGR codes -- with
+# color off the two palettes are byte-identical (see
+# test_no_color_theme_output_is_unaffected_by_theme in tests/test_render.py).
+_THEME_DOC = "> [!NOTE]\n> a note\n"
+_DARK_NOTE_COLOR = "\x1b[38;2;88;166;255m"  # #58a6ff, _CANONICAL_ADMONITIONS_DARK["NOTE"]
+_LIGHT_NOTE_COLOR = "\x1b[38;2;9;105;218m"  # #0969da, _CANONICAL_ADMONITIONS_LIGHT["NOTE"]
+
+
+def test_cli_theme_overrides_config_light(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = light\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg),
+               "--theme", "dark", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_config_theme_light_sets_it_when_cli_omits_theme(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = light\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+    assert _DARK_NOTE_COLOR not in out
+
+
+def test_theme_defaults_to_dark_when_neither_cli_nor_config_set(tmp_path, capsys):
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_invalid_config_theme_exits_nonzero_without_traceback(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = sepia\n")
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(cfg), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd:")
+    assert "invalid theme 'sepia'" in captured.err
+    assert "Traceback" not in captured.err

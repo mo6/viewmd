@@ -25,6 +25,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
 ./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
+./viewmd.sh notes.md --theme light        # use the light-terminal-background color palette (default: dark)
 ./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
@@ -71,6 +72,12 @@ A blockquote whose first line is an Obsidian/GitHub-style `[!TYPE]` marker (`> [
 its top border, instead of a plain quote. GitHub's five canonical types — `NOTE`, `TIP`,
 `IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
 Obsidian-only aliases) still renders as a generic card, using the type token as its label.
+
+`--theme {dark,light}` selects the color palette used for admonition callout borders/icons, the
+front-matter table, and the table of contents' heading colors — `dark` (the default, today's
+original colors) is tuned for a dark terminal background; `light` swaps in a higher-contrast
+palette for a light one. It does not affect Mermaid diagram coloring, which has its own
+color-capability-driven logic.
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
@@ -132,8 +139,8 @@ and `B` are both inert there.
 ## Configuration file
 
 A per-user config file supplies default values for `--width`, `--color`,
-`--full-front-matter`, and `--toc`, so a standing preference doesn't need to be passed on every
-invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
+`--full-front-matter`, `--toc`, and `--theme`, so a standing preference doesn't need to be passed
+on every invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
 are the flags that turn those defaults back off if the file sets them on); a missing file is not
 an error — it's the same as viewmd's built-in defaults.
 
@@ -146,6 +153,7 @@ width = 80
 color = never
 full_front_matter = true
 toc = false
+theme = light
 EOF
 ```
 
@@ -160,6 +168,7 @@ keys:
 | `color` | `auto`, `always`, or `never` | `--color` |
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
+| `theme` | `dark` or `light` | `--theme` |
 
 An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
 stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config
@@ -178,8 +187,9 @@ Tab-completion scripts for bash, zsh, and fish are checked into [completions/](c
 (`./tools.sh completions`, see "Development" below) rather than hand-maintained per shell, so
 they stay in sync with the actual flag surface. They complete every flag name (including both
 spellings of a `--toc`/`--no-toc`-style pair), `--color`'s three literal choices
-(`auto`/`always`/`never`), `--width`'s `full` literal, and fall back to normal filesystem-path
-completion for `--config` and for the positional Markdown-file argument(s).
+(`auto`/`always`/`never`), `--theme`'s two literal choices (`dark`/`light`), `--width`'s `full`
+literal, and fall back to normal filesystem-path completion for `--config` and for the positional
+Markdown-file argument(s).
 
 **bash**: source the script directly, e.g. add `source /path/to/viewmd/completions/viewmd.bash`
 to `~/.bashrc`; or copy/symlink it into a directory your `bash-completion` setup already sources,
