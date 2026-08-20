@@ -824,7 +824,7 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: i
     table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
-    table.add_column("Size", no_wrap=True)
+    table.add_column("Size", no_wrap=True, justify="right")
     table.add_column("Modified", no_wrap=True)
 
     for level, kind, name, full_path in _iter_listing_rows(dir_path, depth):

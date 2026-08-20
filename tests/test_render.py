@@ -496,6 +496,22 @@ def test_render_directory_listing_shows_human_readable_file_size(tmp_path):
     assert "1.5K" in out
 
 
+def test_render_directory_listing_size_column_is_right_aligned(tmp_path):
+    # Maintainer testing feedback: the Size column should be right-aligned rather than left,
+    # matching how numeric/size columns conventionally read (`ls -l`, `du`, etc.).
+    (tmp_path / "small.md").write_bytes(b"#" + b" " * 339)  # 340 bytes, "340B"
+    (tmp_path / "big.md").write_bytes(b"#" + b" " * 1535)  # 1536 bytes, "1.5K"
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+    size_col_w = _column_widths(out)[3]
+
+    for line in out.split("\n"):
+        if "340B" in line or "1.5K" in line:
+            cell = line.split("│")[4]  # Name│Type│Title│Size│Modified
+            assert cell.rstrip().endswith(("340B", "1.5K"))
+            assert len(cell) == size_col_w
+
+
 def test_render_directory_listing_subdirectory_size_column_is_entry_count_not_bytes(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()
