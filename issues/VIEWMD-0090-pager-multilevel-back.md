@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0090
 title: Multi-level navigation history in the interactive pager (beyond one-step B)
-status: proposed
+status: in-progress
 area: [pager]
 effort:
 created: 2026-08-19
-updated: 2026-08-19
-accepted_by:
-accepted_at:
+updated: 2026-08-20
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-20
 commits: []
 related: []
 supersedes: []
