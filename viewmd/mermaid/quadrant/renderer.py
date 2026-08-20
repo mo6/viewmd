@@ -59,6 +59,18 @@ _QUADRANT_COLORS = {
 # Background-fill brightness (requirement 8b), relative to the same tint --
 # ported from poc/quadrant/quadrant_poc.py:_darken's factor.
 _BG_DARKEN_FACTOR = 0.28
+# VIEWMD-0091 (amended requirement 4): the light-theme counterpart to
+# _BG_DARKEN_FACTOR -- blends each quadrant's foreground tint toward white by
+# this fraction instead of toward black, so the fill reads as a light pastel
+# on a light terminal background rather than the dark-theme's near-black
+# shade. 0.82 was chosen (over e.g. 0.5, too saturated/mid-tone to read as
+# "light", or 0.95+, too washed out to keep the four quadrants visually
+# distinct from each other or from a white background) by rendering
+# docs/mermaid-quadrant.md with each candidate and eyeballing it against a
+# white terminal background: at 0.82 all four quadrant fills are unmistakably
+# pale/pastel (each channel at least 82% of the way to 255) while still
+# visibly tinted and distinguishable from one another and from plain white.
+_BG_LIGHTEN_FACTOR = 0.82
 
 _QUADRANT_POS = {1: (0, 1), 2: (0, 0), 3: (1, 0), 4: (1, 1)}  # n -> (qrow, qcol)
 _POS_TO_QUADRANT = {pos: n for n, pos in _QUADRANT_POS.items()}
@@ -75,6 +87,20 @@ def _darken(hex_: str, factor: float) -> str:
     hex_ = hex_.lstrip("#")
     r, g, b = int(hex_[0:2], 16), int(hex_[2:4], 16), int(hex_[4:6], 16)
     return f"{int(r * factor):02x}{int(g * factor):02x}{int(b * factor):02x}"
+
+
+def _lighten(hex_: str, factor: float) -> str:
+    """Scales a quadrant's foreground tint up toward white by `factor`,
+    mirroring `_darken`'s shape (VIEWMD-0091 amended requirement 4) -- blends
+    each channel toward 255 rather than scaling toward 0, so the light theme's
+    background fill stays derived from the same per-quadrant tint instead of
+    a second hand-picked palette, exactly as `_darken` already does for dark."""
+    hex_ = hex_.lstrip("#")
+    r, g, b = int(hex_[0:2], 16), int(hex_[2:4], 16), int(hex_[4:6], 16)
+    r2 = int(r + (255 - r) * factor)
+    g2 = int(g + (255 - g) * factor)
+    b2 = int(b + (255 - b) * factor)
+    return f"{r2:02x}{g2:02x}{b2:02x}"
 
 
 def _terminal_width(fallback: int = 100) -> int:
@@ -127,14 +153,16 @@ def _quadrant_of(x: float, y: float) -> tuple[int, float, float]:
 
 
 def render(chart: QuadrantChart, *, use_ascii: bool = False, color: bool = False,
-           width: int | None = None) -> str:
+           width: int | None = None, theme: str = "dark") -> str:
     g = _ASCII if use_ascii else _UNICODE
     target_width = width if width is not None else _terminal_width()
     qw = _default_box_width(chart, target_width)
-    return _render_box(chart, g, color=color, qw=qw, qh=_QUADRANT_HEIGHT)
+    return _render_box(chart, g, color=color, qw=qw, qh=_QUADRANT_HEIGHT, theme=theme)
 
 
-def _render_box(chart: QuadrantChart, g: _Glyphs, *, color: bool, qw: int, qh: int) -> str:
+def _render_box(
+    chart: QuadrantChart, g: _Glyphs, *, color: bool, qw: int, qh: int, theme: str = "dark"
+) -> str:
     box_width = qw * 2 + 3
     total_rows = qh * 2 + 3
     # Each cell holds (char, fg_color_hex_or_None).
@@ -227,7 +255,16 @@ def _render_box(chart: QuadrantChart, g: _Glyphs, *, color: bool, qw: int, qh: i
     if color:
         for n, (qrow, qcol) in _QUADRANT_POS.items():
             r0, c0 = cell_origin(qrow, qcol)
-            shade = _darken(_QUADRANT_COLORS[n], _BG_DARKEN_FACTOR)
+            # VIEWMD-0091 (amended requirement 4): light theme lightens each
+            # quadrant's foreground tint toward white instead of darkening it
+            # toward black -- the foreground tints (_QUADRANT_COLORS, used for
+            # borders/points/text) are unchanged in both themes; only this
+            # background fill flips direction.
+            shade = (
+                _lighten(_QUADRANT_COLORS[n], _BG_LIGHTEN_FACTOR)
+                if theme == "light"
+                else _darken(_QUADRANT_COLORS[n], _BG_DARKEN_FACTOR)
+            )
             for r in range(r0, r0 + qh):
                 for ci in range(c0, c0 + qw):
                     bg_grid[r][ci] = shade

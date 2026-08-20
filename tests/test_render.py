@@ -236,6 +236,69 @@ def test_no_color_theme_output_is_unaffected_by_theme():
     assert dark == light
 
 
+# VIEWMD-0091 amended requirement 4: `--theme` reaches Mermaid quadrant-chart background fills
+# specifically, end to end through render_markdown -> preprocess -> render_mermaid_blocks ->
+# viewmd.mermaid.render's quadrant branch -- exercised here against the real doc,
+# docs/mermaid-quadrant.md, not a synthetic fixture, per AGENTS.md's own "verify in composition"
+# lesson.
+_QUADRANT_DOC = (
+    "```mermaid\n"
+    "quadrantChart\n"
+    "    title Priority Matrix\n"
+    "    x-axis Low Effort --> High Effort\n"
+    "    y-axis Low Impact --> High Impact\n"
+    "    quadrant-1 Do First\n"
+    "    quadrant-2 Plan\n"
+    "    quadrant-3 Delegate\n"
+    "    quadrant-4 Skip\n"
+    "    Cache: [0.2, 0.8]\n"
+    "    Rewrite: [0.9, 0.3]\n"
+    "```\n"
+)
+
+
+def test_quadrant_background_fill_reaches_light_theme_end_to_end_through_render_markdown():
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="light")
+    dark_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", dark))
+    light_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", light))
+    assert dark_bg and light_bg
+    assert dark_bg != light_bg
+
+    def brightness(rgb: str) -> int:
+        return sum(int(c) for c in rgb.split(";"))
+
+    assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
+
+
+def test_quadrant_background_fill_omitted_theme_matches_dark_default_through_render_markdown():
+    omitted = render_markdown(_QUADRANT_DOC, width=80, color=True)
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    assert strip_ansi(omitted) == strip_ansi(dark)
+    assert set(re.findall(r"48;2;(\d+;\d+;\d+)", omitted)) == set(
+        re.findall(r"48;2;(\d+;\d+;\d+)", dark)
+    )
+
+
+# Requirement 4's "MUST NOT" clause: pie-chart coloring is driven only by `color`, never `theme`
+# -- byte-identical output across every `--theme` value.
+_PIE_DOC = (
+    "```mermaid\n"
+    "pie title Pets\n"
+    "    \"Dogs\" : 40\n"
+    "    \"Cats\" : 35\n"
+    "    \"Birds\" : 25\n"
+    "```\n"
+)
+
+
+def test_pie_chart_rendering_is_unaffected_by_theme():
+    omitted = render_markdown(_PIE_DOC, width=80, color=True)
+    dark = render_markdown(_PIE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_PIE_DOC, width=80, color=True, theme="light")
+    assert omitted == dark == light
+
+
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).
 LINK_URL_ANSI = re.compile(r"\x1b\[4;34m")
 

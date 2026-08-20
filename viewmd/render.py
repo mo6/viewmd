@@ -634,14 +634,16 @@ def render_markdown(
     `theme` (VIEWMD-0091) picks the color palette for admonition callouts, the front-matter
     table, and the ToC's heading colors -- `"dark"` (the default) is today's original, unlabeled
     palette; `"light"` swaps those three surfaces for higher-contrast colors tuned for a light
-    terminal background. It does not touch Mermaid diagram coloring, which already has its own
-    color-capability-driven palette logic (`preprocess`, above) -- out of scope for this issue.
+    terminal background. It also reaches the Mermaid quadrant chart's quadrant-background fills
+    specifically (amended requirement 4) -- passed into `preprocess` below, which threads it only
+    to `render_mermaid_blocks` -> `viewmd.mermaid.render`'s quadrant branch; every other Mermaid
+    diagram type's coloring remains driven solely by `color`, untouched by `theme`.
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
     if not full_front_matter:
         front_matter = drop_empty(front_matter)
-    body = preprocess(body, color=color, width=width)
+    body = preprocess(body, color=color, width=width, theme=theme)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)

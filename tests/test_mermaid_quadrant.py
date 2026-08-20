@@ -248,3 +248,59 @@ def test_title_line_does_not_overflow_when_it_fits_the_box():
     title_line = out.splitlines()[0]
     other_line = out.splitlines()[2]  # a border row, box_width + left_pad
     assert len(title_line) == len(other_line)
+
+
+# ---------------------------------------------------------------------------
+# Theme (VIEWMD-0091 amended requirement 4): light theme's quadrant
+# background fills must read as light, without touching foreground tints.
+# ---------------------------------------------------------------------------
+
+
+def test_default_theme_is_dark_and_matches_omitted_theme():
+    chart = parse((FIXTURES / "priority_matrix.mmd").read_text())
+    out_omitted = render(chart, use_ascii=False, color=True, width=68)
+    out_dark = render(chart, use_ascii=False, color=True, width=68, theme="dark")
+    assert out_omitted == out_dark
+
+
+def test_light_theme_background_fills_are_lighter_than_dark_theme():
+    chart = parse((FIXTURES / "priority_matrix.mmd").read_text())
+    out_dark = render(chart, use_ascii=False, color=True, width=68, theme="dark")
+    out_light = render(chart, use_ascii=False, color=True, width=68, theme="light")
+    dark_bg = {tuple(int(c) for c in rgb.split(";"))
+               for rgb in re.findall(r"48;2;(\d+;\d+;\d+)", out_dark)}
+    light_bg = {tuple(int(c) for c in rgb.split(";"))
+                for rgb in re.findall(r"48;2;(\d+;\d+;\d+)", out_light)}
+    assert len(dark_bg) == 4
+    assert len(light_bg) == 4
+    assert dark_bg != light_bg
+    # Every light-theme bg channel sum must exceed the darkest dark-theme
+    # equivalent -- i.e. genuinely lighter, not just different.
+    assert min(sum(c) for c in light_bg) > max(sum(c) for c in dark_bg)
+
+
+def test_light_theme_background_fills_are_pale_near_white():
+    chart = parse((FIXTURES / "priority_matrix.mmd").read_text())
+    out_light = render(chart, use_ascii=False, color=True, width=68, theme="light")
+    light_bg = {tuple(int(c) for c in rgb.split(";"))
+                for rgb in re.findall(r"48;2;(\d+;\d+;\d+)", out_light)}
+    for r, g, b in light_bg:
+        assert r >= 200 and g >= 200 and b >= 200
+
+
+def test_theme_does_not_change_foreground_quadrant_tints():
+    # Only the background fill should flip with theme -- foreground
+    # (_QUADRANT_COLORS, used for borders/points/text) must stay identical.
+    chart = parse((FIXTURES / "priority_matrix.mmd").read_text())
+    out_dark = render(chart, use_ascii=False, color=True, width=68, theme="dark")
+    out_light = render(chart, use_ascii=False, color=True, width=68, theme="light")
+    fg_dark = set(re.findall(r"38;2;(\d+;\d+;\d+)", out_dark))
+    fg_light = set(re.findall(r"38;2;(\d+;\d+;\d+)", out_light))
+    assert fg_dark == fg_light
+
+
+def test_theme_has_no_effect_when_color_disabled():
+    chart = parse((FIXTURES / "priority_matrix.mmd").read_text())
+    out_dark = render(chart, use_ascii=False, color=False, width=68, theme="dark")
+    out_light = render(chart, use_ascii=False, color=False, width=68, theme="light")
+    assert out_dark == out_light

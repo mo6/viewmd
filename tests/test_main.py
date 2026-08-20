@@ -726,3 +726,49 @@ def test_invalid_config_theme_exits_nonzero_without_traceback(tmp_path, capsys):
     assert captured.err.startswith("viewmd:")
     assert "invalid theme 'sepia'" in captured.err
     assert "Traceback" not in captured.err
+
+
+# VIEWMD-0091 amended requirement 4: `--theme light` must reach Mermaid quadrant-chart
+# background-fill rendering *through the actual CLI entry point*, not just when a test supplies
+# `theme=` directly to render_markdown -- AGENTS.md documents this exact plumbing-gap risk class
+# from VIEWMD-0043 (a comprehensive test suite passing is not proof a CLI flag actually works end
+# to end).
+_QUADRANT_DOC = (
+    "```mermaid\n"
+    "quadrantChart\n"
+    "    title Priority Matrix\n"
+    "    x-axis Low Effort --> High Effort\n"
+    "    y-axis Low Impact --> High Impact\n"
+    "    quadrant-1 Do First\n"
+    "    quadrant-2 Plan\n"
+    "    quadrant-3 Delegate\n"
+    "    quadrant-4 Skip\n"
+    "    Cache: [0.2, 0.8]\n"
+    "    Rewrite: [0.9, 0.3]\n"
+    "```\n"
+)
+
+
+def test_cli_theme_light_reaches_quadrant_background_fill_end_to_end(tmp_path, capsys):
+    import re
+
+    path, _ = _write_md(tmp_path, _QUADRANT_DOC)
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    dark_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", dark_out))
+    light_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", light_out))
+    assert dark_bg and light_bg
+    assert dark_bg != light_bg
+
+    def brightness(rgb: str) -> int:
+        return sum(int(c) for c in rgb.split(";"))
+
+    assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
