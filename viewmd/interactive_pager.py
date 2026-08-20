@@ -1317,6 +1317,7 @@ def run(
     color: bool,
     full_front_matter: bool = False,
     toc: bool = True,
+    theme: str = "dark",
 ) -> None:
     """Page `text` (raw Markdown source) interactively. `name` is the display name shown in the
     mode line (typically the source path, or "-" for stdin); only its basename is shown.
@@ -1329,7 +1330,7 @@ def run(
     not a `.md` link), and `run_multi_file()` still leaves both `None`, making a click on a link
     (and the 'B' back key) a no-op there.
     """
-    color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
+    color_kwargs = {"full_front_matter": full_front_matter, "toc": toc, "theme": theme}
     display_name = "(stdin)" if name == "-" else os.path.basename(name)
     doc_dir = None if name == "-" else os.path.dirname(os.path.abspath(name))
 
@@ -1433,6 +1434,7 @@ def run_multi_file(
     color: bool,
     full_front_matter: bool,
     toc: bool,
+    theme: str = "dark",
 ) -> None:
     """Page a multi-file concatenation (two or more `path` arguments) interactively. `entries` is
     `(display_path, text)` per already-resolved path (VIEWMD-0072) -- `text` is the raw Markdown
@@ -1445,9 +1447,9 @@ def run_multi_file(
 
     def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
         colored = render_multi_file(entries, width=w, directory_width=directory_width, color=True,
-                                    full_front_matter=full_front_matter, toc=toc)
+                                    full_front_matter=full_front_matter, toc=toc, theme=theme)
         plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
-                                  full_front_matter=full_front_matter, toc=toc)
+                                  full_front_matter=full_front_matter, toc=toc, theme=theme)
         return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), [], 0
 
     display_name = f"{len(entries)} files"
@@ -1457,7 +1459,7 @@ def run_multi_file(
         width=width,
         fallback=lambda: render_multi_file(entries, width=width, directory_width=directory_width,
                                            color=color, full_front_matter=full_front_matter,
-                                           toc=toc),
+                                           toc=toc, theme=theme),
     )
 
 

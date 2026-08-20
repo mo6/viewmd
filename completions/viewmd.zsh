@@ -11,6 +11,7 @@ _viewmd() {
   "--no-pager[--no-pager]" \
   "--color[--color]:value:(auto always never)" \
   "--width[--width]:value:(full)" \
+  "--theme[--theme]:value:(dark light)" \
   "--full-front-matter[--full-front-matter/--no-full-front-matter]" \
   "--no-full-front-matter[--full-front-matter/--no-full-front-matter]" \
   "--toc[--toc/--no-toc]" \

@@ -178,7 +178,7 @@ class _AdmonitionKind:
 
 # GitHub's five canonical alert types. Colors follow Primer's dark-theme
 # palette so the card stays readable on the dark terminals viewmd pages into.
-_CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
+_CANONICAL_ADMONITIONS_DARK: dict[str, _AdmonitionKind] = {
     "NOTE": _AdmonitionKind("📝", "#58a6ff"),
     "TIP": _AdmonitionKind("💡", "#3fb950"),
     "IMPORTANT": _AdmonitionKind("❗", "#bc8cff"),
@@ -187,7 +187,46 @@ _CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
     "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2, icon_width=1),
     "CAUTION": _AdmonitionKind("🛑", "#f85149"),
 }
+# VIEWMD-0091: the `--theme light` counterpart, same icons/pad/width (those are terminal-glyph
+# quirks, not background-color-dependent) with colors swapped for Primer's *light*-theme alert
+# palette instead of its dark one -- the same design system the dark colors above already follow,
+# so this is the natural light-mode source rather than an arbitrary independent pick. Each of
+# these has a documented ~4.5:1+ contrast ratio against white in Primer's own token set.
+_CANONICAL_ADMONITIONS_LIGHT: dict[str, _AdmonitionKind] = {
+    "NOTE": _AdmonitionKind("📝", "#0969da"),
+    "TIP": _AdmonitionKind("💡", "#1a7f37"),
+    "IMPORTANT": _AdmonitionKind("❗", "#8250df"),
+    "WARNING": _AdmonitionKind("⚠️", "#9a6700", icon_pad=2, icon_width=1),
+    "CAUTION": _AdmonitionKind("🛑", "#cf222e"),
+}
+_ADMONITIONS_BY_THEME: dict[str, dict[str, _AdmonitionKind]] = {
+    "dark": _CANONICAL_ADMONITIONS_DARK,
+    "light": _CANONICAL_ADMONITIONS_LIGHT,
+}
 _GENERIC_ADMONITION = _AdmonitionKind("", "default")
+
+# VIEWMD-0091: the front-matter table's header/column color, dark vs. light -- "cyan" (a plain
+# ANSI 16-color name, not a hex code, unlike the admonition palette above) reads fine on today's
+# dark background but is noticeably washed out on white in several terminal color schemes, so
+# light uses the same Primer "note" blue as the NOTE admonition above instead, for one consistent
+# accent color across both themed surfaces.
+_TABLE_STYLE_BY_THEME: dict[str, tuple[str, str]] = {
+    "dark": ("bold cyan", "cyan"),
+    "light": ("bold #0969da", "#0969da"),
+}
+
+# VIEWMD-0091: the table-of-contents entry text normally reuses rich's own named
+# "markdown.h1"/"h2"/"h3" theme styles (`_toc_lines`, below) so it always matches the body
+# heading's own weight/color -- h1 there is bold+underline with no explicit color (the terminal's
+# own default foreground), which already suits either background, so it needs no light variant.
+# h2/h3 do set an explicit color (rich's default theme's plain "magenta"), which is legible but
+# not particularly high-contrast on white -- light swaps both to the same Primer "important"
+# purple the IMPORTANT admonition above uses, again for one shared accent rather than a second
+# independent color choice.
+_TOC_HEADING_STYLE_LIGHT: dict[int, str] = {
+    2: "bold underline #8250df",
+    3: "bold #8250df",
+}
 
 
 def parse_admonition_marker(text: str) -> tuple[str, str] | None:
@@ -233,6 +272,18 @@ class ViewmdBlockQuote(BlockQuote):
         super().__init__()
         self._admonition_inspected = False
         self._admonition_token: str | None = None
+        self.theme = "dark"
+
+    @classmethod
+    def create(cls, markdown: Markdown, token) -> "ViewmdBlockQuote":
+        # VIEWMD-0091: `markdown` here is the `ViewmdMarkdown` instance being rendered --
+        # `render_markdown`/`_markdown_with_tokens` stamp `viewmd_theme` onto it before printing,
+        # so each blockquote picks the right admonition palette without threading `theme` through
+        # every call in rich's own element-construction path (`create` is rich's own factory hook,
+        # not something this module controls the signature of).
+        element = cls()
+        element.theme = getattr(markdown, "viewmd_theme", "dark")
+        return element
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -242,7 +293,8 @@ class ViewmdBlockQuote(BlockQuote):
             yield from super().__rich_console__(console, options)
             return
 
-        kind = _CANONICAL_ADMONITIONS.get(token.upper(), _GENERIC_ADMONITION)
+        admonitions = _ADMONITIONS_BY_THEME.get(self.theme, _CANONICAL_ADMONITIONS_DARK)
+        kind = admonitions.get(token.upper(), _GENERIC_ADMONITION)
         border_style = Style() if kind.color == "default" else Style(color=kind.color)
         width = options.max_width
         label = token.upper()
@@ -443,7 +495,20 @@ def _toc_occurrence_ranks(full_outline: list[HeadingOutline]) -> dict[int, int]:
     return ranks
 
 
-def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]) -> list[Text]:
+def _toc_heading_style(level: int, theme: str) -> str:
+    """The rich style to render a ToC entry's heading text in, for `level` (1-3) under `theme`.
+
+    Dark keeps the named "markdown.h1"/"h2"/"h3" theme styles so the ToC entry always matches the
+    body heading's own weight/color exactly (VIEWMD-0068); light overrides h2/h3's color only,
+    per `_TOC_HEADING_STYLE_LIGHT`'s own docstring above."""
+    if theme == "light" and level in _TOC_HEADING_STYLE_LIGHT:
+        return _TOC_HEADING_STYLE_LIGHT[level]
+    return f"markdown.h{level}"
+
+
+def _toc_lines(
+    outline: list[HeadingOutline], full_outline: list[HeadingOutline], theme: str = "dark"
+) -> list[Text]:
     """One bulleted, heading-styled line per outline entry, nested by level. `outline` is what's
     actually rendered (post `_fit_toc_outline`); `full_outline` is the un-fitted result, needed
     only to disambiguate a duplicate heading text's link target (see `_toc_occurrence_ranks`)."""
@@ -459,7 +524,7 @@ def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]
         line = Text()
         line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
         heading_start = len(line)
-        line.append(heading.text, style=f"markdown.h{heading.level}")
+        line.append(heading.text, style=_toc_heading_style(heading.level, theme))
         # `stylize`, not folded into the `append` above's own `style=` -- a `Style(link=...)`
         # carries no color/weight of its own, so layering it on top via a second span leaves the
         # heading's visible styling completely unchanged (VIEWMD-0077 requirement 2) while still
@@ -503,6 +568,11 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
     view.hyperlinks = source.hyperlinks
     view.inline_code_lexer = source.inline_code_lexer
     view.inline_code_theme = source.inline_code_theme
+    # VIEWMD-0091: carry the source document's theme along too, so an admonition inside the
+    # title-slice or rest-slice (`ViewmdBlockQuote.create`, above) still picks the right palette
+    # -- `source` here is always a `ViewmdMarkdown` already carrying `viewmd_theme`
+    # (`render_markdown` stamps it before either slice is built).
+    view.viewmd_theme = getattr(source, "viewmd_theme", "dark")
     return view
 
 
@@ -511,10 +581,11 @@ def _print_toc(
     outline: list[HeadingOutline],
     full_outline: list[HeadingOutline],
     omitted: int = 0,
+    theme: str = "dark",
 ) -> None:
     if not outline:
         return
-    for line in _toc_lines(outline, full_outline):
+    for line in _toc_lines(outline, full_outline, theme):
         console.print(line)
     if omitted:
         console.print(f"... {omitted} more")
@@ -528,6 +599,7 @@ def render_markdown(
     color: bool,
     full_front_matter: bool = False,
     toc: bool = True,
+    theme: str = "dark",
 ) -> str:
     """Render `text` to an ANSI string, `width` columns wide.
 
@@ -558,6 +630,12 @@ def render_markdown(
     instead of being cropped away; ``ViewmdCodeBlock`` is what renders them at their own natural
     width in the first place. Paragraphs, tables, and other elements still wrap to ``width``
     during render — only fenced code is exempt, and only the final buffer crop is disabled.
+
+    `theme` (VIEWMD-0091) picks the color palette for admonition callouts, the front-matter
+    table, and the ToC's heading colors -- `"dark"` (the default) is today's original, unlabeled
+    palette; `"light"` swaps those three surfaces for higher-contrast colors tuned for a light
+    terminal background. It does not touch Mermaid diagram coloring, which already has its own
+    color-capability-driven palette logic (`preprocess`, above) -- out of scope for this issue.
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
@@ -568,7 +646,7 @@ def render_markdown(
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
     if front_matter:
-        console.print(_front_matter_table(front_matter))
+        console.print(_front_matter_table(front_matter, theme=theme))
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
@@ -578,6 +656,10 @@ def render_markdown(
     # not duplicated in the ToC or again below it, and so later link-reference
     # definitions still resolve in the title (VIEWMD-0062).
     markdown = ViewmdMarkdown(body, code_theme="monokai")
+    # VIEWMD-0091: stamped onto the instance (not a constructor arg -- `ViewmdMarkdown`'s is
+    # fixed by rich's own `Markdown.__init__`) so `ViewmdBlockQuote.create` can read it back per
+    # admonition (see that method's own comment).
+    markdown.viewmd_theme = theme
     if toc:
         outline = heading_outline(markdown)
         if len(outline) >= 2:
@@ -591,11 +673,11 @@ def render_markdown(
                 # must be computed against the *same* full list `_locate_headings()`
                 # (`viewmd/interactive_pager.py`) builds its own `headings` from, which also
                 # includes the title.
-                _print_toc(console, fitted, outline, omitted)
+                _print_toc(console, fitted, outline, omitted, theme=theme)
                 console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
             else:
                 fitted, omitted = _fit_toc_outline(outline)
-                _print_toc(console, fitted, outline, omitted)
+                _print_toc(console, fitted, outline, omitted, theme=theme)
                 console.print(markdown, crop=False)
             return buffer.getvalue()
     console.print(markdown, crop=False)
@@ -621,7 +703,8 @@ def render_divider(*, width: int, color: bool) -> str:
 
 
 def render_front_matter_block(
-    text: str, *, width: int, color: bool = False, full_front_matter: bool = False
+    text: str, *, width: int, color: bool = False, full_front_matter: bool = False,
+    theme: str = "dark",
 ) -> str:
     """The front-matter table plus divider exactly as `render_markdown` would print them, or
     empty string if it would print neither (no front matter, an unterminated `---` block, or a
@@ -637,7 +720,7 @@ def render_front_matter_block(
         return ""
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
-    console.print(_front_matter_table(front_matter))
+    console.print(_front_matter_table(front_matter, theme=theme))
     console.print(Rule(characters="═", style="dim"))
     return buffer.getvalue()
 
@@ -730,6 +813,7 @@ def render_multi_file(
     color: bool,
     full_front_matter: bool,
     toc: bool,
+    theme: str = "dark",
 ) -> str:
     """Render a resolved multi-file concatenation (two or more `path` arguments, VIEWMD-0013),
     each entry preceded by a heading naming its path and separated by a divider. `entries` is
@@ -750,13 +834,17 @@ def render_multi_file(
             parts.append(render_directory_listing(display_path, width=directory_width, color=color))
         else:
             parts.append(render_markdown(text, width=width, color=color,
-                                         full_front_matter=full_front_matter, toc=toc))
+                                         full_front_matter=full_front_matter, toc=toc,
+                                         theme=theme))
     return "".join(parts)
 
 
-def _front_matter_table(data: dict[str, str]) -> Table:
-    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    table.add_column("Field", style="cyan", no_wrap=True)
+def _front_matter_table(data: dict[str, str], *, theme: str = "dark") -> Table:
+    header_style, column_style = _TABLE_STYLE_BY_THEME.get(
+        theme, _TABLE_STYLE_BY_THEME["dark"]
+    )
+    table = Table(show_header=True, header_style=header_style, box=box.ROUNDED, expand=False)
+    table.add_column("Field", style=column_style, no_wrap=True)
     table.add_column("Value")
     for key, value in data.items():
         table.add_row(key, value)

@@ -58,12 +58,12 @@ def test_display_document_ignores_pager_env_var(monkeypatch):
     monkeypatch.setenv("PAGER", "cat -A")
     calls = []
 
-    def fake_run(text, name, *, width, color, full_front_matter, toc):
-        calls.append((text, name, width, color, full_front_matter, toc))
+    def fake_run(text, name, *, width, color, full_front_matter, toc, theme):
+        calls.append((text, name, width, color, full_front_matter, toc, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run", fake_run)
     pager.display_document("# Hi\n", "file.md", no_pager=False, width=80, color=True)
-    assert calls == [("# Hi\n", "file.md", 80, True, False, True)]
+    assert calls == [("# Hi\n", "file.md", 80, True, False, True, "dark")]
 
 
 def test_display_document_uses_interactive_pager_by_default(monkeypatch):
@@ -71,15 +71,15 @@ def test_display_document_uses_interactive_pager_by_default(monkeypatch):
     monkeypatch.delenv("PAGER", raising=False)
     calls = []
 
-    def fake_run(text, name, *, width, color, full_front_matter, toc):
-        calls.append((text, name, width, color, full_front_matter, toc))
+    def fake_run(text, name, *, width, color, full_front_matter, toc, theme):
+        calls.append((text, name, width, color, full_front_matter, toc, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run", fake_run)
     pager.display_document(
         "# Hi\n", "file.md", no_pager=False, width=80, color=True,
-        full_front_matter=True, toc=False,
+        full_front_matter=True, toc=False, theme="light",
     )
-    assert calls == [("# Hi\n", "file.md", 80, True, True, False)]
+    assert calls == [("# Hi\n", "file.md", 80, True, True, False, "light")]
 
 
 # --- display_directory_listing (VIEWMD-0072) ------------------------------------------------
@@ -126,11 +126,11 @@ def test_display_multi_file_uses_interactive_pager_when_paging(monkeypatch):
     monkeypatch.setattr(pager.sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc):
-        calls.append((entries, width, directory_width, color, full_front_matter, toc))
+    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc, theme):
+        calls.append((entries, width, directory_width, color, full_front_matter, toc, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_multi_file", fake_run)
     entries = [("a.md", "# A\n"), ("sub", None)]
     pager.display_multi_file(entries, no_pager=False, width=80, directory_width=120, color=True,
-                             full_front_matter=True, toc=False)
-    assert calls == [(entries, 80, 120, True, True, False)]
+                             full_front_matter=True, toc=False, theme="light")
+    assert calls == [(entries, 80, 120, True, True, False, "light")]

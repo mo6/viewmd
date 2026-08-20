@@ -26,6 +26,7 @@ def display_document(
     color: bool,
     full_front_matter: bool = False,
     toc: bool = True,
+    theme: str = "dark",
 ) -> None:
     """Page a single Markdown document, `text` being its raw (unrendered) source -- the
     interactive pager needs that itself, to derive its plain-render twin and heading outline
@@ -34,14 +35,15 @@ def display_document(
     if not should_page(no_pager):
         print(
             render_markdown(text, width=width, color=color, full_front_matter=full_front_matter,
-                            toc=toc),
+                            toc=toc, theme=theme),
             end="",
         )
         return
 
     from viewmd.interactive_pager import run
 
-    run(text, name, width=width, color=color, full_front_matter=full_front_matter, toc=toc)
+    run(text, name, width=width, color=color, full_front_matter=full_front_matter, toc=toc,
+       theme=theme)
 
 
 def display_directory_listing(dir_path: str, *, no_pager: bool, width: int, color: bool) -> None:
@@ -65,6 +67,7 @@ def display_multi_file(
     color: bool,
     full_front_matter: bool,
     toc: bool,
+    theme: str = "dark",
 ) -> None:
     """Page a multi-file concatenation (two or more `path` arguments), interactively via
     `viewmd.interactive_pager.run_multi_file` (VIEWMD-0072) when paging applies. `entries` is
@@ -72,7 +75,7 @@ def display_multi_file(
     if not should_page(no_pager):
         print(
             render_multi_file(entries, width=width, directory_width=directory_width, color=color,
-                              full_front_matter=full_front_matter, toc=toc),
+                              full_front_matter=full_front_matter, toc=toc, theme=theme),
             end="",
         )
         return
@@ -80,4 +83,4 @@ def display_multi_file(
     from viewmd.interactive_pager import run_multi_file
 
     run_multi_file(entries, width=width, directory_width=directory_width, color=color,
-                   full_front_matter=full_front_matter, toc=toc)
+                   full_front_matter=full_front_matter, toc=toc, theme=theme)

@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import (
@@ -10,6 +11,7 @@ from viewmd.render import (
 )
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
+THEME_FIXTURES = Path(__file__).parent / "fixtures" / "theme"
 
 
 def strip_ansi(text: str) -> str:
@@ -149,6 +151,89 @@ def test_front_matter_block_empty_when_no_table_would_render():
     assert render_front_matter_block(
         "---\naccepted_by:\n---\n# Body\n", width=80, color=False
     ) == ""
+
+
+# VIEWMD-0091: `--theme {dark,light}` selects the color palette for admonition callouts and the
+# front-matter table (and, separately, the ToC's heading colors -- see
+# test_toc_heading_color_differs_between_dark_and_light_theme below). `theme` defaults to "dark",
+# today's original unlabeled palette, so every fixture/test elsewhere in this file that never
+# passes `theme=` is itself an implicit "dark (default)" pin -- these tests below are the explicit
+# ones the issue's acceptance criteria calls for: a `--theme light` fixture for an admonition
+# block and for the front-matter table, each alongside its `--theme dark` counterpart so a
+# regression in either palette, or an accidental cross-theme bleed, shows up as a fixture diff.
+def test_admonition_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-dark.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="dark") == expected
+
+
+def test_admonition_theme_light_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-light.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="light") == expected
+
+
+def test_admonition_theme_defaults_to_dark():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    assert render_markdown(md, width=60, color=True) == render_markdown(
+        md, width=60, color=True, theme="dark"
+    )
+
+
+def test_front_matter_table_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-dark.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="dark") == expected
+
+
+def test_front_matter_table_theme_light_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-light.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="light") == expected
+
+
+def test_front_matter_table_theme_defaults_to_dark():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    assert render_front_matter_block(md, width=80, color=True) == render_front_matter_block(
+        md, width=80, color=True, theme="dark"
+    )
+
+
+def _toc_entry_lines(rendered: str) -> list[str]:
+    """The rendered ToC's own bulleted lines -- identified by the `viewmd-toc:` OSC8 hyperlink
+    `_toc_lines` (viewmd/render.py) attaches to each entry -- as opposed to the body's own later
+    heading lines, which reuse the same heading *text* but are unaffected by this issue's ToC
+    color theming (see _toc_heading_style's own docstring: only the ToC entry, not the body
+    heading, is retargeted for `light`)."""
+    return [line for line in rendered.splitlines() if "viewmd-toc:" in line]
+
+
+def test_toc_heading_color_differs_between_dark_and_light_theme():
+    # Rich's default theme colors markdown.h2 plain "magenta" (SGR 35); light overrides that to
+    # an explicit truecolor purple (see _TOC_HEADING_STYLE_LIGHT in viewmd/render.py) for better
+    # contrast on a light background -- so the two themes' ToC entries must carry different SGR
+    # codes for the same heading, while the heading *text* itself stays identical either way. The
+    # body's own (later, separate) h2 heading line is intentionally left unthemed either way --
+    # this issue's requirement is the ToC's heading colors specifically, not the body's.
+    md = "# Title\n\n## Section A\n\n## Section B\n\nbody\n"
+    dark = render_markdown(md, width=80, color=True, theme="dark")
+    light = render_markdown(md, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_toc_lines = _toc_entry_lines(dark)
+    light_toc_lines = _toc_entry_lines(light)
+    assert len(dark_toc_lines) == len(light_toc_lines) == 2
+    assert all("\x1b[4;35m" in line for line in dark_toc_lines)  # markdown.h2: underline+magenta
+    assert not any("\x1b[4;35m" in line for line in light_toc_lines)
+
+
+def test_no_color_theme_output_is_unaffected_by_theme():
+    # `color=False` strips every SGR/OSC8 sequence regardless of palette, so dark vs. light must
+    # be visually indistinguishable -- and byte-identical -- when color is off entirely.
+    md = "---\ntitle: Hello\n---\n\n# Title\n\n## A\n\n## B\n\n> [!NOTE]\n> a note\n"
+    dark = render_markdown(md, width=80, color=False, theme="dark")
+    light = render_markdown(md, width=80, color=False, theme="light")
+    assert dark == light
 
 
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).

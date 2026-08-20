@@ -300,7 +300,7 @@ def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypat
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc):
+    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc, theme):
         calls.append(entries)
 
     monkeypatch.setattr("viewmd.interactive_pager.run_multi_file", fake_run)
