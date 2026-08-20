@@ -215,6 +215,18 @@ _TABLE_STYLE_BY_THEME: dict[str, tuple[str, str]] = {
     "light": ("bold #0969da", "#0969da"),
 }
 
+# VIEWMD-0091 (amended requirement 6): Pygments theme for fenced-code-block (and, via
+# rich's own inline_code_theme-defaults-to-code_theme fallback, inline-code-span) syntax
+# highlighting -- "monokai" (dark) is today's existing, unchanged default; "friendly" is a
+# well-regarded built-in light Pygments theme (surveyed from this worktree's own
+# `.venv/lib/python*/site-packages/pygments/styles/`, not guessed) with an off-white
+# `#f0f0f0` background and full syntax-color highlighting (not just black-on-white), giving
+# adequate contrast on a light terminal without the near-white starkness of "default"/"xcode".
+_CODE_THEME_BY_THEME: dict[str, str] = {
+    "dark": "monokai",
+    "light": "friendly",
+}
+
 # VIEWMD-0091: the table-of-contents entry text normally reuses rich's own named
 # "markdown.h1"/"h2"/"h3" theme styles (`_toc_lines`, below) so it always matches the body
 # heading's own weight/color -- h1 there is bold+underline with no explicit color (the terminal's
@@ -657,7 +669,9 @@ def render_markdown(
     # h1 is sliced out of that stream and rendered from the same tokens so it is
     # not duplicated in the ToC or again below it, and so later link-reference
     # definitions still resolve in the title (VIEWMD-0062).
-    markdown = ViewmdMarkdown(body, code_theme="monokai")
+    markdown = ViewmdMarkdown(
+        body, code_theme=_CODE_THEME_BY_THEME.get(theme, _CODE_THEME_BY_THEME["dark"])
+    )
     # VIEWMD-0091: stamped onto the instance (not a constructor arg -- `ViewmdMarkdown`'s is
     # fixed by rich's own `Markdown.__init__`) so `ViewmdBlockQuote.create` can read it back per
     # admonition (see that method's own comment).

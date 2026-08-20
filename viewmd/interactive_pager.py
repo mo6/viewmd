@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from wcwidth import wcswidth
 
 from viewmd.render import (
+    _CODE_THEME_BY_THEME,
     _DIR_ANCHOR_SCHEME,
     _TOC_ANCHOR_SCHEME,
     ViewmdMarkdown,
@@ -260,7 +261,16 @@ def _load(
     plain_raw = render_markdown(text, width=width, color=False, **color_kwargs)
     colored = colored_raw.rstrip("\n").split("\n")
     plain = plain_raw.rstrip("\n").split("\n")
-    markdown = ViewmdMarkdown(text, code_theme="monokai")
+    # VIEWMD-0091 (amended requirement 6): this instance is only used for `heading_outline`
+    # below, never printed, so its `code_theme` has no visible effect either way -- picked from
+    # `color_kwargs["theme"]` via the same `_CODE_THEME_BY_THEME` mapping `render_markdown` uses
+    # anyway, for consistency rather than because it changes anything observable here.
+    markdown = ViewmdMarkdown(
+        text,
+        code_theme=_CODE_THEME_BY_THEME.get(
+            color_kwargs.get("theme", "dark"), _CODE_THEME_BY_THEME["dark"]
+        ),
+    )
     outline = heading_outline(markdown)
     body_start = _front_matter_body_start(text, width, color_kwargs=color_kwargs)
     return colored, plain, _locate_headings(plain, outline), body_start

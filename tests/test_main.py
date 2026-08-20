@@ -772,3 +772,31 @@ def test_cli_theme_light_reaches_quadrant_background_fill_end_to_end(tmp_path, c
         return sum(int(c) for c in rgb.split(";"))
 
     assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
+
+
+# VIEWMD-0091 amended requirement 6: `--theme light` must reach fenced-code-block syntax
+# highlighting *through the actual CLI entry point* -- `render_markdown`'s
+# `ViewmdMarkdown(body, code_theme="monokai")` used to be hardcoded regardless of `--theme`,
+# invisible to any test that hands `theme=` directly to `render_markdown` rather than tracing the
+# flag all the way from `main()` (the same VIEWMD-0043-class plumbing gap AGENTS.md documents).
+_CODE_FENCE_DOC = "```python\nimport os\n\ndef greet(name):\n    return f\"hi {name}\"\n```\n"
+
+
+def test_cli_theme_light_reaches_code_fence_highlighting_end_to_end(tmp_path, capsys):
+    import re
+
+    path, _ = _write_md(tmp_path, _CODE_FENCE_DOC)
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    dark_codes = set(re.findall(r"\x1b\[[0-9;]*m", dark_out)) - {"\x1b[0m"}
+    light_codes = set(re.findall(r"\x1b\[[0-9;]*m", light_out)) - {"\x1b[0m"}
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)

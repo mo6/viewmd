@@ -299,6 +299,43 @@ def test_pie_chart_rendering_is_unaffected_by_theme():
     assert omitted == dark == light
 
 
+# VIEWMD-0091 amended requirement 6: `--theme` also picks the Pygments theme used for fenced
+# code blocks (and, via rich's own inline_code_theme-defaults-to-code_theme fallback, inline
+# code spans) -- `render_markdown`'s `ViewmdMarkdown(body, code_theme="monokai")` used to be
+# hardcoded regardless of `theme`; "dark" now maps to the same "monokai" as before (unchanged),
+# "light" to Pygments' built-in "friendly" theme. A fenced block using a real lexer (Python) is
+# needed here, not a bare ``` fence -- Pygments only emits per-token color codes when there's a
+# lexer with a syntax to highlight, so a codeless fence wouldn't actually exercise a theme's
+# palette differences the way this issue's own acceptance criteria calls for.
+_CODE_FENCE_DOC = "```python\nimport os\n\ndef greet(name):\n    return f\"hi {name}\"\n```\n"
+
+
+def test_code_fence_theme_light_differs_from_dark_and_is_not_the_old_dark_codes():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_codes = set(ANSI_RE.findall(dark)) - {"\x1b[0m"}
+    light_codes = set(ANSI_RE.findall(light)) - {"\x1b[0m"}
+    assert dark_codes and light_codes
+    # The light theme must not reuse monokai's own background/foreground SGR codes -- i.e. this
+    # isn't accidentally still rendering with the old hardcoded dark theme. ("\x1b[0m", the plain
+    # reset sequence, is excluded above -- it's shared trivially by any two colored renders.)
+    assert not (light_codes & dark_codes)
+
+
+def test_code_fence_theme_defaults_to_dark_monokai_unchanged():
+    omitted = render_markdown(_CODE_FENCE_DOC, width=80, color=True)
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    assert omitted == dark
+
+
+def test_code_fence_no_color_output_is_unaffected_by_theme():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="light")
+    assert dark == light
+
+
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).
 LINK_URL_ANSI = re.compile(r"\x1b\[4;34m")
 
