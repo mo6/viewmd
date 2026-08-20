@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.48.0] — 2026-08-20
+
+- **Size column and `--depth` for bare directory listings** (VIEWMD-0089, feature): the directory-listing table gained a human-readable `Size` column (right-aligned; a subdirectory row shows its immediate-child entry count instead of a byte size), and an opt-in `--depth N` flag (config-settable, capped at 10 with a stderr warning above that) to descend into subdirectories rather than the fixed one-level listing, each row indented per level, subdirectories-first-then-alphabetical at every level. A long filename now truncates to 25 characters with its extension always preserved and `...` placed just before it, so a long name no longer squeezes the `Title` column. Fixed a scrollbar-crop bug (the table's right border and rightmost column could get silently cut off once a listing needed a scrollbar) and a bug where a `.md` file opened by clicking through a directory listing inherited the listing's own full-terminal-width default instead of the document's own prose-capped width.
+
 ## [1.47.0] — 2026-08-20
 
 - **Multi-level back/forward navigation trail in the interactive pager** (VIEWMD-0090, feature): the `B` back key already walked a full history stack (VIEWMD-0076), not just one step, but had no complement — `f` now redoes a hop undone by `b` (lowercase, matching the pager's otherwise-lowercase keymap; page-back-up narrows from `b`/`-`/Backspace to `-`/Backspace only to free `b` for this), inert when there's nothing to go forward to, and clears on a fresh navigation. Scroll position is preserved on both. The echo-area hint shows a live back/forward count (e.g. `b: back (2)`).
