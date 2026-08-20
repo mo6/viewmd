@@ -90,11 +90,11 @@ Press `?` at any time for the full keybinding reference; a few of the more usefu
 
 ```
 up/down, wheel, j/k     scroll one line                    t        open the table of contents*
-space / b               page down / back up                /        search forward
+space / - / Backspace   page down / back up                /        search forward
 g / G                   jump to top / bottom               N        repeat the last search
 n / p                   jump to next / previous heading*   w        toggle full terminal width
 left/right, h/l         scroll sideways (wide content)     m        toggle mouse capture
-click a link            follow it, if local†               B        go back†
+click a link            follow it, if local†               b / f    back / forward through the trail†
 q                       quit
 ```
 
@@ -109,14 +109,20 @@ The mouse highlights whatever clickable target it's currently over — a link, a
 row, a table-of-contents/help-screen row, or a keybinding chip in the bottom status row — before
 you click it, so it's clear what will actually respond. Clicking a link (a `[[wikilink]]` or an
 ordinary Markdown link) that resolves to an existing local `.md` file navigates the pager to that
-file in place; `B` goes back to the file you navigated from. Clicking a row in the table-of-contents
+file in place, pushing the file you were on onto a history trail; `b` walks back through that
+trail one hop per press (clicking through A → B → C, then pressing `b` twice returns to A), and
+`f` walks forward again to redo a hop undone by `b` — each is a no-op once there's nothing left in
+that direction. Following a new link from partway back in the trail discards whatever was ahead of
+it, the same way a browser's forward history works. Scroll position is restored exactly on both
+`b` and `f`, and once there's a trail to show, the bottom status row's `b`/`f` hints include how
+many hops are available in each direction. Clicking a row in the table-of-contents
 popup jumps to it, same as Enter; clicking a keybinding row in the `?` help screen performs that
 key's action directly, and the `cancel`/`close help` chip in the bottom row while either popup is
 open does the same as pressing Esc.
 
 A bare directory listing (no index file present) is click-navigable too: clicking a subdirectory
 row descends into that subdirectory's own listing, clicking a `.md` file row opens it in the pager,
-and `B` returns to the listing you came from either way.
+and `b`/`f` walk back and forward through that trail either way.
 
 \* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
 they're only available for a single document; viewing more than one file at once or a bare
@@ -125,9 +131,9 @@ it — just without those two, since there's no per-file/per-entry heading struc
 table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
 it's one long continuous scroll through every file in the order given.
 
-† Click-to-follow and `B` work for a single document and for a bare directory listing; a multi-file
-view has no single current file/directory to resolve a relative link against, so a click on a link
-and `B` are both inert there.
+† Click-to-follow and `b`/`f` work for a single document and for a bare directory listing; a
+multi-file view has no single current file/directory to resolve a relative link against, so a
+click on a link and `b`/`f` are both inert there.
 
 ## Configuration file
 

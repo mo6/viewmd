@@ -9,6 +9,8 @@ a click-to-quit consumes its paired SGR release rather than leaving it for the s
 
 import os
 import pathlib
+import threading
+import time
 
 import pytest
 
@@ -905,14 +907,51 @@ def _pipe_with(data: bytes) -> int:
 
 
 def _run_pager_with_input(
-    monkeypatch, data: bytes, *, term_size=(80, 24), width=80, text="# Hi\n\nbody\n"
+    monkeypatch,
+    data: bytes | None = None,
+    *,
+    term_size=(80, 24),
+    width=80,
+    text="# Hi\n\nbody\n",
+    name="file.md",
+    chunks: list[bytes] | None = None,
 ) -> bytes:
     """Drive `run()` against a pipe standing in for `/dev/tty`, feeding `data` as the pager's
     input. Returns whatever bytes were still unread on that pipe after `run()` returned --
-    VIEWMD-0094's leak is exactly those leftover SGR-release bytes."""
+    VIEWMD-0094's leak is exactly those leftover SGR-release bytes.
+
+    `name` (VIEWMD-0090) defaults to the bare, non-existent "file.md" every pre-existing caller
+    here relies on -- `run()` only needs it as a display name/`doc_dir` source, never actually
+    reads it, so a name with no real file backing it is fine for anything that doesn't click a
+    link. A click-to-follow test passes a real on-disk path instead, since `open_path` (VIEWMD-
+    0076) does actually open whatever a click resolves to.
+
+    `chunks` (VIEWMD-0090), when given instead of `data`, is written to the pipe from a
+    background thread with a short real sleep between each chunk, rather than all of `data`
+    up front. `_drain_paired_sgr_release` (VIEWMD-0094) greedily reads *everything* currently
+    queued on the fd looking for a click's own paired release -- fine for a single click, where
+    at most one real following keystroke can possibly already be queued, but a second scripted
+    click's whole press+release (and everything after it) sitting in the pipe from the start
+    would get swept into that first drain's leftover-bytes buffer too, then have nothing left on
+    the raw fd for the second click's own drain call to find (found while developing this test's
+    two-navigation sequence: manifested as a spurious empty `Event('key', '')` and an extra
+    redraw right after the second click). A real terminal session never has this problem --
+    keystrokes arrive as the reader actually presses them, never all buffered at once before the
+    session even starts -- so `chunks` exists to make this harness behave the same way for a
+    multi-click script, without touching the drain logic itself (out of this issue's scope)."""
     r, w = os.pipe()
-    os.write(w, data)
-    os.close(w)
+    if chunks is not None:
+
+        def feed() -> None:
+            for chunk in chunks:
+                os.write(w, chunk)
+                time.sleep(0.15)
+            os.close(w)
+
+        threading.Thread(target=feed, daemon=True).start()
+    else:
+        os.write(w, data)
+        os.close(w)
     pager_fd = os.dup(r)
 
     real_open = ip.os.open
@@ -930,7 +969,7 @@ def _run_pager_with_input(
         ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
     )
 
-    ip.run(text, "file.md", width=width, color=False)
+    ip.run(text, name, width=width, color=False)
 
     leftover = os.read(r, 64)
     os.close(r)
@@ -1170,13 +1209,29 @@ def test_keybind_help_shows_contents_hint_with_headings_by_default():
 
 def test_keybind_help_omits_prev_file_hint_before_any_navigation():
     line, _spans = ip._keybind_help(False, None, False)
-    assert "prev file" not in ip._strip_ansi(line)
+    plain = ip._strip_ansi(line)
+    assert "back (" not in plain
+    assert "fwd (" not in plain
 
 
-def test_keybind_help_shows_prev_file_hint_once_has_back_is_true():
-    # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to.
-    line, _spans = ip._keybind_help(False, None, False, has_back=True)
-    assert "prev file" in ip._strip_ansi(line)
+def test_keybind_help_shows_back_hint_with_trail_depth_once_back_count_is_positive():
+    # VIEWMD-0076: 'b' is only advertised once there's actually something to go back to;
+    # VIEWMD-0090 extends this to a full stack, so the hint's label carries the depth
+    # (requirement 6 -- a discoverable trail position) rather than just "yes/no".
+    line, _spans = ip._keybind_help(False, None, False, back_count=2)
+    assert "back (2)" in ip._strip_ansi(line)
+
+
+def test_keybind_help_omits_forward_hint_with_nothing_ahead():
+    line, _spans = ip._keybind_help(False, None, False, back_count=1)
+    assert "fwd (" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_forward_hint_with_trail_depth_once_forward_count_is_positive():
+    # VIEWMD-0090 requirement 3/6: 'f' is only advertised once there's somewhere to go forward
+    # to, and its label carries the depth the same way the back hint's does.
+    line, _spans = ip._keybind_help(False, None, False, forward_count=3)
+    assert "fwd (3)" in ip._strip_ansi(line)
 
 
 # --- _keybind_help spans / _chip_at (VIEWMD-0078) -------------------------------------------
@@ -1186,17 +1241,18 @@ def test_keybind_help_every_chip_has_a_resolvable_span():
     # Requirement 2/acceptance: every chip `_keybind_help()` can render, in both layouts, has a
     # span that covers at least one column and doesn't overlap its neighbors.
     for popup_open in (False, True):
-        for width_toggle, highlight_active, has_headings, has_back in (
-            (None, False, True, False),
-            ("full width", True, True, True),
-            (None, False, False, False),
+        for width_toggle, highlight_active, has_headings, back_count, forward_count in (
+            (None, False, True, 0, 0),
+            ("full width", True, True, 1, 2),
+            (None, False, False, 0, 0),
         ):
             _text, spans = ip._keybind_help(
                 popup_open,
                 width_toggle,
                 highlight_active,
                 has_headings=has_headings,
-                has_back=has_back,
+                back_count=back_count,
+                forward_count=forward_count,
             )
             assert spans
             prev_end = 0
@@ -1208,12 +1264,13 @@ def test_keybind_help_every_chip_has_a_resolvable_span():
 
 def test_keybind_help_base_layout_chip_invokes_match_their_key():
     _text, spans = ip._keybind_help(
-        False, "full width", True, has_headings=True, has_back=True
+        False, "full width", True, has_headings=True, back_count=1, forward_count=1
     )
     invokes = {inv.value: inv for _s, _e, inv in spans if inv is not None}
     assert invokes["/"] == ip.Event("key", "/")
     assert invokes["t"] == ip.Event("key", "t")
-    assert invokes["B"] == ip.Event("key", "B")
+    assert invokes["b"] == ip.Event("key", "b")
+    assert invokes["f"] == ip.Event("key", "f")
     assert invokes["w"] == ip.Event("key", "w")
     assert invokes["esc"] == ip.Event("key", "esc")
     assert invokes["?"] == ip.Event("key", "?")
@@ -1581,6 +1638,216 @@ def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out == render_multi_file(entries, width=80, directory_width=80, color=False,
                                     full_front_matter=False, toc=True)
+
+
+# --- Multi-level b/f trail (VIEWMD-0090) --------------------------------------------------
+
+
+def _sgr_click(col: int, row: int) -> bytes:
+    """A plain left-click press + its paired release, 1-indexed SGR mouse-report coordinates --
+    same shape every other click-driven test in this file sends."""
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    return press + release
+
+
+def test_multilevel_back_and_forward_walk_a_three_document_trail(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 acceptance: a three-hop link-following sequence (A -> B -> C), back-back
+    # returns to the origin (A), forward-forward re-reaches the final hop (C), and each
+    # document's own scroll position -- not just its home position -- is restored exactly on
+    # both directions. Driven through the real `_run()` event loop (via a pipe standing in for
+    # `/dev/tty`, `_run_pager_with_input`), since click-to-follow's own scroll-restoration math
+    # only lives inside that loop's closures, not in any separately-testable helper.
+    width = 80
+    term_size = (width, 24)
+    body_h = term_size[1] - 2
+
+    def make_doc(label: str, link_target: str | None) -> str:
+        # A single tight list, one item per source line -- deliberately not blank-line-separated
+        # paragraphs, so each item is exactly one rendered row with no interleaved blank rows to
+        # account for (found while developing this test: paragraph-per-line content renders with
+        # an unpredictable number of blank divider rows between items, depending on Rich's own
+        # Markdown wrapping, which would make every row index below a guess rather than a fact).
+        items = []
+        for i in range(60):
+            if link_target is not None and i == 20:
+                items.append(f"- [NEXT]({link_target})")
+            else:
+                items.append(f"- {label} filler {i}")
+        return f"# {label}\n\n" + "\n".join(items) + "\n"
+
+    text_a = make_doc("A", "b.md")
+    text_b = make_doc("B", "c.md")
+    text_c = make_doc("C", None)
+    a_path = tmp_path / "a.md"
+    a_path.write_text(text_a)
+    (tmp_path / "b.md").write_text(text_b)
+    (tmp_path / "c.md").write_text(text_c)
+
+    def row_of(plain_lines: list[str], marker: str) -> int:
+        return next(i for i, line in enumerate(plain_lines) if marker in line)
+
+    # `ip.run()` itself defaults to `toc=True` -- matched here rather than reusing plain `_KW`
+    # (toc=False), even though a single-heading doc makes no practical difference (a ToC block
+    # only renders with >= 2 headings, `render.py`'s own `render_markdown`), so this test's row
+    # math is never relying on that incidental equivalence.
+    kw = {**_KW, "toc": True}
+    colored_a, plain_a, _h, _bs = ip._load(text_a, width, color_kwargs=kw)
+    colored_b, plain_b, _h, _bs = ip._load(text_b, width, color_kwargs=kw)
+    _colored_c, plain_c, _h, _bs = ip._load(text_c, width, color_kwargs=kw)
+
+    link_row_a = row_of(plain_a, "NEXT")
+    link_row_b = row_of(plain_b, "NEXT")
+    # Scrolled a few rows short of the link, not all the way to it or left at the top -- proves
+    # the exact scroll position (not just "somewhere"/"the top") survives the round trip.
+    top_a, top_b, top_c = link_row_a - 3, link_row_b - 3, 9
+    # The link's own screen row after scrolling to `top_*` -- must stay on-screen (0 <= . < body_h)
+    # for the click below to actually land on it.
+    assert 0 <= link_row_a - top_a < body_h
+    assert 0 <= link_row_b - top_b < body_h
+    expect_a, expect_b, expect_c = plain_a[top_a], plain_b[top_b], plain_c[top_c]
+    # Guards the test itself against a vacuous pass: an empty/blank expected row would make the
+    # substring check below trivially true regardless of what the pager actually restored.
+    assert expect_a.strip() and expect_b.strip() and expect_c.strip()
+
+    # The scrollbar-plus-gap column (VIEWMD-0079) is reserved to the left of every body row
+    # whenever the document doesn't fit in one screen -- true for all three here (60-item
+    # lists) -- so a click's screen column has to account for it, same as `_run`'s own click
+    # handling does when mapping a screen column back to a content column.
+    reserved = ip._scrollbar_reserved(len(colored_a), body_h)
+    assert reserved == ip._scrollbar_reserved(len(colored_b), body_h)
+    col_a = reserved + _col_of(colored_a[link_row_a], "NEXT")
+    col_b = reserved + _col_of(colored_b[link_row_b], "NEXT")
+
+    # Split around the two navigating clicks (`chunks`, not one plain `data` blob) -- two real
+    # clicks in one script needs the paced delivery `_run_pager_with_input`'s own docstring
+    # explains, or the second click's paired-release drain finds nothing left to drain.
+    chunks = [
+        b"j" * top_a + _sgr_click(col_a + 1, (link_row_a - top_a) + 1),  # A -> B
+        b"j" * top_b + _sgr_click(col_b + 1, (link_row_b - top_b) + 1),  # B -> C
+        b"j" * top_c + b"bb" + b"ff" + b"q",  # C -> B -> A -> B -> C, then quit
+    ]
+
+    _run_pager_with_input(
+        monkeypatch, chunks=chunks, term_size=term_size, width=width, text=text_a, name=str(a_path)
+    )
+    out = capsys.readouterr().out
+    frames = out.split(ip._HOME)[1:]
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    # Event order -> frame index: 0 is the initial draw; each subsequent key/click event (never
+    # a "motion" event here) produces exactly one more, in order (see `_run`'s main loop -- every
+    # branch reaches its own `draw()` call at the bottom before the next event is read).
+    n_scroll_a, n_scroll_b, n_scroll_c = top_a, top_b, top_c
+    idx_after_click_to_c = n_scroll_a + 1 + n_scroll_b + 1  # two clicks: A->B, B->C
+    idx_back_to_b = idx_after_click_to_c + n_scroll_c + 1
+    idx_back_to_a = idx_back_to_b + 1
+    idx_fwd_to_b = idx_back_to_a + 1
+    idx_fwd_to_c = idx_fwd_to_b + 1
+    assert len(frames) == idx_fwd_to_c + 1
+
+    assert expect_c.strip() in first_body_row(frames[idx_after_click_to_c + n_scroll_c])
+    # Back, back: C -> B (B's own saved scroll) -> A (A's own saved scroll, the origin).
+    assert expect_b.strip() in first_body_row(frames[idx_back_to_b])
+    assert expect_a.strip() in first_body_row(frames[idx_back_to_a])
+    # Forward, forward: A -> B (redone) -> C, each landing back at its own saved scroll position,
+    # not just the top of the document -- the final hop is exactly where it was left.
+    assert expect_b.strip() in first_body_row(frames[idx_fwd_to_b])
+    assert expect_c.strip() in first_body_row(frames[idx_fwd_to_c])
+
+
+def test_forward_is_a_no_op_with_nothing_ahead(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 requirement 3: 'f' with nothing on the forward stack (no 'b' yet pressed, or
+    # after a fresh navigation has discarded it) is inert, same as 'b' already is at the start of
+    # a session -- an echo-area message, not a crash or an unexplained no-op.
+    (tmp_path / "a.md").write_text("# A\n")
+    data = b"f" + b"q"
+    _run_pager_with_input(
+        monkeypatch, data, text="# A\n", name=str(tmp_path / "a.md")
+    )
+    out = capsys.readouterr().out
+    assert "No next file to go forward to" in ip._strip_ansi(out)
+
+
+def test_new_navigation_clears_the_forward_stack(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 design decision: following a new link after backing up discards whatever was
+    # ahead on the trail (the same rule a browser's own forward history follows) -- 'f' must not
+    # resurrect a document the reader has since navigated away from through a different link.
+    text_a = "# A\n\n[to B](b.md)\n"
+    text_c = "# C\n\nonly C\n"
+    (tmp_path / "a.md").write_text(text_a)
+    (tmp_path / "b.md").write_text("# B\n\n[to C](c.md)\n")
+    (tmp_path / "c.md").write_text(text_c)
+
+    colored, plain, _h, _bs = ip._load(text_a, 80, color_kwargs={**_KW, "toc": True})
+    link_row = next(i for i, line in enumerate(plain) if "to B" in line)
+    col = _col_of(colored[link_row], "to B")
+    row = link_row + 1  # 1-indexed screen row, top == 0
+
+    # Split around the two navigating clicks (see `_run_pager_with_input`'s own docstring for
+    # why: the second click's paired-release drain finds nothing left to drain otherwise, once
+    # everything is available on the pipe from the very start).
+    chunks = [
+        _sgr_click(col + 1, row),  # A -> B
+        b"b",  # B -> A (now something to go forward to)
+        _sgr_click(col + 1, row),  # A -> B again, a *new* navigation
+        b"f" + b"q",  # nothing ahead any more -- must be inert
+    ]
+    _run_pager_with_input(monkeypatch, chunks=chunks, text=text_a, name=str(tmp_path / "a.md"))
+    out = capsys.readouterr().out
+    assert "No next file to go forward to" in ip._strip_ansi(out)
+
+
+# --- page-back-up key remap (maintainer review, VIEWMD-0090) --------------------------------
+#
+# The maintainer asked for lowercase 'b'/'f' as the trail keys instead of 'B'/'F', which
+# collided with lowercase 'b' already meaning "page back up" (the standard `less`-style
+# binding). Resolution (maintainer's explicit call): drop 'b' from page-back-up entirely,
+# leaving only '-'/Backspace for it, freeing 'b' for trail-back.
+
+
+def test_page_back_up_still_works_via_dash_and_backspace(monkeypatch, capsys):
+    # '-' and Backspace must still page back up exactly as before the remap.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    for key in (b"-", b"\x7f"):  # '-' and Backspace (DEL)
+        data = b" " + key + b"q"  # page down, then page back up, then quit
+        _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+        out = capsys.readouterr().out
+        frames = out.split(ip._HOME)[1:]
+        assert len(frames) == 3
+        after_page_down = first_body_row(frames[1])
+        after_page_back = first_body_row(frames[2])
+        # Paging down then back up returns to the same first body row it started from.
+        assert after_page_back == first_body_row(frames[0])
+        assert after_page_down != after_page_back
+
+
+def test_lowercase_b_alone_no_longer_pages_back_up(monkeypatch, capsys):
+    # Lowercase 'b' is now the trail-back key, not page-back-up -- with an empty history stack
+    # it must be an inert no-op (an echo-area message), never scrolling the viewport at all.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    data = b" " + b"b" + b"q"  # page down, then 'b' (no trail to go back to), then quit
+    _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+    out = capsys.readouterr().out
+    frames = out.split(ip._HOME)[1:]
+    assert len(frames) == 3
+    after_page_down = first_body_row(frames[1])
+    after_b = first_body_row(frames[2])
+    # 'b' left the viewport exactly where it was -- no page-back-up happened.
+    assert after_b == after_page_down
+    assert "No previous file to go back to" in ip._strip_ansi(out)
 
 
 if __name__ == "__main__":
