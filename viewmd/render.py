@@ -671,12 +671,25 @@ def _markdown_title(path: str) -> str:
     return os.path.basename(path)
 
 
-def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
-    """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
-    directory with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
-    subdirectories and Markdown files only (no recursion), subdirectories first then files, each
-    alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
-    to propagate, matching how an unreadable file is handled elsewhere in this module.
+def _format_size(num_bytes: int) -> str:
+    """Human-readable byte size (`340B`, `1.2K`, `4.0M`, ...) for the directory-listing size
+    column -- base-1024 units, one decimal place from `K` up, no decimal for a plain byte count.
+    """
+    if num_bytes < 1024:
+        return f"{num_bytes}B"
+    size = float(num_bytes)
+    for unit in "KMGT":
+        size /= 1024
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+    return f"{size:.1f}P"
+
+
+def _list_dir_entries(dir_path: str) -> tuple[list[str], list[str]]:
+    """`(dirs, files)` immediately inside `dir_path`, each sorted alphabetically -- `dirs` every
+    subdirectory, `files` every `.md` file -- the shared listing/filtering/sort rule
+    `render_directory_listing` applies at every depth level and `_entry_count` reuses to describe
+    a subdirectory's own contents without listing them.
     """
     entry_names = os.listdir(dir_path)
     dirs = sorted(
@@ -686,34 +699,170 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
         name for name in entry_names
         if name.lower().endswith(".md") and os.path.isfile(os.path.join(dir_path, name))
     )
+    return dirs, files
 
+
+def _entry_count(dir_path: str) -> str:
+    """`"N items"` (or `"1 item"`) for a subdirectory row's size column -- the count of that
+    subdirectory's own immediate children that would themselves appear in a listing (subdirs plus
+    `.md` files, same rule as `_list_dir_entries`), not a byte size, since a directory has no
+    single meaningful size of its own (VIEWMD-0089 requirement 1).
+
+    Blank (not a raised `OSError`) if `dir_path` can't be listed (e.g. permission denied): unlike
+    `depth > 1` actually descending into a subdirectory -- where an unreadable one is left to
+    propagate, matching this module's existing "an unreadable path aborts the render" precedent --
+    showing *some* row for every subdirectory, blank count included, is more useful than a bare
+    listing of a directory's immediate children (still depth 1 by default) suddenly crashing on a
+    subdirectory whose contents were never otherwise inspected before this issue.
+    """
+    try:
+        dirs, files = _list_dir_entries(dir_path)
+    except OSError:
+        return ""
+    count = len(dirs) + len(files)
+    return f"{count} item" if count == 1 else f"{count} items"
+
+
+def _iter_listing_rows(
+    dir_path: str, depth: int, level: int = 0
+) -> list[tuple[int, str, str, str]]:
+    """Flattened `(level, kind, name, full_path)` rows for `dir_path` down to `depth` levels,
+    `kind` being `"dir"` or `"file"` -- depth-first so each subdirectory's own children (if any,
+    within `depth`) immediately follow it, subdirectories-first-then-alphabetical within every
+    directory visited, matching the flat (depth-1) order exactly when `depth == 1`."""
+    dirs, files = _list_dir_entries(dir_path)
+    rows: list[tuple[int, str, str, str]] = []
+    for name in dirs:
+        full_path = os.path.join(dir_path, name)
+        rows.append((level, "dir", name, full_path))
+        if level + 1 < depth:
+            rows.extend(_iter_listing_rows(full_path, depth, level + 1))
+    for name in files:
+        rows.append((level, "file", name, os.path.join(dir_path, name)))
+    return rows
+
+
+def _truncate_filename(name: str, max_len: int = 25) -> str:
+    """Truncate a bare filename (or `name + "/"` directory display string) to at most `max_len`
+    characters, always preserving its extension in full, with the `...` ellipsis placed right
+    before the extension rather than at the very end of the whole string -- e.g.
+    `"VIEWMD-0031-er-layout-legibility-review.md"` (44 chars) becomes `"VIEWMD-0031-er-layo....md"`
+    (25 chars: a 19-char stem fragment, `...`, then the full `.md` extension), per the maintainer's
+    second round of manual testing feedback on VIEWMD-0089 (superseding the earlier Rich
+    `max_width=55, overflow="ellipsis"` column-width-based approach, which truncated by raw display
+    width with no awareness of extensions or a fixed character budget).
+
+    `name` is expected to be just the filename/directory-name portion, with no `--depth` indent
+    prefix -- callers must truncate first and prepend the (structural, not part of the "name")
+    indent afterward, so the budget is always spent on the name itself, not swallowed by
+    indentation at deeper levels.
+
+    A trailing `/` (this module's convention for a subdirectory row's display name) is treated as
+    the "extension" that always survives truncation, the same way a file's `.md` does -- so a long
+    subdirectory name doesn't lose its trailing slash, keeping the row visually identifiable as a
+    directory at a glance, and keeping directory/file truncation one consistent rule rather than a
+    special case.
+
+    A name with no extension at all (no `.`) or a dotfile like `.gitignore` (a leading dot with
+    nothing before it, so there's no real "stem") falls back to treating the whole name as the
+    stem, with the ellipsis at the very end and no separate extension to preserve -- there's
+    nothing to protect it from.
+
+    If the extension itself is long enough that `max_len - len(extension) - len("...")` would be
+    non-positive (a pathological input, not expected from any real filename this project handles),
+    the ellipsis-plus-extension scheme is abandoned entirely and the whole string is hard-truncated
+    to `max_len` characters -- a plain, if unhelpful, floor rather than a negative-length slice or
+    an over-length result.
+    """
+    if len(name) <= max_len:
+        return name
+
+    if name.endswith("/"):
+        stem, ext = name[:-1], "/"
+    else:
+        stem, dot, ext_part = name.rpartition(".")
+        if dot and stem:
+            ext = dot + ext_part
+        else:
+            stem, ext = name, ""
+
+    ellipsis = "..."
+    budget = max_len - len(ext) - len(ellipsis)
+    if budget < 1:
+        return name[:max_len]
+    return stem[:budget] + ellipsis + ext
+
+
+def render_directory_listing(dir_path: str, *, width: int, color: bool, depth: int = 1) -> str:
+    """Render a table-of-contents view of `dir_path`, used when a `path` argument is a directory
+    with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
+    subdirectories and Markdown files, subdirectories first then files, each alphabetically; a raw
+    `OSError` from listing the directory (e.g. permission denied) is left to propagate, matching
+    how an unreadable file is handled elsewhere in this module.
+
+    `depth` (default `1`, today's original behavior) descends into subdirectories up to that many
+    levels, each row indented two spaces per level below the top (VIEWMD-0089 requirement 2); a
+    caller passing `depth > 1` is expected to have already capped it to something reasonable for a
+    terminal-rendering tool (`viewmd.__main__`'s `--depth`, requirement 4) -- this function itself
+    does not re-clamp.
+
+    Only top-level (`depth == 1`, i.e. `level == 0`) subdirectory rows carry a clickable
+    `_DIR_ANCHOR_SCHEME` href: `_resolve_dir_target` (`interactive_pager.py`) resolves that scheme
+    by joining the name directly onto the *currently displayed* directory, an invariant that only
+    holds for an immediate child -- a `level > 0` row names a deeper descendant, not an immediate
+    child of `dir_path`, so it is rendered as plain (still escaped) text instead of a link rather
+    than widening that resolver's contract.
+    """
     table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
+    # No `max_width`/`overflow` here: Rich's own column-width truncation crops by raw display
+    # width with no awareness of file extensions or a fixed character budget (the earlier
+    # `max_width=55, overflow="ellipsis"` attempt at this same problem, superseded per the
+    # maintainer's second round of manual testing feedback). Instead, `_truncate_filename` caps
+    # each bare name to 25 characters *before* it ever reaches the table, always preserving the
+    # extension (or a directory's trailing `/`) in full with the `...` ellipsis placed right
+    # before it -- `no_wrap=True` is kept only so Rich never re-wraps the (already short) result.
     table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
+    table.add_column("Size", no_wrap=True, justify="right")
     table.add_column("Modified", no_wrap=True)
 
-    for name in dirs:
-        # A `Text` cell (rather than the plain, markup-escaped strings the other columns use)
-        # so a real OSC8 link can be layered on via `stylize` -- same pattern as the static ToC
-        # block's own heading links (`_toc_lines`, above). `Text` never parses console markup,
-        # so no `escape()` call is needed here the way the plain-string cells still need one.
-        name_cell = Text(name + "/")
-        href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
-        name_cell.stylize(Style(link=href))
-        table.add_row(name_cell, "dir", "", "")
-    for name in files:
-        full_path = os.path.join(dir_path, name)
-        title = _markdown_title(full_path)
-        modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
-        # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use (VIEWMD-0081) --
-        # a plain relative-path href (no scheme prefix), unlike the `_DIR_ANCHOR_SCHEME`-tagged
-        # subdirectory hrefs, since this needs to resolve through `_resolve_link_target()`
-        # (`interactive_pager.py`) the same way an ordinary in-document relative link does, not
-        # through `_resolve_dir_target()` (VIEWMD-0093).
-        name_cell = Text(name)
-        name_cell.stylize(Style(link=urllib.parse.quote(name)))
-        table.add_row(name_cell, "file", escape(title), modified)
+    for level, kind, name, full_path in _iter_listing_rows(dir_path, depth):
+        indent = "  " * level
+        if kind == "dir":
+            display_name = _truncate_filename(name + "/")
+            if level == 0:
+                # A `Text` cell (rather than the plain, markup-escaped strings the other columns
+                # use) so a real OSC8 link can be layered on via `stylize` -- same pattern as the
+                # static ToC block's own heading links (`_toc_lines`, above). `Text` never parses
+                # console markup, so no `escape()` call is needed here the way the plain-string
+                # cells still need one.
+                name_cell: Text | str = Text(indent + display_name)
+                href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
+                name_cell.stylize(Style(link=href))
+            else:
+                name_cell = escape(indent + display_name)
+            table.add_row(name_cell, "dir", "", _entry_count(full_path), "")
+        else:
+            title = _markdown_title(full_path)
+            size = _format_size(os.path.getsize(full_path))
+            modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            display_name = _truncate_filename(name)
+            if level == 0:
+                # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use
+                # (VIEWMD-0081) -- a plain relative-path href (no scheme prefix), unlike the
+                # `_DIR_ANCHOR_SCHEME`-tagged subdirectory hrefs, since this needs to resolve
+                # through `_resolve_link_target()` (`interactive_pager.py`) the same way an
+                # ordinary in-document relative link does, not through `_resolve_dir_target()`
+                # (VIEWMD-0093). The href uses the untruncated `name` -- only the displayed text
+                # is shortened, navigation still targets the real file.
+                name_cell = Text(indent + display_name)
+                name_cell.stylize(Style(link=urllib.parse.quote(name)))
+            else:
+                name_cell = escape(indent + display_name)
+            table.add_row(name_cell, "file", escape(title), size, modified)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)

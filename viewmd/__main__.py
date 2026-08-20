@@ -17,6 +17,13 @@ from viewmd.config import ConfigError, coalesce, read_config
 # terminal. --width overrides it, either to an exact column count or to "full" (VIEWMD-0003).
 DEFAULT_MAX_WIDTH = 100
 
+# Upper bound for --depth (VIEWMD-0089 requirement 4): a directory-listing table of entries is a
+# quick-orientation view of a small vault, not a general-purpose `find -maxdepth`, and an
+# unreasonably large depth against a very large tree would both flood the terminal and take a
+# while to walk. A depth beyond this is silently capped (with a warning) rather than rejected, so
+# a config-file or muscle-memory `--depth 999` still does something useful instead of erroring.
+MAX_DEPTH = 10
+
 
 def _width_arg(value: str) -> str:
     """argparse type for --width: the literal 'full', or a positive integer as a string.
@@ -31,6 +38,29 @@ def _width_arg(value: str) -> str:
             f"invalid width {value!r}: must be a positive integer or 'full'"
         )
     return value
+
+
+def _depth_arg(value: str) -> int:
+    """argparse type for --depth: a positive integer, as an int (unlike `_width_arg`, --depth has
+    no 'full'-style literal alternative to keep as a string)."""
+    if not value.isdigit() or int(value) <= 0:
+        raise argparse.ArgumentTypeError(f"invalid depth {value!r}: must be a positive integer")
+    return int(value)
+
+
+def _resolve_depth(depth: int | None, *, max_depth: int = MAX_DEPTH) -> int:
+    """Resolve the effective --depth: `1` (today's original behavior) when omitted, otherwise the
+    requested depth capped at `max_depth` with a warning printed to stderr (VIEWMD-0089
+    requirement 4) -- never a hard error, so an over-large value still renders something."""
+    if depth is None:
+        return 1
+    if depth > max_depth:
+        print(
+            f"viewmd: --depth {depth} capped to {max_depth}",
+            file=sys.stderr,
+        )
+        return max_depth
+    return depth
 
 
 def _resolve_width(width_arg: str | None, terminal_width: int, *,
@@ -75,6 +105,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--toc", action=argparse.BooleanOptionalAction, default=None,
                         help="render a table of contents from h1/h2/h3 headings "
                              "(default: on; omitted when the document has fewer than two)")
+    parser.add_argument("--depth", type=_depth_arg, default=None, metavar="N",
+                        help="for a bare directory listing, list subdirectories up to N levels "
+                             f"deep, indented (default: 1, today's behavior; capped at "
+                             f"{MAX_DEPTH}); has no effect on a directory with an index file, a "
+                             "single document, or multi-file concatenation")
     parser.add_argument("--config", metavar="PATH", default=None,
                         help="read configuration from PATH instead of "
                              "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
@@ -131,8 +166,15 @@ def main(argv: list[str] | None = None) -> int:
                              color=color, full_front_matter=full_front_matter, toc=toc)
             return 0
 
+        # --depth (VIEWMD-0089) is resolved here, not up front with the other flags: it only
+        # applies to a bare directory listing (never a single document or multi-file
+        # concatenation, see its own Non-goals), and `_resolve_depth` prints a capping warning to
+        # stderr when over `MAX_DEPTH` -- resolving it unconditionally for every invocation would
+        # print that warning even for a `--depth` value that goes on to have no effect at all.
         from viewmd.pager import display_directory_listing
-        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color)
+        depth = _resolve_depth(coalesce(args.depth, cfg.depth))
+        display_directory_listing(path, no_pager=args.no_pager, width=width,
+                                  directory_width=directory_width, color=color, depth=depth)
         return 0
 
     had_error = False

@@ -16,4 +16,5 @@ complete -c viewmd -l full-front-matter
 complete -c viewmd -l no-full-front-matter
 complete -c viewmd -l toc
 complete -c viewmd -l no-toc
+complete -c viewmd -l depth -rF
 complete -c viewmd -l config -rF

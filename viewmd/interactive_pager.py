@@ -1353,10 +1353,16 @@ def run(
                 new_text = f.read()
         except (OSError, UnicodeDecodeError):
             return None
+        # VIEWMD-0089: `open_path`'s contract is now a 4-tuple, the 4th element being the newly-
+        # opened target's own natural default width. `run()` only ever navigates document-to-
+        # document (an in-text link click), so there's only one kind of target here -- always the
+        # same `width` this `run()` call itself was invoked with, making this a no-op in effect,
+        # just uniform with `run_directory_listing()`'s own `open_path`, which genuinely has two.
         return (
             lambda w: _load(new_text, w, color_kwargs=color_kwargs),
             os.path.basename(path),
             os.path.dirname(os.path.abspath(path)),
+            width,
         )
 
     _run(
@@ -1369,12 +1375,24 @@ def run(
     )
 
 
-def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
+def run_directory_listing(
+    dir_path: str, *, width: int, directory_width: int, color: bool, depth: int = 1
+) -> None:
     """Page a bare directory listing interactively (VIEWMD-0065's table-of-contents view, no
     `_Index.md` note present). No heading outline to build a ToC popup from (VIEWMD-0072
     Non-goals: no per-entry ToC) -- the 't' key is inert and omitted from the keybinding summary,
     same as any document with no headings of its own; scrolling, search, mouse, resize, and the
     width toggle all work exactly as for a single document.
+
+    Two widths, the same two-widths-at-once pattern `run_multi_file()` already uses for its own
+    `width`/`directory_width` pair (VIEWMD-0089): `directory_width` is the listing table's own
+    width (VIEWMD-0071's default-to-full-terminal-width value when `--width` wasn't given), used
+    to render this listing itself and any subdirectory navigated into from it; `width` is a plain
+    document's own natural default width (`_resolve_width` *without* the
+    `default_max_width=terminal_width` override), used only when a click opens a `.md` file from
+    within the listing, so that file gets its own prose-appropriate default instead of inheriting
+    the listing's full-width baseline (the bug this parameter was added to fix -- see `_run`'s own
+    docstring on `configured_width` and the click-dispatch block below).
 
     Clicking a subdirectory row navigates into that subdirectory's own listing (VIEWMD-0081) --
     `doc_dir`/`open_path` are wired the same way `run()` wires them for a `.md` file link, just
@@ -1383,13 +1401,42 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
     listing, so no separate `..` row is needed. `.md` file rows are clickable too (VIEWMD-0093)
     -- their href is an ordinary relative path (no `_DIR_ANCHOR_SCHEME` prefix), so `_run`'s
     click handler resolves it via `_resolve_link_target` the same way a document's own in-text
-    links resolve, and `open_path` below opens it as a document rather than a nested listing."""
+    links resolve, and `open_path` below opens it as a document rather than a nested listing.
+
+    `depth` (VIEWMD-0089) carries over unchanged into a subdirectory navigated into by a click --
+    a listing shown `--depth 2` still shows two levels of its own children after navigating in,
+    the same way `directory_width`/`color` already carry over unchanged rather than resetting to a
+    default. Only `level == 0` rows are clickable at all (`render_directory_listing`'s own
+    docstring), so a click can only ever land on an immediate child of whatever's currently
+    displayed, never skip past levels `depth` would otherwise show."""
     from viewmd.render import render_directory_listing
 
     def make_loader(d: str):
         def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
-            colored = render_directory_listing(d, width=w, color=True).rstrip("\n").split("\n")
-            plain = render_directory_listing(d, width=w, color=False).rstrip("\n").split("\n")
+            colored = render_directory_listing(
+                d, width=w, color=True, depth=depth
+            ).rstrip("\n").split("\n")
+            plain = render_directory_listing(
+                d, width=w, color=False, depth=depth
+            ).rstrip("\n").split("\n")
+            # The table above was rendered at the *full* width `w`, but `draw()` only knows
+            # whether `_run` will actually reserve `_SCROLLBAR_RESERVED_W` columns for a
+            # scrollbar (VIEWMD-0079) after seeing how many lines this listing came out to --
+            # a two-pass problem. If it turns out a scrollbar will be shown (this listing has
+            # more rows than fit in the body), re-render both versions at the narrower width the
+            # scrollbar will actually leave available, so the table's own right border and
+            # rightmost column already fit inside that space and `draw()`'s crop becomes a no-op
+            # for this content instead of silently truncating every row (matches how `_run`
+            # itself computes `body_h`: terminal lines minus the mode line and echo area).
+            body_h = shutil.get_terminal_size().lines - 2
+            if len(plain) > body_h:
+                narrow_w = w - _SCROLLBAR_RESERVED_W
+                colored = render_directory_listing(
+                    d, width=narrow_w, color=True, depth=depth
+                ).rstrip("\n").split("\n")
+                plain = render_directory_listing(
+                    d, width=narrow_w, color=False, depth=depth
+                ).rstrip("\n").split("\n")
             return colored, plain, [], 0
 
         return loader
@@ -1403,8 +1450,14 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
             # `_resolve_dir_target` already confirmed `path` is a directory that still exists, and
             # unlike the file case below there's no read that can fail here, so this never returns
             # `None` -- `_run`'s click handler still checks for `None` since the same code path is
-            # shared with the file-opening case.
-            return make_loader(path), os.path.basename(os.path.normpath(path)) + "/", path
+            # shared with the file-opening case. A subdirectory's own natural default width is the
+            # listing's own `directory_width`, not a document's `width` -- it's another listing.
+            return (
+                make_loader(path),
+                os.path.basename(os.path.normpath(path)) + "/",
+                path,
+                directory_width,
+            )
         # A `.md` file, opened the same way `run()`'s own `open_path` opens a clicked link
         # (VIEWMD-0076) -- `_resolve_link_target` already confirmed `path` exists and is a `.md`
         # file, but not that it's still readable or valid UTF-8 by the time the click actually
@@ -1415,18 +1468,26 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
                 new_text = f.read()
         except (OSError, UnicodeDecodeError):
             return None
+        # VIEWMD-0089: a document opened from within a listing gets its own natural default
+        # width (`width`, computed the same way `viewmd/__main__.py` computes a plain file's
+        # width), not the listing's `directory_width` -- this is the fix for the bug where a
+        # `.md` file clicked from a directory listing used to inherit the listing's full-terminal-
+        # width baseline instead of its own prose-appropriate default.
         return (
             lambda w: _load(new_text, w, color_kwargs={}),
             os.path.basename(path),
             os.path.dirname(os.path.abspath(path)),
+            width,
         )
 
     display_name = os.path.basename(os.path.normpath(dir_path)) + "/"
     _run(
         make_loader(dir_path),
         display_name,
-        width=width,
-        fallback=lambda: render_directory_listing(dir_path, width=width, color=color),
+        width=directory_width,
+        fallback=lambda: render_directory_listing(
+            dir_path, width=directory_width, color=color, depth=depth
+        ),
         doc_dir=dir_path,
         open_path=open_path,
     )
@@ -1455,7 +1516,27 @@ def run_multi_file(
                                     full_front_matter=full_front_matter, toc=toc)
         plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
                                   full_front_matter=full_front_matter, toc=toc)
-        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n"), [], 0
+        colored_lines = colored.rstrip("\n").split("\n")
+        plain_lines = plain.rstrip("\n").split("\n")
+        # Same two-pass scrollbar problem as `run_directory_listing.make_loader` above, applied to
+        # any embedded bare directory listing's own table: `directory_width` is a fixed
+        # full-terminal-width value that doesn't shrink for the 'w' toggle, so if the whole
+        # concatenation ends up tall enough to need a scrollbar, an embedded listing's table
+        # (rendered at the un-reduced `directory_width`) gets its right border/column silently
+        # cropped by `draw()` exactly like the single-listing case. Only re-render when there's
+        # actually a directory listing among the entries -- other content already wraps to `w`.
+        body_h = shutil.get_terminal_size().lines - 2
+        if len(plain_lines) > body_h and any(text is None for _, text in entries):
+            narrow_dw = directory_width - _SCROLLBAR_RESERVED_W
+            colored_lines = render_multi_file(
+                entries, width=w, directory_width=narrow_dw, color=True,
+                full_front_matter=full_front_matter, toc=toc
+            ).rstrip("\n").split("\n")
+            plain_lines = render_multi_file(
+                entries, width=w, directory_width=narrow_dw, color=False,
+                full_front_matter=full_front_matter, toc=toc
+            ).rstrip("\n").split("\n")
+        return colored_lines, plain_lines, [], 0
 
     display_name = f"{len(entries)} files"
     _run(
@@ -1498,11 +1579,17 @@ def _run(
     click-to-follow: `doc_dir` is the directory a click's href resolves against (a `.md` file's
     relative links/wikilinks for `run()`, a directory listing's own subdirectory rows for
     `run_directory_listing()`), and `open_path(path)` returns a fresh `(loader, display_name,
-    doc_dir)` triple for the resolved target, ready to swap in as the session's new "current
-    document" -- `run()` and `run_directory_listing()` each pass their own (see their
-    docstrings); `None` for both (the default) makes link-following and the 'b'/'f' trail keys
-    inert, matching `run_multi_file()`, which has no single file/directory of its own to resolve a
-    relative link against.
+    doc_dir, default_width)` 4-tuple for the resolved target, ready to swap in as the session's
+    new "current document" -- `run()` and `run_directory_listing()` each pass their own (see their
+    docstrings). The 4th element, `default_width` (VIEWMD-0089), is the newly-opened target's own
+    natural baseline width: `configured_width` (below) is no longer fixed for the whole session,
+    since a directory listing's own default width (VIEWMD-0071's full-terminal-width) and a
+    document's own default width (the prose-readability-capped one) can genuinely differ, and
+    navigating between the two (in either direction, including via the 'b'/'f' trail keys) has to
+    swap to whichever target's own default applies rather than keeping whatever the just-left
+    target's width happened to be. `None` for both `doc_dir`/`open_path` (the default) makes
+    link-following and the 'b'/'f' trail keys inert, matching `run_multi_file()`, which has no
+    single file/directory of its own to resolve a relative link against.
     """
     try:
         tty_fd = os.open("/dev/tty", os.O_RDONLY)
@@ -1527,19 +1614,27 @@ def _run(
     left_col = 0
     h_step = 8
     # Back/forward stacks for click-to-follow (VIEWMD-0076, extended to a full trail by
-    # VIEWMD-0090): each entry is the document being navigated *away* from -- (loader,
-    # display_name, doc_dir, top, left_col, full_width_active) -- so 'b'/'f' can restore it
-    # exactly. `nav_stack` pops most-recently-left last (a plain list.pop()) on 'b', pushing the
-    # document being left onto `fwd_stack` so 'f' can redo the hop; 'f' does the mirror image,
-    # popping `fwd_stack` and pushing back onto `nav_stack`. A fresh navigation (clicking a new
-    # link) clears `fwd_stack` -- the same "new navigation invalidates forward history" rule a
-    # browser follows -- since the trail it pointed at no longer describes what's ahead once the
-    # reader has branched off in a different direction. `full_width_active` is captured
-    # per-frame, not re-read from whatever it is at pop time: the reader could toggle 'w' while
-    # on the "away" document, and re-wrapping the restored document at the *current* width
-    # setting instead of the one `top`/`left_col` were actually measured against would apply
-    # those raw offsets to a differently-wrapped document and land somewhere unrelated (found in
-    # review).
+    # VIEWMD-0090, VIEWMD-0089 into `configured_width` below): each entry is the document being
+    # navigated *away* from -- (loader, display_name, doc_dir, top, left_col, full_width_active,
+    # configured_width) -- so 'b'/'f' can restore it exactly. `nav_stack` pops most-recently-left
+    # last (a plain list.pop()) on 'b', pushing the document being left onto `fwd_stack` so 'f'
+    # can redo the hop; 'f' does the mirror image, popping `fwd_stack` and pushing back onto
+    # `nav_stack`. A fresh navigation (clicking a new link) clears `fwd_stack` -- the same "new
+    # navigation invalidates forward history" rule a browser follows -- since the trail it pointed
+    # at no longer describes what's ahead once the reader has branched off in a different
+    # direction. `full_width_active` is captured per-frame, not re-read from whatever it is at pop
+    # time: the reader could toggle 'w' while on the "away" document, and re-wrapping the restored
+    # document at the *current* width setting instead of the one `top`/`left_col` were actually
+    # measured against would apply those raw offsets to a differently-wrapped document and land
+    # somewhere unrelated (found in review). `configured_width` (VIEWMD-0089) is saved for the
+    # identical reason, one level up: the document being left behind and the one being returned to
+    # can each have their *own* natural default width (a directory listing's full-terminal-width
+    # default vs. a document's prose-capped one), so restoring `top`/`left_col` without also
+    # restoring the width they were measured against would be just as wrong as not restoring
+    # `full_width_active` would be. (This tuple shape is exactly where VIEWMD-0089 and VIEWMD-0090
+    # independently touched the same code, per AGENTS.md's VIEWMD-0080/VIEWMD-0093 note on this
+    # class of merge risk -- reconciled by hand at merge time; re-verified by
+    # `./run-tests.sh` immediately after.)
     nav_stack: list[tuple] = []
     fwd_stack: list[tuple] = []
 
@@ -1807,6 +1902,11 @@ def _run(
         nonlocal search_active, search_query, last_search_query, echo_message, mouse_enabled
         nonlocal full_width_active, lines, plain_lines, headings, max_content_width, body_start
         nonlocal loader, display_name, doc_dir
+        # VIEWMD-0089: `configured_width` is no longer fixed for the whole session -- a click
+        # navigating to a new target (or 'B' going back to a previous one) can switch it to that
+        # target's own natural default width, so both it and its derived `width_is_full` need to
+        # be reassignable here too.
+        nonlocal configured_width, width_is_full
         max_top = max(0, len(lines) - body_h)
         if ev.value == "q" and ev.kind == "key":
             return True
@@ -1902,12 +2002,13 @@ def _run(
             # `fwd_stack`; 'f' is the exact mirror, popping `fwd_stack` and pushing back onto
             # `nav_stack` -- so repeated presses of either key walk the trail one hop at a time,
             # each hop's destination stored fully-formed (loader, display_name, doc_dir, top,
-            # left_col, full_width_active) rather than re-derived.
+            # left_col, full_width_active, configured_width) rather than re-derived.
             src_stack = nav_stack if ev.value == "b" else fwd_stack
             dst_stack = fwd_stack if ev.value == "b" else nav_stack
             if src_stack:
                 dst_stack.append(
-                    (loader, display_name, doc_dir, top, left_col, full_width_active)
+                    (loader, display_name, doc_dir, top, left_col, full_width_active,
+                     configured_width)
                 )
                 (
                     loader,
@@ -1916,7 +2017,9 @@ def _run(
                     saved_doc_top,
                     saved_doc_left,
                     full_width_active,
+                    configured_width,
                 ) = src_stack.pop()
+                width_is_full = configured_width == term_w
                 eff_width = term_w if full_width_active else configured_width
                 lines, plain_lines, headings, body_start = loader(eff_width)
                 max_content_width = _max_content_width(plain_lines)
@@ -2026,6 +2129,7 @@ def _run(
                                             top,
                                             left_col,
                                             full_width_active,
+                                            configured_width,
                                         )
                                     )
                                     # A fresh navigation invalidates whatever was previously
@@ -2033,7 +2137,8 @@ def _run(
                                     # reader has branched off in a new direction, so 'f' should
                                     # no longer redo a hop that no longer describes what's next.
                                     fwd_stack.clear()
-                                    loader, display_name, doc_dir = opened
+                                    loader, display_name, doc_dir, configured_width = opened
+                                    width_is_full = configured_width == term_w
                                     eff_width = (
                                         term_w if full_width_active else configured_width
                                     )
