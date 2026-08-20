@@ -1,7 +1,9 @@
+import os
 import re
 
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import (
+    _format_size,
     render_directory_listing,
     render_divider,
     render_file_heading,
@@ -273,6 +275,7 @@ def test_render_directory_listing_escapes_rich_markup_in_names_and_titles(tmp_pa
                         lambda p: p.endswith("[red]evil[/red].md"))
     monkeypatch.setattr(render_module, "_markdown_title", lambda p: "[link=x]y[/link]")
     monkeypatch.setattr(render_module.os.path, "getmtime", lambda p: 0)
+    monkeypatch.setattr(render_module.os.path, "getsize", lambda p: 0)
 
     out = render_directory_listing(str(tmp_path), width=80, color=False)
 
@@ -342,6 +345,140 @@ def test_render_directory_listing_does_not_recurse(tmp_path):
     out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
 
     assert "nested.md" not in out
+
+
+# --- size column (VIEWMD-0089) ---------------------------------------------------------------
+
+
+def test_format_size_boundaries():
+    assert _format_size(0) == "0B"
+    assert _format_size(340) == "340B"
+    assert _format_size(1023) == "1023B"
+    assert _format_size(1024) == "1.0K"
+    assert _format_size(1536) == "1.5K"
+    assert _format_size(1024 * 1024) == "1.0M"
+    assert _format_size(1024 * 1024 - 1) == "1024.0K"
+
+
+def test_render_directory_listing_shows_human_readable_file_size(tmp_path):
+    (tmp_path / "small.md").write_bytes(b"#" + b" " * 339)  # 340 bytes
+    (tmp_path / "big.md").write_bytes(b"#" + b" " * 1535)  # 1536 bytes
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "340B" in out
+    assert "1.5K" in out
+
+
+def test_render_directory_listing_subdirectory_size_column_is_entry_count_not_bytes(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "a.md").write_text("# A\n")
+    (sub / "b.md").write_text("# B\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "2 items" in out
+
+
+def test_render_directory_listing_empty_subdirectory_shows_singular_item(tmp_path):
+    (tmp_path / "empty").mkdir()
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "0 items" in out
+
+
+def test_render_directory_listing_unreadable_subdirectory_shows_blank_size_not_a_crash(
+    tmp_path, monkeypatch
+):
+    # A depth-1 (the default) listing never used to need permission to peek inside a
+    # subdirectory's own contents -- it only listed the parent. Showing an entry count for each
+    # subdirectory row must not turn a permission-denied subdirectory into a crash for the
+    # otherwise-unaffected default case (found in self-review).
+    import viewmd.render as render_module
+
+    (tmp_path / "sub").mkdir()
+    real_listdir = render_module.os.listdir
+
+    def fake_listdir(path):
+        if os.path.basename(path) == "sub":
+            raise PermissionError(13, "Permission denied")
+        return real_listdir(path)
+
+    monkeypatch.setattr(render_module.os, "listdir", fake_listdir)
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "sub" in out
+
+
+# --- --depth (VIEWMD-0089) -------------------------------------------------------------------
+
+
+def test_render_directory_listing_default_depth_matches_pre_existing_depth_1_output(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    (tmp_path / "a.md").write_text("# A\n")
+
+    default_depth = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+    explicit_depth_1 = strip_ansi(
+        render_directory_listing(str(tmp_path), width=80, color=False, depth=1)
+    )
+
+    assert default_depth == explicit_depth_1
+    assert "sub" in default_depth
+    assert "a.md" in default_depth
+    assert "nested.md" not in default_depth
+
+
+def test_render_directory_listing_depth_2_lists_one_level_of_nested_entries_indented(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=2))
+
+    assert "sub" in out
+    assert "  deeper/" in out
+    assert "  nested.md" in out
+    # `deeper`'s own child is a third level, past --depth 2.
+    assert "deepest.md" not in out
+
+
+def test_render_directory_listing_depth_3_lists_two_levels_of_nested_entries(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=3))
+
+    assert "sub" in out
+    assert "  deeper/" in out
+    assert "    deepest.md" in out
+
+
+def test_render_directory_listing_depth_orders_subdirectories_before_files_at_each_level(
+    tmp_path,
+):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "z_file.md").write_text("# Z\n")
+    (sub / "a_dir").mkdir()
+    (sub / "a_dir" / "child.md").write_text("# Child\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=3))
+
+    # Within `sub`, its own subdirectory ("a_dir") is listed -- and thus its child recursed into
+    # -- before `sub`'s own file ("z_file.md"), matching the flat depth-1 subdirectories-first
+    # rule applied at every level.
+    assert out.index("a_dir/") < out.index("child.md") < out.index("z_file.md")
 
 
 def test_render_divider_matches_the_front_matter_divider_style():

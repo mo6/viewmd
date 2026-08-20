@@ -106,6 +106,21 @@ def test_parse_config_rejects_invalid_toc():
         parse_config("toc = maybe\n", source="config")
 
 
+def test_parse_config_accepts_depth():
+    assert parse_config("depth = 3\n", source="config").depth == 3
+
+
+def test_parse_config_rejects_invalid_depth():
+    with pytest.raises(ConfigError, match="invalid depth 'banana'"):
+        parse_config("depth = banana\n", source="config")
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_parse_config_rejects_non_positive_depth(value):
+    with pytest.raises(ConfigError, match="invalid depth"):
+        parse_config(f"depth = {value}\n", source="config")
+
+
 def test_parse_config_rejects_duplicate_key():
     with pytest.raises(ConfigError, match="duplicate key 'width'"):
         parse_config("width = 40\nwidth = 80\n", source="config")

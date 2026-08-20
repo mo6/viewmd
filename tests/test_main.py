@@ -175,6 +175,97 @@ def test_directory_listing_does_not_recurse_into_subdirectories(tmp_path, capsys
     assert "nested.md" not in out
 
 
+def test_depth_flag_recurses_into_subdirectories(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--depth", "2", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" in out
+
+
+def test_depth_flag_absent_still_does_not_recurse(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" not in out
+
+
+def test_depth_flag_caps_an_unreasonably_large_value(tmp_path, capsys):
+    from viewmd.__main__ import MAX_DEPTH
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80",
+               "--depth", str(MAX_DEPTH + 100), str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert f"--depth {MAX_DEPTH + 100} capped to {MAX_DEPTH}" in captured.err
+
+
+def test_depth_arg_rejects_non_positive_values():
+    from viewmd.__main__ import _depth_arg
+
+    for value in ("0", "-1", "banana"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            _depth_arg(value)
+
+
+def test_config_depth_overrides_builtin_default(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    cfg = tmp_path / "config"
+    cfg.write_text("depth = 2\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" in out
+
+
+def test_cli_depth_overrides_config_depth(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    cfg = tmp_path / "config"
+    cfg.write_text("depth = 2\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               "--depth", "1", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" not in out
+
+
+def test_depth_flag_has_no_effect_and_prints_no_warning_for_a_single_document(
+    tmp_path, capsys
+):
+    # VIEWMD-0089 Non-goals: --depth only applies to a bare directory listing. Found in
+    # self-review: resolving/capping --depth unconditionally for every invocation would print the
+    # over-MAX_DEPTH warning even here, where the flag goes on to have no effect at all.
+    from viewmd.__main__ import MAX_DEPTH
+
+    path, _ = _write_md(tmp_path, "# Hello\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80",
+               "--depth", str(MAX_DEPTH + 100), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert captured.err == ""
+
+
 def test_unreadable_directory_errors_gracefully(tmp_path, capsys, monkeypatch):
     def _boom(path):
         raise PermissionError(13, "Permission denied")
@@ -282,15 +373,15 @@ def test_directory_listing_pages_via_the_interactive_pager_when_tty(tmp_path, mo
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color):
-        calls.append((dir_path, width, color))
+    def fake_run(dir_path, *, width, color, depth):
+        calls.append((dir_path, width, color, depth))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
 
     rc = main(["--color", "never", "--width", "80", str(tmp_path)])
 
     assert rc == 0
-    assert calls == [(str(tmp_path), 80, False)]
+    assert calls == [(str(tmp_path), 80, False, 1)]
 
 
 def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
@@ -328,9 +419,9 @@ def test_directory_listing_defaults_to_full_terminal_width(tmp_path, capsys, mon
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, depth):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, depth=depth)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
@@ -348,9 +439,9 @@ def test_directory_listing_explicit_width_overrides_the_full_default(tmp_path, c
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, depth):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, depth=depth)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 

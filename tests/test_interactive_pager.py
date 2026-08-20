@@ -780,6 +780,31 @@ def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypa
     assert body_start == 0
 
 
+def test_run_directory_listing_depth_carries_over_into_a_navigated_subdirectory(
+    monkeypatch, tmp_path
+):
+    # VIEWMD-0089: a listing shown with `--depth 2` still shows two levels of a subdirectory's
+    # own children after clicking into it, the same way `width`/`color` already carry over
+    # unchanged rather than resetting to the `depth=1` default.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, color=False, depth=2)
+
+    new_loader, _new_display_name, _new_doc_dir = captured["open_path"](str(sub))
+    colored, _plain, _headings, _body_start = new_loader(80)
+    assert any("deepest.md" in ip._strip_ansi(line) for line in colored)
+
+
 # --- .md file rows clickable in the directory listing (VIEWMD-0093) -----------------------------
 
 

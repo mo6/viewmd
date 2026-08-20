@@ -15,6 +15,7 @@ _viewmd() {
   "--no-full-front-matter[--full-front-matter/--no-full-front-matter]" \
   "--toc[--toc/--no-toc]" \
   "--no-toc[--toc/--no-toc]" \
+  "--depth[--depth]:path:_files" \
   "--config[--config]:path:_files" \
   '*:path:_files'
 }

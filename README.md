@@ -26,6 +26,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
 ./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
 ./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
+./viewmd.sh a-directory --depth 2   # a bare directory listing: also list its subdirectories' entries
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
@@ -49,11 +50,14 @@ scroll (see "Interactive pager" below). Mixing stdin (`-`) with a file path is r
 
 Passing a directory renders its index file if one exists — `_Index.md`, `index.md`, or
 `_index.md`, checked in that order (exact case match) — exactly as if that file had been passed
-directly; otherwise it renders a table-of-contents listing of the directory's immediate entries
+directly; otherwise it renders a table-of-contents listing of the directory's entries
 (subdirectories first, then Markdown files, each alphabetically) —
-a file's title (from front matter, its first heading, or its filename) and last-modified time,
-one level deep, no recursion. This applies the same way whether the directory is the only `path`
-argument or one of several.
+a file's title (from front matter, its first heading, or its filename), human-readable size
+(e.g. `1.2K`), and last-modified time; a subdirectory row shows its own entry count instead of a
+size. One level deep, no recursion, by default; `--depth N` (single-path bare directory listings
+only, capped at 10) descends N levels, each row indented to show its depth. This applies the same
+way whether the directory is the only `path` argument or one of several, except `--depth`, which
+has no effect for more than one `path` argument.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
@@ -116,7 +120,9 @@ open does the same as pressing Esc.
 
 A bare directory listing (no index file present) is click-navigable too: clicking a subdirectory
 row descends into that subdirectory's own listing, clicking a `.md` file row opens it in the pager,
-and `B` returns to the listing you came from either way.
+and `B` returns to the listing you came from either way. With `--depth` showing more than one
+level, only the top-level rows are click-navigable this way — a deeper row (indented under its own
+parent) is plain text; navigate to it by clicking into its parent subdirectory first.
 
 \* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
 they're only available for a single document; viewing more than one file at once or a bare
@@ -160,6 +166,7 @@ keys:
 | `color` | `auto`, `always`, or `never` | `--color` |
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
+| `depth` | a positive integer (capped at 10) | `--depth` |
 
 An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
 stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config

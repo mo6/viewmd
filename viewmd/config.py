@@ -31,6 +31,7 @@ class Config:
     color: str | None = None
     full_front_matter: bool | None = None
     toc: bool | None = None
+    depth: int | None = None
 
 
 def default_config_path() -> Path:
@@ -111,6 +112,7 @@ def parse_config(text: str, *, source: str) -> Config:
     color: str | None = None
     full_front_matter: bool | None = None
     toc: bool | None = None
+    depth: int | None = None
     for key, (lineno, value) in raw.items():
         if key == "width":
             width = _parse_width(value, source, lineno)
@@ -120,6 +122,8 @@ def parse_config(text: str, *, source: str) -> Config:
             full_front_matter = _parse_bool(value, source, lineno, key=key)
         elif key == "toc":
             toc = _parse_bool(value, source, lineno, key=key)
+        elif key == "depth":
+            depth = _parse_depth(value, source, lineno)
         else:
             # Unknown keys are ignored (forward-compatible with future options),
             # but warned about once each so a typo doesn't silently do nothing.
@@ -129,7 +133,7 @@ def parse_config(text: str, *, source: str) -> Config:
             )
 
     return Config(
-        width=width, color=color, full_front_matter=full_front_matter, toc=toc
+        width=width, color=color, full_front_matter=full_front_matter, toc=toc, depth=depth
     )
 
 
@@ -150,6 +154,14 @@ def _parse_color(value: str, source: str, lineno: int) -> str:
             f"{source}:{lineno}: invalid color {value!r}: must be one of {choices}"
         )
     return value
+
+
+def _parse_depth(value: str, source: str, lineno: int) -> int:
+    if not value.isdigit() or int(value) < 1:
+        raise ConfigError(
+            f"{source}:{lineno}: invalid depth {value!r}: must be a positive integer"
+        )
+    return int(value)
 
 
 def _parse_bool(value: str, source: str, lineno: int, *, key: str) -> bool:
