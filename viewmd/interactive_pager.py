@@ -1046,7 +1046,8 @@ _HELP_GROUPS: list[tuple[str, list[tuple[str, str, Event | None]]]] = [
         "Links",
         [
             ("click a link", "follow it, if it resolves to a local .md file", None),
-            ("B", "go back to the file you navigated from", Event("key", "B")),
+            ("B", "back one hop in the trail (repeat for more)", Event("key", "B")),
+            ("F", "forward again, redoing a hop undone by B", Event("key", "F")),
         ],
     ),
     (
@@ -1081,7 +1082,8 @@ def _keybind_help(
     highlight_active: bool = False,
     *,
     has_headings: bool = True,
-    has_back: bool = False,
+    back_count: int = 0,
+    forward_count: int = 0,
     help_open: bool = False,
 ) -> tuple[str, list[tuple[int, int, Event | None]]]:
     """The echo area's default content: a short, always-fits keybinding taste, pointing at '?'
@@ -1099,10 +1101,13 @@ def _keybind_help(
     `highlight_active` likewise only advertises `Esc: clear highlight` while there's a highlight
     to clear. `has_headings` (VIEWMD-0072) likewise drops the `t: contents` hint for content with
     no heading outline to build a popup from (a directory listing, a multi-file view) -- `t` is
-    inert there, same reasoning as the other two omissions. `has_back` (VIEWMD-0076) only
-    advertises `B: prev file` once there's actually somewhere to go back to -- i.e. after the
-    reader has clicked at least one link to navigate away from where they started; showing it
-    unconditionally would advertise a key that's a no-op for the entire session until then.
+    inert there, same reasoning as the other two omissions. `back_count`/`forward_count`
+    (VIEWMD-0076, extended to a full trail by VIEWMD-0090) only advertise `B`/`F` once there's
+    actually somewhere to go, each labeled with how many hops are available in that direction
+    (e.g. `B: back (2)`) so the reader can see roughly where they sit in the trail without a
+    separate status readout -- requirement 6's "discoverable trail position". Showing either
+    unconditionally would advertise a key that's a no-op until the reader has actually navigated
+    (`B`) or backed up (`F`).
 
     Returns `(text, spans)` (VIEWMD-0078): `text` is exactly what pre-VIEWMD-0078 callers got
     back (requirement 3 -- no visible change), and `spans` is a `(start_col, end_col, Event |
@@ -1134,8 +1139,10 @@ def _keybind_help(
         pairs = [("up/down,wheel", "scroll", None), ("/", "search", Event("key", "/"))]
         if has_headings:
             pairs.append(("t", "contents", Event("key", "t")))
-        if has_back:
-            pairs.append(("B", "prev file", Event("key", "B")))
+        if back_count:
+            pairs.append(("B", f"back ({back_count})", Event("key", "B")))
+        if forward_count:
+            pairs.append(("F", f"fwd ({forward_count})", Event("key", "F")))
         if width_toggle:
             pairs.append(("w", width_toggle, Event("key", "w")))
         if highlight_active:
@@ -1327,7 +1334,7 @@ def run(
     so `doc_dir` is `None` and a link click is a no-op there too). `run_directory_listing()`
     separately wires its own `doc_dir`/`open_path` for subdirectory-row navigation (VIEWMD-0081,
     not a `.md` link), and `run_multi_file()` still leaves both `None`, making a click on a link
-    (and the 'B' back key) a no-op there.
+    (and the 'B'/'F' trail keys) a no-op there.
     """
     color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
     display_name = "(stdin)" if name == "-" else os.path.basename(name)
@@ -1371,12 +1378,12 @@ def run_directory_listing(dir_path: str, *, width: int, color: bool) -> None:
 
     Clicking a subdirectory row navigates into that subdirectory's own listing (VIEWMD-0081) --
     `doc_dir`/`open_path` are wired the same way `run()` wires them for a `.md` file link, just
-    resolving to a directory instead; the 'B' back key (already part of `_run`'s click-to-follow
-    machinery, VIEWMD-0076) is this feature's way back up to the parent listing, so no separate
-    `..` row is needed. `.md` file rows are clickable too (VIEWMD-0093) -- their href is an
-    ordinary relative path (no `_DIR_ANCHOR_SCHEME` prefix), so `_run`'s click handler resolves it
-    via `_resolve_link_target` the same way a document's own in-text links resolve, and `open_path`
-    below opens it as a document rather than a nested listing."""
+    resolving to a directory instead; the 'B'/'F' trail keys (already part of `_run`'s
+    click-to-follow machinery, VIEWMD-0076) are this feature's way back up to the parent
+    listing, so no separate `..` row is needed. `.md` file rows are clickable too (VIEWMD-0093)
+    -- their href is an ordinary relative path (no `_DIR_ANCHOR_SCHEME` prefix), so `_run`'s
+    click handler resolves it via `_resolve_link_target` the same way a document's own in-text
+    links resolve, and `open_path` below opens it as a document rather than a nested listing."""
     from viewmd.render import render_directory_listing
 
     def make_loader(d: str):
@@ -1493,8 +1500,8 @@ def _run(
     `run_directory_listing()`), and `open_path(path)` returns a fresh `(loader, display_name,
     doc_dir)` triple for the resolved target, ready to swap in as the session's new "current
     document" -- `run()` and `run_directory_listing()` each pass their own (see their
-    docstrings); `None` for both (the default) makes link-following and the 'B' back key inert,
-    matching `run_multi_file()`, which has no single file/directory of its own to resolve a
+    docstrings); `None` for both (the default) makes link-following and the 'B'/'F' trail keys
+    inert, matching `run_multi_file()`, which has no single file/directory of its own to resolve a
     relative link against.
     """
     try:
@@ -1519,15 +1526,22 @@ def _run(
     max_content_width = _max_content_width(plain_lines)
     left_col = 0
     h_step = 8
-    # Back-stack for click-to-follow (VIEWMD-0076): each entry is the document being navigated
-    # *away* from -- (loader, display_name, doc_dir, top, left_col, full_width_active) -- so 'B'
-    # can restore it exactly, most-recently-left last (a plain list.pop()). `full_width_active`
-    # is captured per-frame, not re-read from whatever it is at pop time: the reader could toggle
-    # 'w' while on the "away" document, and re-wrapping the restored document at the *current*
-    # width setting instead of the one `top`/`left_col` were actually measured against would
-    # apply those raw offsets to a differently-wrapped document and land somewhere unrelated
-    # (found in review).
+    # Back/forward stacks for click-to-follow (VIEWMD-0076, extended to a full trail by
+    # VIEWMD-0090): each entry is the document being navigated *away* from -- (loader,
+    # display_name, doc_dir, top, left_col, full_width_active) -- so 'B'/'F' can restore it
+    # exactly. `nav_stack` pops most-recently-left last (a plain list.pop()) on 'B', pushing the
+    # document being left onto `fwd_stack` so 'F' can redo the hop; 'F' does the mirror image,
+    # popping `fwd_stack` and pushing back onto `nav_stack`. A fresh navigation (clicking a new
+    # link) clears `fwd_stack` -- the same "new navigation invalidates forward history" rule a
+    # browser follows -- since the trail it pointed at no longer describes what's ahead once the
+    # reader has branched off in a different direction. `full_width_active` is captured
+    # per-frame, not re-read from whatever it is at pop time: the reader could toggle 'w' while
+    # on the "away" document, and re-wrapping the restored document at the *current* width
+    # setting instead of the one `top`/`left_col` were actually measured against would apply
+    # those raw offsets to a differently-wrapped document and land somewhere unrelated (found in
+    # review).
     nav_stack: list[tuple] = []
+    fwd_stack: list[tuple] = []
 
     _unread.clear()
     old_settings = termios.tcgetattr(tty_fd)
@@ -1585,7 +1599,8 @@ def _run(
             width_toggle,
             bool(last_search_query),
             has_headings=bool(headings),
-            has_back=bool(nav_stack),
+            back_count=len(nav_stack),
+            forward_count=len(fwd_stack),
             help_open=help_open,
         )
 
@@ -1877,13 +1892,23 @@ def _run(
                 top = _home_top(body_start, max_top)
             max_content_width = _max_content_width(plain_lines)
             left_col = min(left_col, _max_left_col(max_content_width, _content_w()))
-        elif ev.kind == "key" and ev.value == "B":
-            # Go back to the document navigated *from* (VIEWMD-0076 requirement 6) -- a no-op
-            # with nothing on the stack. `run_directory_listing()` pushes here too, for a clicked
-            # subdirectory row (VIEWMD-0081), making 'B' its way back up to the parent listing;
+        elif ev.kind == "key" and ev.value in ("B", "F"):
+            # Walk the back/forward trail (VIEWMD-0076 requirement 6, extended to a full
+            # multi-hop stack by VIEWMD-0090) -- a no-op with nothing on the relevant stack.
+            # `run_directory_listing()` pushes onto `nav_stack` here too, for a clicked
+            # subdirectory row (VIEWMD-0081), making 'B'/'F' its way up/down the listing trail;
             # only `run_multi_file()` never pushes anything (no `open_path`, see `_run`'s own
-            # docstring).
-            if nav_stack:
+            # docstring). 'B' pops `nav_stack` and pushes the document being left onto
+            # `fwd_stack`; 'F' is the exact mirror, popping `fwd_stack` and pushing back onto
+            # `nav_stack` -- so repeated presses of either key walk the trail one hop at a time,
+            # each hop's destination stored fully-formed (loader, display_name, doc_dir, top,
+            # left_col, full_width_active) rather than re-derived.
+            src_stack = nav_stack if ev.value == "B" else fwd_stack
+            dst_stack = fwd_stack if ev.value == "B" else nav_stack
+            if src_stack:
+                dst_stack.append(
+                    (loader, display_name, doc_dir, top, left_col, full_width_active)
+                )
                 (
                     loader,
                     display_name,
@@ -1891,7 +1916,7 @@ def _run(
                     saved_doc_top,
                     saved_doc_left,
                     full_width_active,
-                ) = nav_stack.pop()
+                ) = src_stack.pop()
                 eff_width = term_w if full_width_active else configured_width
                 lines, plain_lines, headings, body_start = loader(eff_width)
                 max_content_width = _max_content_width(plain_lines)
@@ -1904,8 +1929,10 @@ def _run(
                 search_active = False
                 search_query = ""
                 last_search_query = ""
-            else:
+            elif ev.value == "B":
                 echo_message = "No previous file to go back to"
+            else:
+                echo_message = "No next file to go forward to"
         elif (
             ev.kind == "click"
             and _scrollbar_reserved(len(lines), body_h)
@@ -2001,6 +2028,11 @@ def _run(
                                             full_width_active,
                                         )
                                     )
+                                    # A fresh navigation invalidates whatever was previously
+                                    # ahead on the trail (same rule a browser follows) -- the
+                                    # reader has branched off in a new direction, so 'F' should
+                                    # no longer redo a hop that no longer describes what's next.
+                                    fwd_stack.clear()
                                     loader, display_name, doc_dir = opened
                                     eff_width = (
                                         term_w if full_width_active else configured_width
