@@ -3,7 +3,7 @@ id: VIEWMD-0089
 title: Show file size in directory listings and add an optional recursive depth
 status: in-progress
 area: [render, cli]
-effort:
+effort: medium
 created: 2026-08-19
 updated: 2026-08-20
 accepted_by: George Moses <gmo6nl@gmail.com>

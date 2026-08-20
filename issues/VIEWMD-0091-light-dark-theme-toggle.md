@@ -3,7 +3,7 @@ id: VIEWMD-0091
 title: Add a light/dark theme setting for admonition, table, and heading colors
 status: in-progress
 area: [render, config, cli]
-effort:
+effort: medium
 created: 2026-08-19
 updated: 2026-08-20
 accepted_by: George Moses <gmo6nl@gmail.com>

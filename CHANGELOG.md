@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.47.0] — 2026-08-20
+
+- **Multi-level back/forward navigation trail in the interactive pager** (VIEWMD-0090, feature): the `B` back key already walked a full history stack (VIEWMD-0076), not just one step, but had no complement — `f` now redoes a hop undone by `b` (lowercase, matching the pager's otherwise-lowercase keymap; page-back-up narrows from `b`/`-`/Backspace to `-`/Backspace only to free `b` for this), inert when there's nothing to go forward to, and clears on a fresh navigation. Scroll position is preserved on both. The echo-area hint shows a live back/forward count (e.g. `b: back (2)`).
+
 ## [1.46.5] — 2026-08-19
 
 - **Document that the interactive pager is Unix-only, and why it does not use curses** (VIEWMD-0103, docs): README's Interactive pager section now states the pager is Unix-only (macOS, Linux, BSD, WSL) and is not supported on native Windows (`termios` / `/dev/tty`). `docs/PLAN.md` records why curses was ruled out — the pager dumps pre-rendered Rich ANSI (OSC-8, 256-color, xterm mouse) rather than a cell grid, and a curses port would not make native Windows work.
