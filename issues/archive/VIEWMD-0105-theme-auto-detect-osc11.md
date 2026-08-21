@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0105
 title: Add --theme auto, detecting light/dark via an OSC 11 background-color query
-status: in-progress
+status: implemented
 area: [render, config, cli]
 effort: medium
 created: 2026-08-21
 updated: 2026-08-21
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-21
-commits: []
+commits: [a92a6fe, a7d03d1]
 related: [VIEWMD-0091]
 supersedes: []
-changelog:
+changelog: "[1.50.0]"
 reason:
 ---
 

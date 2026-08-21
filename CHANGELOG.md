@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.50.0] — 2026-08-21
+
+- **`--theme auto` detects light/dark from the terminal's own background color** (VIEWMD-0105, feature): a third `--theme` value alongside `dark`/`light` — queries the terminal via an OSC 11 escape sequence when stdout is a tty, classifies the reply by relative luminance, and falls back to `dark` on any failure (non-tty, timeout, malformed reply, an unresponsive terminal or multiplexer). Config-settable via `theme = auto`. `--theme dark`/`--theme light`/an omitted `--theme` are completely unaffected — the query only ever runs for `auto`, so this is purely additive with zero added latency otherwise. Known limitation: tmux/GNU screen intercept OSC queries by default and need explicit passthrough configured, otherwise `auto` reliably times out and falls back to `dark`.
+
 ## [1.49.1] — 2026-08-21
 
 - **Fix `--width full` clipping wrapped prose behind the scrollbar** (bug): the interactive pager's document loader (`run()`) wrapped body text to the full terminal width before knowing whether a scrollbar would end up reserving two columns for itself — once a document had more lines than fit on screen, the right edge of every already-wrapped line got silently truncated, showing `›` markers on ordinary prose with nothing to actually horizontally scroll to. The loader now re-renders one column narrower whenever it's asked to render at exactly the terminal's own width and the result needs a scrollbar; an intentionally oversized `--width` (wider than the terminal, the documented way to get real horizontal scroll) is left unchanged. Applies to both a single document and a multi-file concatenation's plain markdown content, alongside the directory-listing table's own existing narrowing.
