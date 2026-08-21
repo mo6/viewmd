@@ -822,6 +822,74 @@ def test_invalid_config_theme_exits_nonzero_without_traceback(tmp_path, capsys):
     assert "Traceback" not in captured.err
 
 
+# VIEWMD-0105: `--theme auto` (and config `theme = auto`) must reach `main()`'s own theme
+# resolution and call `viewmd.theme_detect.detect_terminal_theme()` exactly when "auto" is what
+# the coalesce actually resolves to -- the same VIEWMD-0043-class plumbing-gap check the
+# VIEWMD-0091 tests above apply to `--theme light`. `detect_terminal_theme` itself (the OSC 11
+# probe/parsing/timeout logic) is mocked here rather than re-tested -- that's
+# `test_theme_detect.py`'s job -- this only proves the CLI/config value actually reaches the one
+# place that calls it.
+def test_cli_theme_auto_reaches_theme_resolution_end_to_end(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "light")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "auto", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+    assert _DARK_NOTE_COLOR not in out
+
+
+def test_cli_theme_auto_falls_back_to_dark_when_detection_says_dark(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "dark")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "auto", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_config_theme_auto_sets_it_when_cli_omits_theme(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "light")
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = auto\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+
+
+def test_cli_theme_dark_never_calls_detect_terminal_theme(tmp_path, capsys, monkeypatch):
+    """Requirement 7: --theme dark/light/an omitted --theme MUST NOT attempt an OSC 11 query at
+    all -- asserted here by making the detection function raise if it's ever called, not just by
+    timing (a raise is a hard, unambiguous plumbing check; timing a fast function is not)."""
+    import viewmd.theme_detect as theme_detect
+
+    def _boom():
+        raise AssertionError("detect_terminal_theme must not be called for --theme dark")
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", _boom)
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark", str(path)])
+    capsys.readouterr()
+
+    assert rc == 0
+
+
 # VIEWMD-0091 amended requirement 4: `--theme light` must reach Mermaid quadrant-chart
 # background-fill rendering *through the actual CLI entry point*, not just when a test supplies
 # `theme=` directly to render_markdown -- AGENTS.md documents this exact plumbing-gap risk class

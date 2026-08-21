@@ -12,7 +12,7 @@ _viewmd_completions() {
     case "$prev" in
         --color) COMPREPLY=($(compgen -W "auto always never" -- "$cur")); return ;;
         --width) COMPREPLY=($(compgen -W "full" -- "$cur")); return ;;
-        --theme) COMPREPLY=($(compgen -W "dark light" -- "$cur")); return ;;
+        --theme) COMPREPLY=($(compgen -W "dark light auto" -- "$cur")); return ;;
         --depth) COMPREPLY=($(compgen -f -- "$cur")); return ;;
         --config) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac

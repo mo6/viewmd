@@ -103,6 +103,12 @@ def test_parse_config_accepts_theme_dark_and_light():
     assert parse_config("theme = light\n", source="config").theme == "light"
 
 
+def test_parse_config_accepts_theme_auto():
+    # VIEWMD-0105: a third theme value, resolved via an OSC 11 terminal query at runtime rather
+    # than at config-parse time -- parse_config itself just needs to accept the literal string.
+    assert parse_config("theme = auto\n", source="config").theme == "auto"
+
+
 def test_parse_config_rejects_invalid_theme():
     with pytest.raises(ConfigError, match="invalid theme 'sepia'"):
         parse_config("theme = sepia\n", source="config")
