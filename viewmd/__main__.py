@@ -98,8 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
     # default=None (not "dark") for the same reason as --color above: an omitted --theme must
     # fall through to the config file rather than looking identical to an explicit `--theme dark`.
     parser.add_argument("--theme", choices=THEME_CHOICES, default=None,
-                        help="color palette tuned for a dark or light terminal background "
-                             "(default: dark)")
+                        help="color palette tuned for a dark or light terminal background, or "
+                             "'auto' to detect it via an OSC 11 query (default: dark)")
     # BooleanOptionalAction (not store_true) so `--no-full-front-matter` can override a
     # config-file `full_front_matter = true`; default=None means "flag omitted."
     parser.add_argument("--full-front-matter", action=argparse.BooleanOptionalAction, default=None,
@@ -148,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
     toc = coalesce(args.toc, cfg.toc, True)
     theme = coalesce(args.theme, cfg.theme, "dark")
+    if theme == "auto":
+        # Only resolved (and only ever queries the terminal) when "auto" is what actually wins
+        # the CLI/config/default coalesce -- --theme dark/light/an omitted --theme never reach
+        # this import or call at all (VIEWMD-0105 requirement 7: zero added latency for those).
+        from viewmd.theme_detect import detect_terminal_theme
+        theme = detect_terminal_theme()
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
     # existing single-file output stays byte-for-byte identical. Paged interactively (VIEWMD-0007)

@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 NO_CONFIG_ENV = "VIEWMD_NO_CONFIG"
 COLOR_CHOICES = ("auto", "always", "never")
-THEME_CHOICES = ("dark", "light")
+THEME_CHOICES = ("dark", "light", "auto")
 
 _TRUE = frozenset({"true", "yes", "on", "1"})
 _FALSE = frozenset({"false", "no", "off", "0"})

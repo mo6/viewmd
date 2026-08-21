@@ -26,6 +26,7 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
 ./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
 ./viewmd.sh notes.md --theme light        # use the light-terminal-background color palette (default: dark)
+./viewmd.sh notes.md --theme auto         # detect dark/light from the terminal's own background color
 ./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
 ./viewmd.sh a-directory --depth 2   # a bare directory listing: also list its subdirectories' entries
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
@@ -77,11 +78,25 @@ its top border, instead of a plain quote. GitHub's five canonical types — `NOT
 `IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
 Obsidian-only aliases) still renders as a generic card, using the type token as its label.
 
-`--theme {dark,light}` selects the color palette used for admonition callout borders/icons, the
+`--theme {dark,light,auto}` selects the color palette used for admonition callout borders/icons, the
 front-matter table, and the table of contents' heading colors — `dark` (the default, today's
 original colors) is tuned for a dark terminal background; `light` swaps in a higher-contrast
 palette for a light one. It does not affect Mermaid diagram coloring, which has its own
 color-capability-driven logic.
+
+`--theme auto` detects which of `dark`/`light` to use from the terminal's own actual background
+color, instead of you having to know and pass it yourself: when stdout is a terminal, it briefly
+puts the tty in raw mode and sends an OSC 11 query (`\x1b]11;?\x07`, "what is your background
+color?") to `/dev/tty`, classifying the reply's RGB by relative luminance. If the terminal doesn't
+answer within a short timeout, the query can't be made at all (piped/`--no-pager` output, no tty),
+or the reply doesn't parse, it silently falls back to `dark` — the same default as an omitted
+`--theme` — rather than hanging or erroring. **Known limitation:** tmux and GNU screen intercept
+OSC queries by default and don't forward them to the outer terminal unless OSC passthrough is
+explicitly configured (tmux: `set -g allow-passthrough on`; screen's OSC support is limited even
+with passthrough enabled) — inside an unconfigured multiplexer, `--theme auto` will reliably time
+out and silently fall back to `dark`, the same as any other non-answering terminal. Detection runs
+once at startup; a theme switched mid-session isn't picked up until the next invocation.
+`--theme dark`/`--theme light` are unaffected by any of this — the query only ever runs for `auto`.
 
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
@@ -181,7 +196,7 @@ keys:
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
 | `depth` | a positive integer (capped at 10) | `--depth` |
-| `theme` | `dark` or `light` | `--theme` |
+| `theme` | `dark`, `light`, or `auto` | `--theme` |
 
 An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
 stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config
@@ -200,7 +215,7 @@ Tab-completion scripts for bash, zsh, and fish are checked into [completions/](c
 (`./tools.sh completions`, see "Development" below) rather than hand-maintained per shell, so
 they stay in sync with the actual flag surface. They complete every flag name (including both
 spellings of a `--toc`/`--no-toc`-style pair), `--color`'s three literal choices
-(`auto`/`always`/`never`), `--theme`'s two literal choices (`dark`/`light`), `--width`'s `full`
+(`auto`/`always`/`never`), `--theme`'s three literal choices (`dark`/`light`/`auto`), `--width`'s `full`
 literal, and fall back to normal filesystem-path completion for `--config` and for the positional
 Markdown-file argument(s).
 
