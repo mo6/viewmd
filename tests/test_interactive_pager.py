@@ -1982,6 +1982,67 @@ def test_run_multi_file_loader_narrows_directory_width_for_scrollbar_when_overfl
         assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
 
 
+def test_run_multi_file_loader_narrows_markdown_width_for_scrollbar_at_full_width(monkeypatch):
+    # Same bug as `run()`'s own loader (`_load_avoiding_scrollbar_crop`), for a multi-file
+    # concatenation with no embedded directory listing at all: ordinary markdown content's own
+    # `width` used to stay fixed at `w` regardless of whether a scrollbar would end up reserving
+    # `_SCROLLBAR_RESERVED_W` columns, so a `--width full` multi-file view with enough content to
+    # need a scrollbar showed the same '>' truncation markers on wrapped prose.
+    paragraph = (
+        "Paragraph with enough words in it to reliably wrap across the full width of a "
+        "reasonably narrow terminal pane, so this document overflows a small terminal height. "
+    )
+    text = "# Title\n\n" + "\n\n".join(paragraph * 3 for _ in range(20))
+    entries = [("a.md", text), ("b.md", text)]
+
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=100, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
+def test_run_multi_file_loader_does_not_narrow_an_intentionally_oversized_width(monkeypatch):
+    # An oversized `--width` (wider than the terminal) must keep wrapping unchanged even when a
+    # scrollbar shows, matching `run()`'s own rule -- only `directory_width` (a fixed
+    # full-terminal-width value with no toggle of its own) narrows regardless of `w`.
+    paragraph = (
+        "Paragraph with enough words in it to reliably wrap across a wide render width, so this "
+        "document overflows a small terminal height. "
+    )
+    text = "# Title\n\n" + "\n\n".join(paragraph * 3 for _ in range(20))
+    entries = [("a.md", text), ("b.md", text)]
+
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=200, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    _colored, plain, _headings, _body_start = captured["loader"](200)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    assert max(ip._display_width(line) for line in plain) > 190  # not narrowed
+
+
 def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
     from viewmd.render import render_multi_file
 

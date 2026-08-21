@@ -1551,31 +1551,39 @@ def run_multi_file(
     today's behavior."""
     from viewmd.render import render_multi_file
 
+    def render(width_: int, directory_width_: int) -> tuple[list[str], list[str]]:
+        colored = render_multi_file(entries, width=width_, directory_width=directory_width_,
+                                    color=True, full_front_matter=full_front_matter, toc=toc,
+                                    theme=theme)
+        plain = render_multi_file(entries, width=width_, directory_width=directory_width_,
+                                  color=False, full_front_matter=full_front_matter, toc=toc,
+                                  theme=theme)
+        return colored.rstrip("\n").split("\n"), plain.rstrip("\n").split("\n")
+
     def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
-        colored = render_multi_file(entries, width=w, directory_width=directory_width, color=True,
-                                    full_front_matter=full_front_matter, toc=toc, theme=theme)
-        plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
-                                  full_front_matter=full_front_matter, toc=toc, theme=theme)
-        colored_lines = colored.rstrip("\n").split("\n")
-        plain_lines = plain.rstrip("\n").split("\n")
-        # Same two-pass scrollbar problem as `run_directory_listing.make_loader` above, applied to
-        # any embedded bare directory listing's own table: `directory_width` is a fixed
-        # full-terminal-width value that doesn't shrink for the 'w' toggle, so if the whole
-        # concatenation ends up tall enough to need a scrollbar, an embedded listing's table
-        # (rendered at the un-reduced `directory_width`) gets its right border/column silently
-        # cropped by `draw()` exactly like the single-listing case. Only re-render when there's
-        # actually a directory listing among the entries -- other content already wraps to `w`.
-        body_h = shutil.get_terminal_size().lines - 2
-        if len(plain_lines) > body_h and any(text is None for _, text in entries):
-            narrow_dw = directory_width - _SCROLLBAR_RESERVED_W
-            colored_lines = render_multi_file(
-                entries, width=w, directory_width=narrow_dw, color=True,
-                full_front_matter=full_front_matter, toc=toc, theme=theme
-            ).rstrip("\n").split("\n")
-            plain_lines = render_multi_file(
-                entries, width=w, directory_width=narrow_dw, color=False,
-                full_front_matter=full_front_matter, toc=toc, theme=theme
-            ).rstrip("\n").split("\n")
+        colored_lines, plain_lines = render(w, directory_width)
+        # Same two-pass scrollbar problem `run()`'s own loader solves (`_load_avoiding_scrollbar_
+        # crop`): body text (and any embedded bare directory listing's own table) is
+        # rendered/wrapped before `_run` knows whether it will end up reserving
+        # `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079), so once the whole
+        # concatenation is tall enough to need one, `draw()`'s crop silently truncates the right
+        # edge of every already-wrapped line. Re-render once, narrower, when that happens:
+        # markdown content's own `w` only when `w` is exactly the terminal's full width (an
+        # intentionally oversized `--width` must keep wrapping unchanged, matching `run()`'s own
+        # rule) -- `directory_width` for any embedded listing regardless of `w`, since it's
+        # *always* a fixed full-terminal-width value (VIEWMD-0071) with no width toggle of its
+        # own to already account for this.
+        term_w, term_h = shutil.get_terminal_size()
+        body_h = term_h - 2
+        if len(plain_lines) > body_h:
+            narrow_w = w - _SCROLLBAR_RESERVED_W if w == term_w else w
+            narrow_dw = (
+                directory_width - _SCROLLBAR_RESERVED_W
+                if any(text is None for _, text in entries)
+                else directory_width
+            )
+            if narrow_w != w or narrow_dw != directory_width:
+                colored_lines, plain_lines = render(narrow_w, narrow_dw)
         return colored_lines, plain_lines, [], 0
 
     display_name = f"{len(entries)} files"
