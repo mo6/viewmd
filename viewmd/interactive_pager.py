@@ -276,6 +276,33 @@ def _load(
     return colored, plain, _locate_headings(plain, outline), body_start
 
 
+def _load_avoiding_scrollbar_crop(
+    text: str, w: int, *, color_kwargs: dict
+) -> tuple[list[list[str]], list[str], list[HeadingLoc], int]:
+    """`_load(text, w, ...)`, but reflowed one column narrower per side of
+    `_SCROLLBAR_RESERVED_W` when `w` is exactly the terminal's current full width and the result
+    needs a scrollbar -- the same two-pass problem `run_directory_listing`'s own loader solves
+    (VIEWMD-0089): body text is wrapped to `w` before `_run` knows whether it will end up
+    reserving `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079), so once a document
+    has more lines than fit on screen, `draw()`'s crop silently truncates the right edge of every
+    already-wrapped-to-`w` line instead of the reflow leaving room for it (maintainer manual
+    testing feedback: `--width full README.md` showed `›` truncation markers on ordinary prose
+    lines that had nothing to actually horizontally scroll to).
+
+    Only triggers when `w` equals the terminal's own width exactly (`--width full`'s initial
+    load, or the 'w' full-width toggle/a resize while it's active) -- an intentionally oversized
+    `--width` wider than the terminal (the documented way to exercise real horizontal scroll,
+    see `_run`'s own `configured_width` docstring) must keep wrapping at its own requested width
+    unchanged, not get silently narrowed."""
+    colored, plain, headings, body_start = _load(text, w, color_kwargs=color_kwargs)
+    term_w, term_h = shutil.get_terminal_size()
+    body_h = term_h - 2
+    if w == term_w and len(plain) > body_h:
+        narrow_w = w - _SCROLLBAR_RESERVED_W
+        colored, plain, headings, body_start = _load(text, narrow_w, color_kwargs=color_kwargs)
+    return colored, plain, headings, body_start
+
+
 def _max_content_width(plain_lines: list[str]) -> int:
     """Widest rendered line, in display columns -- fenced code (VIEWMD-0019) and Mermaid diagrams
     (VIEWMD-0018) both render `crop=False`, so a line can be wider than either the terminal or the
@@ -1370,14 +1397,14 @@ def run(
         # same `width` this `run()` call itself was invoked with, making this a no-op in effect,
         # just uniform with `run_directory_listing()`'s own `open_path`, which genuinely has two.
         return (
-            lambda w: _load(new_text, w, color_kwargs=color_kwargs),
+            lambda w: _load_avoiding_scrollbar_crop(new_text, w, color_kwargs=color_kwargs),
             os.path.basename(path),
             os.path.dirname(os.path.abspath(path)),
             width,
         )
 
     _run(
-        lambda w: _load(text, w, color_kwargs=color_kwargs),
+        lambda w: _load_avoiding_scrollbar_crop(text, w, color_kwargs=color_kwargs),
         display_name,
         width=width,
         fallback=lambda: render_markdown(text, width=width, color=color, **color_kwargs),

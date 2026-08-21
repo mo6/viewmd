@@ -163,6 +163,68 @@ def test_run_loader_reports_front_matter_body_start(monkeypatch):
     assert ip._home_top(body_start, max_top=0) == 0
 
 
+def test_run_loader_narrows_for_scrollbar_at_full_width_when_document_overflows(monkeypatch):
+    # Bug found in manual maintainer testing: `--width full README.md` showed `›` truncation
+    # markers on ordinary prose lines with nothing to actually horizontally scroll to. Root cause,
+    # the same two-pass problem `run_directory_listing`'s own loader already solves (VIEWMD-0089):
+    # `run()`'s loader wrapped body text to the full terminal width `w` before `_run` knew whether
+    # it would end up reserving `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079) --
+    # once the document had more lines than fit on screen, `draw()`'s crop silently truncated the
+    # right edge of every already-wrapped-to-`w` line. `_load_avoiding_scrollbar_crop` now
+    # re-renders one `_SCROLLBAR_RESERVED_W` narrower whenever `w` is exactly the terminal's own
+    # width and the result needs a scrollbar.
+    long_doc = "# Title\n\n" + "\n\n".join(
+        f"Paragraph {i} with enough words in it to reliably wrap across the full width of a "
+        f"reasonably narrow terminal pane, so this document overflows a small terminal height."
+        for i in range(40)
+    )
+
+    # A small terminal (`columns=100, lines=10` -> `body_h = 10 - 2 = 8`) so the wrapped document
+    # overflows, and `w == term_w` (100) so the full-width condition applies.
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(long_doc, "test.md", width=100, color=False, toc=False)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
+def test_run_loader_does_not_narrow_an_intentionally_oversized_width(monkeypatch):
+    # An oversized `--width` (wider than the terminal) is the documented way to exercise real
+    # horizontal scroll (`_run`'s own `configured_width` docstring) -- it must keep wrapping at
+    # its own requested width unchanged even when a scrollbar shows, not get silently narrowed
+    # the way the full-terminal-width case above does.
+    long_doc = "# Title\n\n" + "\n\n".join(
+        f"Paragraph {i} with enough words in it to reliably wrap across a wide render width, so "
+        f"this document overflows a small terminal height." for i in range(40)
+    )
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(long_doc, "test.md", width=200, color=False, toc=False)
+
+    _colored, plain, _headings, _body_start = captured["loader"](200)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    assert max(ip._display_width(line) for line in plain) > 190  # not narrowed
+
+
 # --- _popup_box --------------------------------------------------------------------------------
 
 
