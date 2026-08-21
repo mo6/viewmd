@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.49.0] — 2026-08-21
+
+- **`--theme {dark,light}` color palette setting** (VIEWMD-0091, feature): selects between two built-in color palettes for pieces of rendering that previously hardcoded colors tuned for a dark terminal background — admonition callout borders/icons, the front-matter table, the table-of-contents' heading colors, the bare directory-listing table's header/`Name` column, Mermaid quadrant-chart quadrant backgrounds, and fenced-code/inline-code syntax highlighting (Pygments `paraiso-light` for light, `monokai`, today's default, for dark). Defaults to `dark` (today's existing, unlabeled colors), so this is purely additive; config-settable via a matching `theme` key, same `coalesce(CLI, config, default)` precedence as `--width`/`--color`. Does not affect Mermaid pie-chart fills or any other diagram-type coloring, which keep their existing color-capability-driven logic.
+
 ## [1.48.0] — 2026-08-20
 
 - **Size column and `--depth` for bare directory listings** (VIEWMD-0089, feature): the directory-listing table gained a human-readable `Size` column (right-aligned; a subdirectory row shows its immediate-child entry count instead of a byte size), and an opt-in `--depth N` flag (config-settable, capped at 10 with a stderr warning above that) to descend into subdirectories rather than the fixed one-level listing, each row indented per level, subdirectories-first-then-alphabetical at every level. A long filename now truncates to 25 characters with its extension always preserved and `...` placed just before it, so a long name no longer squeezes the `Title` column. Fixed a scrollbar-crop bug (the table's right border and rightmost column could get silently cut off once a listing needed a scrollbar) and a bug where a `.md` file opened by clicking through a directory listing inherited the listing's own full-terminal-width default instead of the document's own prose-capped width.
