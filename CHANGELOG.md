@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.49.1] — 2026-08-21
+
+- **Fix `--width full` clipping wrapped prose behind the scrollbar** (bug): the interactive pager's document loader (`run()`) wrapped body text to the full terminal width before knowing whether a scrollbar would end up reserving two columns for itself — once a document had more lines than fit on screen, the right edge of every already-wrapped line got silently truncated, showing `›` markers on ordinary prose with nothing to actually horizontally scroll to. The loader now re-renders one column narrower whenever it's asked to render at exactly the terminal's own width and the result needs a scrollbar; an intentionally oversized `--width` (wider than the terminal, the documented way to get real horizontal scroll) is left unchanged. Applies to both a single document and a multi-file concatenation's plain markdown content, alongside the directory-listing table's own existing narrowing.
+
 ## [1.49.0] — 2026-08-21
 
 - **`--theme {dark,light}` color palette setting** (VIEWMD-0091, feature): selects between two built-in color palettes for pieces of rendering that previously hardcoded colors tuned for a dark terminal background — admonition callout borders/icons, the front-matter table, the table-of-contents' heading colors, the bare directory-listing table's header/`Name` column, Mermaid quadrant-chart quadrant backgrounds, and fenced-code/inline-code syntax highlighting (Pygments `paraiso-light` for light, `monokai`, today's default, for dark). Defaults to `dark` (today's existing, unlabeled colors), so this is purely additive; config-settable via a matching `theme` key, same `coalesce(CLI, config, default)` precedence as `--width`/`--color`. Does not affect Mermaid pie-chart fills or any other diagram-type coloring, which keep their existing color-capability-driven logic.
