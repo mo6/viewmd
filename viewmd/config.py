@@ -14,6 +14,7 @@ T = TypeVar("T")
 
 NO_CONFIG_ENV = "VIEWMD_NO_CONFIG"
 COLOR_CHOICES = ("auto", "always", "never")
+THEME_CHOICES = ("dark", "light")
 
 _TRUE = frozenset({"true", "yes", "on", "1"})
 _FALSE = frozenset({"false", "no", "off", "0"})
@@ -32,6 +33,7 @@ class Config:
     full_front_matter: bool | None = None
     toc: bool | None = None
     depth: int | None = None
+    theme: str | None = None
 
 
 def default_config_path() -> Path:
@@ -113,6 +115,7 @@ def parse_config(text: str, *, source: str) -> Config:
     full_front_matter: bool | None = None
     toc: bool | None = None
     depth: int | None = None
+    theme: str | None = None
     for key, (lineno, value) in raw.items():
         if key == "width":
             width = _parse_width(value, source, lineno)
@@ -124,6 +127,8 @@ def parse_config(text: str, *, source: str) -> Config:
             toc = _parse_bool(value, source, lineno, key=key)
         elif key == "depth":
             depth = _parse_depth(value, source, lineno)
+        elif key == "theme":
+            theme = _parse_theme(value, source, lineno)
         else:
             # Unknown keys are ignored (forward-compatible with future options),
             # but warned about once each so a typo doesn't silently do nothing.
@@ -133,7 +138,8 @@ def parse_config(text: str, *, source: str) -> Config:
             )
 
     return Config(
-        width=width, color=color, full_front_matter=full_front_matter, toc=toc, depth=depth
+        width=width, color=color, full_front_matter=full_front_matter, toc=toc, depth=depth,
+        theme=theme,
     )
 
 
@@ -162,6 +168,15 @@ def _parse_depth(value: str, source: str, lineno: int) -> int:
             f"{source}:{lineno}: invalid depth {value!r}: must be a positive integer"
         )
     return int(value)
+
+
+def _parse_theme(value: str, source: str, lineno: int) -> str:
+    if value not in THEME_CHOICES:
+        choices = ", ".join(THEME_CHOICES)
+        raise ConfigError(
+            f"{source}:{lineno}: invalid theme {value!r}: must be one of {choices}"
+        )
+    return value
 
 
 def _parse_bool(value: str, source: str, lineno: int, *, key: str) -> bool:

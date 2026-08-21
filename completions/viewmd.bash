@@ -12,12 +12,13 @@ _viewmd_completions() {
     case "$prev" in
         --color) COMPREPLY=($(compgen -W "auto always never" -- "$cur")); return ;;
         --width) COMPREPLY=($(compgen -W "full" -- "$cur")); return ;;
+        --theme) COMPREPLY=($(compgen -W "dark light" -- "$cur")); return ;;
         --depth) COMPREPLY=($(compgen -f -- "$cur")); return ;;
         --config) COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
 
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "-h --help --version --no-pager --color --width --full-front-matter --no-full-front-matter --toc --no-toc --depth --config" -- "$cur"))
+        COMPREPLY=($(compgen -W "-h --help --version --no-pager --color --width --theme --full-front-matter --no-full-front-matter --toc --no-toc --depth --config" -- "$cur"))
         return
     fi
 

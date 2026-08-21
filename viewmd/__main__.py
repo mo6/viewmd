@@ -11,7 +11,7 @@ import shutil
 import sys
 
 from viewmd import __version__
-from viewmd.config import ConfigError, coalesce, read_config
+from viewmd.config import THEME_CHOICES, ConfigError, coalesce, read_config
 
 # A common prose line-length standard; the render width default, capped further by a narrower
 # terminal. --width overrides it, either to an exact column count or to "full" (VIEWMD-0003).
@@ -95,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=_width_arg, default=None,
                         help=f"render width in columns, or 'full' for the full terminal width "
                              f"(default: min({DEFAULT_MAX_WIDTH}, detected terminal width))")
+    # default=None (not "dark") for the same reason as --color above: an omitted --theme must
+    # fall through to the config file rather than looking identical to an explicit `--theme dark`.
+    parser.add_argument("--theme", choices=THEME_CHOICES, default=None,
+                        help="color palette tuned for a dark or light terminal background "
+                             "(default: dark)")
     # BooleanOptionalAction (not store_true) so `--no-full-front-matter` can override a
     # config-file `full_front_matter = true`; default=None means "flag omitted."
     parser.add_argument("--full-front-matter", action=argparse.BooleanOptionalAction, default=None,
@@ -142,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     directory_width = _resolve_width(width_arg, terminal_width, default_max_width=terminal_width)
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
     toc = coalesce(args.toc, cfg.toc, True)
+    theme = coalesce(args.theme, cfg.theme, "dark")
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
     # existing single-file output stays byte-for-byte identical. Paged interactively (VIEWMD-0007)
@@ -163,7 +169,8 @@ def main(argv: list[str] | None = None) -> int:
             markdown_text, name = resolved
             from viewmd.pager import display_document
             display_document(markdown_text, name, no_pager=args.no_pager, width=width,
-                             color=color, full_front_matter=full_front_matter, toc=toc)
+                             color=color, full_front_matter=full_front_matter, toc=toc,
+                             theme=theme)
             return 0
 
         # --depth (VIEWMD-0089) is resolved here, not up front with the other flags: it only
@@ -174,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         from viewmd.pager import display_directory_listing
         depth = _resolve_depth(coalesce(args.depth, cfg.depth))
         display_directory_listing(path, no_pager=args.no_pager, width=width,
-                                  directory_width=directory_width, color=color, depth=depth)
+                                  directory_width=directory_width, color=color, depth=depth,
+                                  theme=theme)
         return 0
 
     had_error = False
@@ -203,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
     from viewmd.pager import display_multi_file
     display_multi_file(entries, no_pager=args.no_pager, width=width,
                        directory_width=directory_width, color=color,
-                       full_front_matter=full_front_matter, toc=toc)
+                       full_front_matter=full_front_matter, toc=toc, theme=theme)
     return 1 if had_error else 0
 
 

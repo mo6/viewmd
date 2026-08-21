@@ -1027,9 +1027,9 @@ def test_going_back_from_a_navigated_file_restores_the_listings_own_width(monkey
     render_calls: list[int] = []
     real_render = render_mod.render_directory_listing
 
-    def spy_render(d, *, width, color, depth=1):
+    def spy_render(d, *, width, color, depth=1, theme="dark"):
         render_calls.append(width)
-        return real_render(d, width=width, color=color, depth=depth)
+        return real_render(d, width=width, color=color, depth=depth, theme=theme)
 
     # `run_directory_listing()`'s `make_loader` does `from viewmd.render import
     # render_directory_listing` *inside* the function body on every call, so it always resolves

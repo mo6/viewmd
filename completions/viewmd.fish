@@ -12,6 +12,7 @@ complete -c viewmd -l version
 complete -c viewmd -l no-pager
 complete -c viewmd -l color -xa 'auto always never'
 complete -c viewmd -l width -xa 'full'
+complete -c viewmd -l theme -xa 'dark light'
 complete -c viewmd -l full-front-matter
 complete -c viewmd -l no-full-front-matter
 complete -c viewmd -l toc

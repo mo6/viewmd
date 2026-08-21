@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from wcwidth import wcswidth
 
 from viewmd.render import (
+    _CODE_THEME_BY_THEME,
     _DIR_ANCHOR_SCHEME,
     _TOC_ANCHOR_SCHEME,
     ViewmdMarkdown,
@@ -260,7 +261,16 @@ def _load(
     plain_raw = render_markdown(text, width=width, color=False, **color_kwargs)
     colored = colored_raw.rstrip("\n").split("\n")
     plain = plain_raw.rstrip("\n").split("\n")
-    markdown = ViewmdMarkdown(text, code_theme="monokai")
+    # VIEWMD-0091 (amended requirement 6): this instance is only used for `heading_outline`
+    # below, never printed, so its `code_theme` has no visible effect either way -- picked from
+    # `color_kwargs["theme"]` via the same `_CODE_THEME_BY_THEME` mapping `render_markdown` uses
+    # anyway, for consistency rather than because it changes anything observable here.
+    markdown = ViewmdMarkdown(
+        text,
+        code_theme=_CODE_THEME_BY_THEME.get(
+            color_kwargs.get("theme", "dark"), _CODE_THEME_BY_THEME["dark"]
+        ),
+    )
     outline = heading_outline(markdown)
     body_start = _front_matter_body_start(text, width, color_kwargs=color_kwargs)
     return colored, plain, _locate_headings(plain, outline), body_start
@@ -1324,6 +1334,7 @@ def run(
     color: bool,
     full_front_matter: bool = False,
     toc: bool = True,
+    theme: str = "dark",
 ) -> None:
     """Page `text` (raw Markdown source) interactively. `name` is the display name shown in the
     mode line (typically the source path, or "-" for stdin); only its basename is shown.
@@ -1336,7 +1347,7 @@ def run(
     not a `.md` link), and `run_multi_file()` still leaves both `None`, making a click on a link
     (and the 'b'/'f' trail keys) a no-op there.
     """
-    color_kwargs = {"full_front_matter": full_front_matter, "toc": toc}
+    color_kwargs = {"full_front_matter": full_front_matter, "toc": toc, "theme": theme}
     display_name = "(stdin)" if name == "-" else os.path.basename(name)
     doc_dir = None if name == "-" else os.path.dirname(os.path.abspath(name))
 
@@ -1376,7 +1387,8 @@ def run(
 
 
 def run_directory_listing(
-    dir_path: str, *, width: int, directory_width: int, color: bool, depth: int = 1
+    dir_path: str, *, width: int, directory_width: int, color: bool, depth: int = 1,
+    theme: str = "dark",
 ) -> None:
     """Page a bare directory listing interactively (VIEWMD-0065's table-of-contents view, no
     `_Index.md` note present). No heading outline to build a ToC popup from (VIEWMD-0072
@@ -1414,10 +1426,10 @@ def run_directory_listing(
     def make_loader(d: str):
         def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
             colored = render_directory_listing(
-                d, width=w, color=True, depth=depth
+                d, width=w, color=True, depth=depth, theme=theme
             ).rstrip("\n").split("\n")
             plain = render_directory_listing(
-                d, width=w, color=False, depth=depth
+                d, width=w, color=False, depth=depth, theme=theme
             ).rstrip("\n").split("\n")
             # The table above was rendered at the *full* width `w`, but `draw()` only knows
             # whether `_run` will actually reserve `_SCROLLBAR_RESERVED_W` columns for a
@@ -1432,10 +1444,10 @@ def run_directory_listing(
             if len(plain) > body_h:
                 narrow_w = w - _SCROLLBAR_RESERVED_W
                 colored = render_directory_listing(
-                    d, width=narrow_w, color=True, depth=depth
+                    d, width=narrow_w, color=True, depth=depth, theme=theme
                 ).rstrip("\n").split("\n")
                 plain = render_directory_listing(
-                    d, width=narrow_w, color=False, depth=depth
+                    d, width=narrow_w, color=False, depth=depth, theme=theme
                 ).rstrip("\n").split("\n")
             return colored, plain, [], 0
 
@@ -1486,7 +1498,7 @@ def run_directory_listing(
         display_name,
         width=directory_width,
         fallback=lambda: render_directory_listing(
-            dir_path, width=directory_width, color=color, depth=depth
+            dir_path, width=directory_width, color=color, depth=depth, theme=theme
         ),
         doc_dir=dir_path,
         open_path=open_path,
@@ -1501,6 +1513,7 @@ def run_multi_file(
     color: bool,
     full_front_matter: bool,
     toc: bool,
+    theme: str = "dark",
 ) -> None:
     """Page a multi-file concatenation (two or more `path` arguments) interactively. `entries` is
     `(display_path, text)` per already-resolved path (VIEWMD-0072) -- `text` is the raw Markdown
@@ -1513,9 +1526,9 @@ def run_multi_file(
 
     def loader(w: int) -> tuple[list[str], list[str], list[HeadingLoc], int]:
         colored = render_multi_file(entries, width=w, directory_width=directory_width, color=True,
-                                    full_front_matter=full_front_matter, toc=toc)
+                                    full_front_matter=full_front_matter, toc=toc, theme=theme)
         plain = render_multi_file(entries, width=w, directory_width=directory_width, color=False,
-                                  full_front_matter=full_front_matter, toc=toc)
+                                  full_front_matter=full_front_matter, toc=toc, theme=theme)
         colored_lines = colored.rstrip("\n").split("\n")
         plain_lines = plain.rstrip("\n").split("\n")
         # Same two-pass scrollbar problem as `run_directory_listing.make_loader` above, applied to
@@ -1530,11 +1543,11 @@ def run_multi_file(
             narrow_dw = directory_width - _SCROLLBAR_RESERVED_W
             colored_lines = render_multi_file(
                 entries, width=w, directory_width=narrow_dw, color=True,
-                full_front_matter=full_front_matter, toc=toc
+                full_front_matter=full_front_matter, toc=toc, theme=theme
             ).rstrip("\n").split("\n")
             plain_lines = render_multi_file(
                 entries, width=w, directory_width=narrow_dw, color=False,
-                full_front_matter=full_front_matter, toc=toc
+                full_front_matter=full_front_matter, toc=toc, theme=theme
             ).rstrip("\n").split("\n")
         return colored_lines, plain_lines, [], 0
 
@@ -1545,7 +1558,7 @@ def run_multi_file(
         width=width,
         fallback=lambda: render_multi_file(entries, width=width, directory_width=directory_width,
                                            color=color, full_front_matter=full_front_matter,
-                                           toc=toc),
+                                           toc=toc, theme=theme),
     )
 
 

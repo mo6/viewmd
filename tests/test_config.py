@@ -46,10 +46,12 @@ def test_config_path_to_read_does_not_skip_when_viewmd_no_config_is_empty(tmp_pa
 
 def test_parse_config_reads_each_known_key():
     cfg = parse_config(
-        "width = 80\ncolor = never\nfull_front_matter = true\ntoc = false\n",
+        "width = 80\ncolor = never\nfull_front_matter = true\ntoc = false\ntheme = light\n",
         source="config",
     )
-    assert cfg == Config(width="80", color="never", full_front_matter=True, toc=False)
+    assert cfg == Config(
+        width="80", color="never", full_front_matter=True, toc=False, theme="light"
+    )
 
 
 def test_parse_config_accepts_width_full():
@@ -94,6 +96,16 @@ def test_parse_config_rejects_malformed_line():
 def test_parse_config_rejects_invalid_color():
     with pytest.raises(ConfigError, match="invalid color 'purple'"):
         parse_config("color = purple\n", source="config")
+
+
+def test_parse_config_accepts_theme_dark_and_light():
+    assert parse_config("theme = dark\n", source="config").theme == "dark"
+    assert parse_config("theme = light\n", source="config").theme == "light"
+
+
+def test_parse_config_rejects_invalid_theme():
+    with pytest.raises(ConfigError, match="invalid theme 'sepia'"):
+        parse_config("theme = sepia\n", source="config")
 
 
 def test_parse_config_rejects_invalid_width():

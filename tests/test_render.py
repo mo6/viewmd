@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import (
@@ -13,6 +14,7 @@ from viewmd.render import (
 )
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
+THEME_FIXTURES = Path(__file__).parent / "fixtures" / "theme"
 
 
 def strip_ansi(text: str) -> str:
@@ -152,6 +154,189 @@ def test_front_matter_block_empty_when_no_table_would_render():
     assert render_front_matter_block(
         "---\naccepted_by:\n---\n# Body\n", width=80, color=False
     ) == ""
+
+
+# VIEWMD-0091: `--theme {dark,light}` selects the color palette for admonition callouts and the
+# front-matter table (and, separately, the ToC's heading colors -- see
+# test_toc_heading_color_differs_between_dark_and_light_theme below). `theme` defaults to "dark",
+# today's original unlabeled palette, so every fixture/test elsewhere in this file that never
+# passes `theme=` is itself an implicit "dark (default)" pin -- these tests below are the explicit
+# ones the issue's acceptance criteria calls for: a `--theme light` fixture for an admonition
+# block and for the front-matter table, each alongside its `--theme dark` counterpart so a
+# regression in either palette, or an accidental cross-theme bleed, shows up as a fixture diff.
+def test_admonition_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-dark.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="dark") == expected
+
+
+def test_admonition_theme_light_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-light.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="light") == expected
+
+
+def test_admonition_theme_defaults_to_dark():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    assert render_markdown(md, width=60, color=True) == render_markdown(
+        md, width=60, color=True, theme="dark"
+    )
+
+
+def test_front_matter_table_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-dark.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="dark") == expected
+
+
+def test_front_matter_table_theme_light_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-light.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="light") == expected
+
+
+def test_front_matter_table_theme_defaults_to_dark():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    assert render_front_matter_block(md, width=80, color=True) == render_front_matter_block(
+        md, width=80, color=True, theme="dark"
+    )
+
+
+def _toc_entry_lines(rendered: str) -> list[str]:
+    """The rendered ToC's own bulleted lines -- identified by the `viewmd-toc:` OSC8 hyperlink
+    `_toc_lines` (viewmd/render.py) attaches to each entry -- as opposed to the body's own later
+    heading lines, which reuse the same heading *text* but are unaffected by this issue's ToC
+    color theming (see _toc_heading_style's own docstring: only the ToC entry, not the body
+    heading, is retargeted for `light`)."""
+    return [line for line in rendered.splitlines() if "viewmd-toc:" in line]
+
+
+def test_toc_heading_color_differs_between_dark_and_light_theme():
+    # Rich's default theme colors markdown.h2 plain "magenta" (SGR 35); light overrides that to
+    # an explicit truecolor purple (see _TOC_HEADING_STYLE_LIGHT in viewmd/render.py) for better
+    # contrast on a light background -- so the two themes' ToC entries must carry different SGR
+    # codes for the same heading, while the heading *text* itself stays identical either way. The
+    # body's own (later, separate) h2 heading line is intentionally left unthemed either way --
+    # this issue's requirement is the ToC's heading colors specifically, not the body's.
+    md = "# Title\n\n## Section A\n\n## Section B\n\nbody\n"
+    dark = render_markdown(md, width=80, color=True, theme="dark")
+    light = render_markdown(md, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_toc_lines = _toc_entry_lines(dark)
+    light_toc_lines = _toc_entry_lines(light)
+    assert len(dark_toc_lines) == len(light_toc_lines) == 2
+    assert all("\x1b[4;35m" in line for line in dark_toc_lines)  # markdown.h2: underline+magenta
+    assert not any("\x1b[4;35m" in line for line in light_toc_lines)
+
+
+def test_no_color_theme_output_is_unaffected_by_theme():
+    # `color=False` strips every SGR/OSC8 sequence regardless of palette, so dark vs. light must
+    # be visually indistinguishable -- and byte-identical -- when color is off entirely.
+    md = "---\ntitle: Hello\n---\n\n# Title\n\n## A\n\n## B\n\n> [!NOTE]\n> a note\n"
+    dark = render_markdown(md, width=80, color=False, theme="dark")
+    light = render_markdown(md, width=80, color=False, theme="light")
+    assert dark == light
+
+
+# VIEWMD-0091 amended requirement 4: `--theme` reaches Mermaid quadrant-chart background fills
+# specifically, end to end through render_markdown -> preprocess -> render_mermaid_blocks ->
+# viewmd.mermaid.render's quadrant branch -- exercised here against the real doc,
+# docs/mermaid-quadrant.md, not a synthetic fixture, per AGENTS.md's own "verify in composition"
+# lesson.
+_QUADRANT_DOC = (
+    "```mermaid\n"
+    "quadrantChart\n"
+    "    title Priority Matrix\n"
+    "    x-axis Low Effort --> High Effort\n"
+    "    y-axis Low Impact --> High Impact\n"
+    "    quadrant-1 Do First\n"
+    "    quadrant-2 Plan\n"
+    "    quadrant-3 Delegate\n"
+    "    quadrant-4 Skip\n"
+    "    Cache: [0.2, 0.8]\n"
+    "    Rewrite: [0.9, 0.3]\n"
+    "```\n"
+)
+
+
+def test_quadrant_background_fill_reaches_light_theme_end_to_end_through_render_markdown():
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="light")
+    dark_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", dark))
+    light_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", light))
+    assert dark_bg and light_bg
+    assert dark_bg != light_bg
+
+    def brightness(rgb: str) -> int:
+        return sum(int(c) for c in rgb.split(";"))
+
+    assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
+
+
+def test_quadrant_background_fill_omitted_theme_matches_dark_default_through_render_markdown():
+    omitted = render_markdown(_QUADRANT_DOC, width=80, color=True)
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    assert strip_ansi(omitted) == strip_ansi(dark)
+    assert set(re.findall(r"48;2;(\d+;\d+;\d+)", omitted)) == set(
+        re.findall(r"48;2;(\d+;\d+;\d+)", dark)
+    )
+
+
+# Requirement 4's "MUST NOT" clause: pie-chart coloring is driven only by `color`, never `theme`
+# -- byte-identical output across every `--theme` value.
+_PIE_DOC = (
+    "```mermaid\n"
+    "pie title Pets\n"
+    "    \"Dogs\" : 40\n"
+    "    \"Cats\" : 35\n"
+    "    \"Birds\" : 25\n"
+    "```\n"
+)
+
+
+def test_pie_chart_rendering_is_unaffected_by_theme():
+    omitted = render_markdown(_PIE_DOC, width=80, color=True)
+    dark = render_markdown(_PIE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_PIE_DOC, width=80, color=True, theme="light")
+    assert omitted == dark == light
+
+
+# VIEWMD-0091 amended requirement 6: `--theme` also picks the Pygments theme used for fenced
+# code blocks (and, via rich's own inline_code_theme-defaults-to-code_theme fallback, inline
+# code spans) -- `render_markdown`'s `ViewmdMarkdown(body, code_theme="monokai")` used to be
+# hardcoded regardless of `theme`; "dark" now maps to the same "monokai" as before (unchanged),
+# "light" to Pygments' built-in "paraiso-light" theme. A fenced block using a real lexer (Python) is
+# needed here, not a bare ``` fence -- Pygments only emits per-token color codes when there's a
+# lexer with a syntax to highlight, so a codeless fence wouldn't actually exercise a theme's
+# palette differences the way this issue's own acceptance criteria calls for.
+_CODE_FENCE_DOC = "```python\nimport os\n\ndef greet(name):\n    return f\"hi {name}\"\n```\n"
+
+
+def test_code_fence_theme_light_differs_from_dark_and_is_not_the_old_dark_codes():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_codes = set(ANSI_RE.findall(dark)) - {"\x1b[0m"}
+    light_codes = set(ANSI_RE.findall(light)) - {"\x1b[0m"}
+    assert dark_codes and light_codes
+    # The light theme must not reuse monokai's own background/foreground SGR codes -- i.e. this
+    # isn't accidentally still rendering with the old hardcoded dark theme. ("\x1b[0m", the plain
+    # reset sequence, is excluded above -- it's shared trivially by any two colored renders.)
+    assert not (light_codes & dark_codes)
+
+
+def test_code_fence_theme_defaults_to_dark_monokai_unchanged():
+    omitted = render_markdown(_CODE_FENCE_DOC, width=80, color=True)
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    assert omitted == dark
+
+
+def test_code_fence_no_color_output_is_unaffected_by_theme():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="light")
+    assert dark == light
 
 
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).
@@ -621,6 +806,54 @@ def test_render_directory_listing_depth_orders_subdirectories_before_files_at_ea
     # -- before `sub`'s own file ("z_file.md"), matching the flat depth-1 subdirectories-first
     # rule applied at every level.
     assert out.index("a_dir/") < out.index("child.md") < out.index("z_file.md")
+
+
+# --- directory listing theme (VIEWMD-0091 amended requirement 6) -----------------------------
+
+
+def test_directory_listing_theme_light_differs_from_dark_and_is_not_the_old_cyan_codes(tmp_path):
+    # VIEWMD-0091 (amended requirement 6): the directory-listing table's header/Name-column accent
+    # reuses `_TABLE_STYLE_BY_THEME`, the same dict the front-matter table already uses -- dark
+    # stays plain-cyan (today's unchanged SGR 36 codes), light switches to the Primer NOTE blue
+    # `#0969da` (a truecolor `38;2;9;105;218`/`48;...` sequence), so the two must render with
+    # disjoint color codes, not just "differ" for some unrelated reason.
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    # "\x1b[0m" (plain reset) and "\x1b[1m" (plain bold, shared by the header style in both
+    # themes) are excluded -- neither is specific to a theme's own accent color, unlike the
+    # actual color codes below. OSC8 hyperlinks carry a random `id=` (VIEWMD-0081), so are
+    # excluded from this particular comparison too.
+    _neutral = ("\x1b[0m", "\x1b[1m", "\x1b]8;;\x1b\\")
+    dark_codes = {
+        c for c in ANSI_RE.findall(dark) if c not in _neutral and "id=" not in c
+    }
+    light_codes = {
+        c for c in ANSI_RE.findall(light) if c not in _neutral and "id=" not in c
+    }
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+    assert "9;105;218" in light  # #0969da's truecolor RGB triplet
+    assert "\x1b[36m" not in light and "\x1b[1;36m" not in light
+
+
+def test_directory_listing_theme_defaults_to_dark_cyan_unchanged(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    omitted = render_directory_listing(str(tmp_path), width=80, color=True)
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    # Normalize the OSC8 hyperlink's random `id=` (VIEWMD-0081) before comparing, the same way
+    # prior VIEWMD-0091 verification passes did when diffing full renders.
+    id_re = re.compile(r"id=\d+")
+    assert id_re.sub("id=X", omitted) == id_re.sub("id=X", dark)
+
+
+def test_directory_listing_no_color_output_is_unaffected_by_theme(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=False, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=False, theme="light")
+    assert dark == light
 
 
 def test_render_divider_matches_the_front_matter_divider_style():
