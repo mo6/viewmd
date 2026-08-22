@@ -1,14 +1,14 @@
-# viewmd:mark sentinel repro
+# viewmd:mark sentinel highlighting
 
-Bug-repro fixture for [VIEWMD-0104](../issues/VIEWMD-0104-highlight-marked-regions.md). Render it today, before the issue is implemented, to see the problem:
+Fixture for [VIEWMD-0104](../issues/VIEWMD-0104-highlight-marked-regions.md) (highlight regions marked by sentinel HTML comments). Render it with color to see the marked blocks below tinted per `kind` (green/amber/red for added/changed/removed):
 
 ```
-./viewmd.sh docs/mark-highlight-example.md
+./viewmd.sh --color=always docs/mark-highlight-example.md
 ```
 
-Every `<!-- viewmd:mark ... -->` sentinel below is an ordinary HTML comment, so today's renderer (`rich.markdown.Markdown`, with no special handling for these tokens) treats each one as its own unknown block element. `MarkdownElement.new_line` defaults to `True` and isn't overridden for an unhandled token, so the render loop inserts a blank-line segment *before* the comment and leaves `new_line=True` for whatever follows — meaning each marked block gets an extra blank line on both its start and its end, on top of the blank line already separating it from its neighbors. The result: every marked block's gap roughly doubles. gitgleam's `MarkdownHighlighter` marks nearly every block in a brand-new file, so there the doubling shows up wall-to-wall.
+Before this issue, every `<!-- viewmd:mark ... -->` sentinel below was an ordinary HTML comment that `rich.markdown.Markdown` treated as its own unknown block element -- `MarkdownElement.new_line` defaults to `True` and wasn't overridden for an unhandled token, so the render loop inserted a blank-line segment on both sides of each one, roughly doubling every marked block's gap even though the comment's own text never appeared. VIEWMD-0104 fixes this by stripping the sentinel lines from the Markdown source before Rich ever parses it (the same stage `viewmd/wikilinks.py` and `viewmd/mermaid/preprocess.py` already rewrite text at), so the marked blocks below now sit exactly where they would if the sentinel lines had simply been deleted.
 
-Compare the unmarked baseline paragraphs below (single blank line between them, as normal) against the marked ones further down (doubled gaps around each marked block).
+Compare the unmarked baseline paragraphs below (single blank line between them, as normal) against the marked ones further down (same single blank line, now tinted with a background color instead of doubled gaps).
 
 ## Baseline (no marks)
 
@@ -57,6 +57,25 @@ pie title Marked pie (new file)
     "Slice A" : 40
     "Slice B" : 35
     "Slice C" : 25
+```
+<!-- viewmd:mark end -->
+
+## Marked quadrant chart
+
+The composition risk the issue's design notes call out by name: a quadrant chart already paints its own per-quadrant background fill, so the mark's background needs to win there too, not just against a pie slice's fill.
+
+<!-- viewmd:mark start kind=removed -->
+```mermaid
+quadrantChart
+    title Reach and engagement of campaigns
+    x-axis Low Reach --> High Reach
+    y-axis Low Engagement --> High Engagement
+    quadrant-1 We should expand
+    quadrant-2 Need to promote
+    quadrant-3 Re-evaluate
+    quadrant-4 May be improved
+    Campaign A: [0.3, 0.6]
+    Campaign B: [0.45, 0.23]
 ```
 <!-- viewmd:mark end -->
 
