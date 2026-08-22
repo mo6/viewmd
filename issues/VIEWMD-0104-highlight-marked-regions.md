@@ -1,13 +1,13 @@
 ---
 id: VIEWMD-0104
 title: Highlight regions marked by sentinel HTML comments
-status: proposed
+status: in-progress
 area: [render]
 effort: medium
 created: 2026-08-21
-updated: 2026-08-21
-accepted_by:
-accepted_at:
+updated: 2026-08-22
+accepted_by: George Moses <gmo6nl@gmail.com>
+accepted_at: 2026-08-22
 commits: []
 related: [VIEWMD-0091]
 supersedes: []
