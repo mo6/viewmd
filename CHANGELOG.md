@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.51.0] — 2026-08-22
+
+- **Highlight regions marked by sentinel HTML comments** (VIEWMD-0104, feature): recognizes a paired `<!-- viewmd:mark start kind=KIND -->` … `<!-- viewmd:mark end -->` HTML comment sentinel and, with color enabled, tints the block-level content between them with a background color per `kind` (`added` green, `changed` amber, `removed` red) — wrapped continuation lines, table rows, fenced code, and Mermaid diagram art alike, overriding any background the content already had while preserving its own foreground/syntax colors. The sentinels are ordinary HTML comments (invisible to other Markdown renderers, inert in viewmd without color) stripped at the text-preprocessing stage so surrounding blank-line spacing is unaffected; a document with no sentinels renders byte-for-byte unchanged, and `--color=never` output is identical to the same document with the sentinels simply deleted. Malformed input (an unbalanced start, a stray end, an unparseable marker) warns once to stderr and never crashes. The concrete driver is gitgleam, a sibling app that previews a changed Markdown file through viewmd instead of a raw diff.
+
 ## [1.50.0] — 2026-08-21
 
 - **`--theme auto` detects light/dark from the terminal's own background color** (VIEWMD-0105, feature): a third `--theme` value alongside `dark`/`light` — queries the terminal via an OSC 11 escape sequence when stdout is a tty, classifies the reply by relative luminance, and falls back to `dark` on any failure (non-tty, timeout, malformed reply, an unresponsive terminal or multiplexer). Config-settable via `theme = auto`. `--theme dark`/`--theme light`/an omitted `--theme` are completely unaffected — the query only ever runs for `auto`, so this is purely additive with zero added latency otherwise. Known limitation: tmux/GNU screen intercept OSC queries by default and need explicit passthrough configured, otherwise `auto` reliably times out and falls back to `dark`.
