@@ -3,7 +3,9 @@
 import io
 import os
 import re
+import sys
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -23,6 +25,7 @@ from rich.text import Text
 from wcwidth import wcswidth
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
+from viewmd.highlight import DEFAULT_KIND, MarkRegion, strip_marks
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
 
@@ -590,6 +593,225 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
     return view
 
 
+# VIEWMD-0104: background SGR (truecolor) per `viewmd:mark` kind -- green/amber/red, matching the
+# common diff-viewer convention (requirement 3). Not theme-dependent (VIEWMD-0091's dark/light
+# split): the issue's own requirements never ask for a light-mode variant, and these are dark
+# enough to keep the usual light-on-dark foreground colors readable, which is what gitgleam (the
+# concrete driver) always renders against (`--color=always`).
+_MARK_BACKGROUND: dict[str, str] = {
+    "added": "\x1b[48;2;20;83;45m",
+    "changed": "\x1b[48;2;90;62;0m",
+    "removed": "\x1b[48;2;91;26;26m",
+}
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
+_SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+_RESET = "\x1b[0m"
+# Background-setting SGR codes recognized as single tokens -- `40`-`47` (16-color), `100`-`107`
+# (bright 16-color), and `49` (default background) each occupy exactly one parameter; the
+# truecolor/256 forms (`48;5;N`, `48;2;r;g;b`) are handled separately in `_strip_bg_params` since
+# they consume trailing parameters too.
+_SIMPLE_BG_CODES = {str(c) for c in (*range(40, 48), *range(100, 108), 49)}
+
+
+def _strip_ansi(s: str) -> str:
+    """`s` with every SGR and OSC8 escape sequence removed, for display-width measurement."""
+    return _ANSI_ESCAPE_RE.sub("", s)
+
+
+def _strip_bg_params(params: list[str]) -> list[str]:
+    """`params` (an SGR escape's already-split-on-`;` code list) with every background-setting
+    component removed -- the plain codes in `_SIMPLE_BG_CODES`, each their own token, and the
+    extended truecolor/256 forms (`48;5;N`, `48;2;r;g;b`), which also consume their own trailing
+    parameters -- so a combined sequence like a themed code fence's own
+    `38;2;r;g;b;48;2;r;g;b` keeps its foreground color and drops only the background half.
+
+    `38;5;N`/`38;2;r;g;b` (extended *foreground*) is special-cased the same way, copying its own
+    trailing components verbatim rather than matching each one individually against
+    `_SIMPLE_BG_CODES` below -- a truecolor component can numerically coincide with a bright-
+    background code (e.g. `38;2;102;217;239`, where `102` is a plain RGB green value, not the
+    bright-background code `102`), so those trailing components must never be tested against that
+    table at all, only ever copied through as part of the foreground sequence that owns them."""
+    out: list[str] = []
+    i = 0
+    n = len(params)
+    while i < n:
+        p = params[i]
+        if p == "48":
+            if i + 1 < n and params[i + 1] == "5":
+                i += 3
+            elif i + 1 < n and params[i + 1] == "2":
+                i += 5
+            else:
+                i += 1
+            continue
+        if p == "38":
+            out.append(p)
+            if i + 1 < n and params[i + 1] == "5":
+                out.extend(params[i + 1 : i + 3])
+                i += 3
+            elif i + 1 < n and params[i + 1] == "2":
+                out.extend(params[i + 1 : i + 5])
+                i += 5
+            else:
+                i += 1
+            continue
+        if p in _SIMPLE_BG_CODES:
+            i += 1
+            continue
+        out.append(p)
+        i += 1
+    return out
+
+
+def _strip_line_backgrounds(line: str) -> str:
+    """`line` with every background-color SGR component removed from its own escape sequences
+    (foreground colors, bold/italic/underline, and OSC8 links untouched) -- so a mark's own
+    background can be layered on top without the content's original background winning the "last
+    one wins" SGR precedence race (requirement 4)."""
+
+    def _repl(match: re.Match[str]) -> str:
+        raw = match.group(1)
+        filtered = _strip_bg_params(raw.split(";") if raw else [])
+        return f"\x1b[{';'.join(filtered)}m" if filtered else ""
+
+    return _SGR_RE.sub(_repl, line)
+
+
+def _tint_line(line: str, background: str, width: int) -> str:
+    """`line` (one already fully-rendered/colored output row) with `background` painted behind
+    its full rendered width (requirement 5), taking precedence over any background the line's own
+    content already set (requirement 4) while leaving foreground styling untouched (requirement
+    3) -- reasserting `background` after every embedded `_RESET` the same way `_wrap_hover`
+    (`interactive_pager.py`, VIEWMD-0092) re-asserts its own wrapping style, since a fenced code
+    block's or Mermaid diagram's own syntax colors reset mid-line."""
+    plain_width = _display_width(_strip_ansi(line))
+    body = _strip_line_backgrounds(line).replace(_RESET, _RESET + background)
+    pad = " " * max(0, width - plain_width)
+    return f"{background}{body}{pad}{_RESET}"
+
+
+def _apply_tints(text: str, tint_ranges: list[tuple[int, int, str]], *, width: int) -> str:
+    """`text` with every `(start_line, end_line, kind)` in `tint_ranges` (absolute 0-indexed line
+    numbers into `text.split("\\n")`, inclusive) background-tinted per kind (requirement 3)."""
+    if not tint_ranges:
+        return text
+    lines = text.split("\n")
+    for start, end, kind in tint_ranges:
+        background = _MARK_BACKGROUND.get(kind, _MARK_BACKGROUND[DEFAULT_KIND])
+        for i in range(start, min(end, len(lines) - 1) + 1):
+            lines[i] = _tint_line(lines[i], background, width)
+    return "\n".join(lines)
+
+
+def _group_top_level(tokens: list) -> list[tuple[int, int]]:
+    """Contiguous `(first_index, last_index)` pairs, each spanning one whole top-level block --
+    including everything nested inside it (a whole list, table, or blockquote counts as one
+    group) -- found by tracking markdown-it's own `token.nesting` (+1 open / -1 close / 0
+    self-closing) back to zero."""
+    groups: list[tuple[int, int]] = []
+    depth = 0
+    start = 0
+    for i, tok in enumerate(tokens):
+        if depth == 0:
+            start = i
+        depth += tok.nesting
+        if depth == 0:
+            groups.append((start, i))
+    return groups
+
+
+def _count_rendered_lines(markdown: Markdown, tokens: list, *, width: int, color: bool) -> int:
+    """Number of complete lines a fresh, standalone render of `tokens` produces -- used only to
+    measure where a mark region's rendered lines start/end (see `_mark_line_ranges`), never as
+    the actual displayed output."""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(_markdown_with_tokens(markdown, tokens), crop=False)
+    return buffer.getvalue().count("\n")
+
+
+def _mark_line_ranges(
+    markdown: Markdown,
+    tokens: list,
+    regions: list[MarkRegion],
+    *,
+    width: int,
+    color: bool,
+) -> list[tuple[int, int, str]]:
+    """`(start_line, end_line, kind)` triples, 0-indexed and inclusive, relative to a single
+    continuous render of `tokens` -- one per `regions` entry whose source-line span this slice
+    covers.
+
+    Splitting `tokens` into multiple `console.print()` calls to isolate a region turns out to be
+    unsafe: `Markdown.__rich_console__` tracks a single flat `new_line` flag across the whole
+    call, and a container element (table/list/blockquote) toggles it via its own *nested*
+    children's closes even when those children are only absorbed, not rendered -- printing such
+    an element as the first thing in a fresh call can emit a leading blank line that wouldn't be
+    there in one continuous render (verified empirically against this project's pinned rich
+    version). Rather than special-case every element type that can do this, this instead renders
+    successive real *prefixes* of `tokens` (one continuous parse-order slice each, so Rich's own
+    new_line bookkeeping stays correct by construction) into throwaway buffers and takes the
+    difference in line counts between two prefixes to learn exactly how many lines the tokens
+    between them render to, in context. The real, single, unmodified `console.print(tokens, ...)`
+    call in `render_markdown` is untouched; this only measures it.
+
+    Known cost: this re-renders a growing prefix from token 0 for every boundary, so total work is
+    roughly quadratic in the number of marked-region boundaries in one document -- noticeable on a
+    document with several hundred marked blocks (gitgleam's own stated behavior of marking nearly
+    every block of a brand-new file). Deliberately not optimized away here: every faster scheme
+    considered (rendering just the incremental slice between two boundaries, rather than the whole
+    prefix again) reintroduces exactly the same new_line-quirk risk this function's own docstring
+    above exists to avoid, in a subtler form -- worth its own follow-up issue with room to verify
+    thoroughly, rather than a rushed change to logic that already required careful empirical
+    verification once.
+    """
+    groups = _group_top_level(tokens)
+    if not groups:
+        return []
+
+    group_lines: list[tuple[int, int] | None] = []
+    for a, _b in groups:
+        token_map = tokens[a].map
+        group_lines.append((token_map[0], token_map[1] - 1) if token_map else None)
+
+    spans: list[tuple[int, int, str]] = []  # (first_group_index, last_group_index, kind)
+    boundaries: set[int] = set()
+    for region in regions:
+        # Membership is decided by a group's *start* line only, not also requiring its end line
+        # fall inside the region: markdown-it's own block `.map` for a container (a list, in
+        # particular) legitimately extends past its last visible content line to absorb any
+        # trailing blank line consumed while deciding tight/loose list rendering, which would
+        # otherwise push a marked list's own map past the sentinel-derived `region.end_line` and
+        # silently exclude it. A group's start line is never subject to that overshoot.
+        member = [
+            i
+            for i, gl in enumerate(group_lines)
+            if gl is not None and region.start_line <= gl[0] <= region.end_line
+        ]
+        if not member:
+            continue
+        gi_first, gi_last = member[0], member[-1]
+        spans.append((gi_first, gi_last, region.kind))
+        boundaries.add(gi_first)
+        boundaries.add(gi_last + 1)
+    if not spans:
+        return []
+
+    cumulative: dict[int, int] = {0: 0}
+    for gi in sorted(b for b in boundaries if b > 0):
+        prefix_tokens = tokens[: groups[gi - 1][1] + 1]
+        cumulative[gi] = _count_rendered_lines(markdown, prefix_tokens, width=width, color=color)
+
+    ranges: list[tuple[int, int, str]] = []
+    for gi_first, gi_last, kind in spans:
+        start_line = cumulative.get(gi_first, 0)
+        end_line = cumulative[gi_last + 1] - 1
+        if end_line >= start_line:
+            ranges.append((start_line, end_line, kind))
+    return ranges
+
+
 def _print_toc(
     console: Console,
     outline: list[HeadingOutline],
@@ -604,6 +826,36 @@ def _print_toc(
     if omitted:
         console.print(f"... {omitted} more")
     console.print()
+
+
+def _print_body(
+    buffer: io.StringIO,
+    markdown: Markdown,
+    tokens: list,
+    regions: list[MarkRegion],
+    print_fn: Callable[[], None],
+    *,
+    width: int,
+    color: bool,
+    tint_ranges: list[tuple[int, int, str]],
+) -> None:
+    """Call `print_fn()` -- the actual, unmodified body print (whichever of the two forms
+    `render_markdown` uses at this call site) -- and, when `color` is on and `regions` is
+    non-empty, append any of `regions`' rendered line spans that `tokens` (the parsed-token slice
+    `print_fn` renders) covers onto `tint_ranges`, as absolute line numbers into `buffer`'s
+    eventual full text (measured via `buffer`'s own line count just before/after this call, since
+    nothing else writes to it concurrently). `render_markdown` calls this once per body slice it
+    prints (there can be more than one, per the h1-title/ToC split below) and applies every
+    recorded range in one pass, via `_apply_tints`, right before returning."""
+    local_ranges = (
+        _mark_line_ranges(markdown, tokens, regions, width=width, color=color)
+        if color and regions
+        else []
+    )
+    start_offset = buffer.getvalue().count("\n")
+    print_fn()
+    for start, end, kind in local_ranges:
+        tint_ranges.append((start_offset + start, start_offset + end, kind))
 
 
 def render_markdown(
@@ -652,12 +904,23 @@ def render_markdown(
     specifically (amended requirement 4) -- passed into `preprocess` below, which threads it only
     to `render_mermaid_blocks` -> `viewmd.mermaid.render`'s quadrant branch; every other Mermaid
     diagram type's coloring remains driven solely by `color`, untouched by `theme`.
+
+    `viewmd:mark` sentinel HTML comments (VIEWMD-0104) are stripped from the body -- the last
+    text-level rewrite before Rich's own parser ever sees it, same principle as the wikilink and
+    Mermaid rewrites above -- and, with `color` on, the block(s) they bracketed are re-rendered
+    with a background tint per `kind` (green/amber/red for added/changed/removed). With `color`
+    off, stripping the sentinels is the *only* effect; requirement 6 (VIEWMD-0104) requires the
+    output be otherwise identical to the same document with no marks at all, so no tint-measuring
+    machinery runs in that case.
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
     if not full_front_matter:
         front_matter = drop_empty(front_matter)
     body = preprocess(body, color=color, width=width, theme=theme)
+    body, regions, mark_warnings = strip_marks(body)
+    for warning in mark_warnings:
+        print(f"viewmd: {warning}", file=sys.stderr)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
@@ -678,13 +941,21 @@ def render_markdown(
     # fixed by rich's own `Markdown.__init__`) so `ViewmdBlockQuote.create` can read it back per
     # admonition (see that method's own comment).
     markdown.viewmd_theme = theme
+    tint_ranges: list[tuple[int, int, str]] = []
     if toc:
         outline = heading_outline(markdown)
         if len(outline) >= 2:
             split = _split_parsed_at_leading_h1(markdown.parsed)
             if split is not None and outline[0].level == 1:
                 title_tokens, rest_tokens = split
-                console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
+
+                def _print_title() -> None:
+                    console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
+
+                _print_body(
+                    buffer, markdown, title_tokens, regions, _print_title,
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
                 console.print()
                 fitted, omitted = _fit_toc_outline(outline[1:])
                 # `outline` (title included), not `outline[1:]` -- occurrence ranks (VIEWMD-0077)
@@ -692,14 +963,29 @@ def render_markdown(
                 # (`viewmd/interactive_pager.py`) builds its own `headings` from, which also
                 # includes the title.
                 _print_toc(console, fitted, outline, omitted, theme=theme)
-                console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
+
+                def _print_rest() -> None:
+                    console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
+
+                _print_body(
+                    buffer, markdown, rest_tokens, regions, _print_rest,
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
             else:
                 fitted, omitted = _fit_toc_outline(outline)
                 _print_toc(console, fitted, outline, omitted, theme=theme)
-                console.print(markdown, crop=False)
-            return buffer.getvalue()
-    console.print(markdown, crop=False)
-    return buffer.getvalue()
+                _print_body(
+                    buffer, markdown, markdown.parsed, regions,
+                    lambda: console.print(markdown, crop=False),
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
+            return _apply_tints(buffer.getvalue(), tint_ranges, width=width)
+    _print_body(
+        buffer, markdown, markdown.parsed, regions,
+        lambda: console.print(markdown, crop=False),
+        width=width, color=color, tint_ranges=tint_ranges,
+    )
+    return _apply_tints(buffer.getvalue(), tint_ranges, width=width)
 
 
 def render_file_heading(path: str, *, width: int, color: bool) -> str:
