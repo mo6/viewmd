@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0106
 title: viewmd:mark region nested inside a single list item is silently unhighlighted
-status: in-progress
+status: implemented
 area: [render]
 effort: medium
 created: 2026-08-23
 updated: 2026-08-23
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-23
-commits: []
+commits: [4cacc31]
 related: [VIEWMD-0104]
 supersedes: []
-changelog:
+changelog: "[1.51.1]"
 reason:
 ---
 
