@@ -323,3 +323,109 @@ def test_stray_end_warns_and_still_renders(capsys):
     err = capsys.readouterr().err
     assert "viewmd:" in err
     assert "no open start" in err
+
+
+# ---------------------------------------------------------------------------
+# Region nested inside an existing container (VIEWMD-0106) -- a mark whose sentinels sit
+# between two list items of the *same* list, not between two top-level blocks, matching
+# gitgleam's real generated output for "one new bullet appended to an existing list".
+# ---------------------------------------------------------------------------
+
+
+def _tinted_lines(out: str, kind: str) -> list[str]:
+    return [line for line in out.split("\n") if has_background(line, kind)]
+
+
+def test_mark_nested_inside_a_single_list_item_is_tinted():
+    text = (
+        "- first existing item\n"
+        "- second existing item\n"
+        f"{_marked('added', '- third item, newly added')}\n"
+    )
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    tinted = _tinted_lines(out, "added")
+    assert len(tinted) == 1
+    assert "third item, newly added" in strip_ansi(tinted[0])
+    # The two pre-existing items must stay untinted.
+    plain_lines = strip_ansi(out).split("\n")
+    for line, plain in zip(out.split("\n"), plain_lines, strict=True):
+        if "existing item" in plain:
+            assert not has_background(line, "added")
+
+
+def test_mark_nested_inside_a_list_item_in_the_middle_of_the_list_is_tinted():
+    text = (
+        "- first item\n"
+        f"{_marked('changed', '- second item, changed')}\n"
+        "- third item\n"
+    )
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    tinted = _tinted_lines(out, "changed")
+    assert len(tinted) == 1
+    assert "second item, changed" in strip_ansi(tinted[0])
+
+
+def test_mark_nested_two_levels_deep_inside_a_sub_list_is_tinted():
+    text = (
+        "- outer item one\n"
+        "- outer item two\n"
+        "  - inner item A\n"
+        "  - inner item B\n"
+        "  <!-- viewmd:mark start kind=added -->\n"
+        "  - inner item C\n"
+        "  <!-- viewmd:mark end -->\n"
+        "- outer item three\n"
+    )
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    tinted = _tinted_lines(out, "added")
+    assert len(tinted) == 1
+    assert "inner item C" in strip_ansi(tinted[0])
+    unmarked_names = (
+        "outer item one", "outer item two", "inner item A", "inner item B", "outer item three",
+    )
+    for name in unmarked_names:
+        for line in out.split("\n"):
+            if name in strip_ansi(line):
+                assert not has_background(line, "added")
+
+
+def test_mark_nested_inside_an_ordered_list_item_does_not_apply_wrong_highlight():
+    # An ordered list is deliberately excluded from _is_recursable_container: rich's own
+    # ListElement.render_number sizes its numbering column from len(self.items) -- the item
+    # *count actually present in that render*, not the document's true total -- so a "closed
+    # early" partial-list reconstruction can pick a different column width than the real
+    # full-list render whenever the two item counts have a different digit count, silently
+    # mismeasuring (and, worse than a table row, capable of tinting the *wrong* item rather than
+    # just failing to tint one). This 12-item list crosses exactly that digit-count boundary
+    # (13 total -> width from "13"; a 4-item reconstructed prefix -> width from "4"), with item
+    # 2's content long enough to wrap differently under the two widths -- reproducing the bug
+    # found during this issue's own independent review before _is_recursable_container excluded
+    # ordered lists. The safe fallback (VIEWMD-0104 requirement 10) is simply no highlight.
+    items = [
+        "first item",
+        "second item is long enough that it may wrap under one numbering width but not another",
+        *(f"item {n}" for n in range(3, 13)),
+    ]
+    lines = [f"{i}. {item}" for i, item in enumerate(items, start=1)]
+    lines[4] = f"{_marked('removed', lines[4])}"  # mark item 5 (index 4)
+    text = "\n".join(lines) + "\n"
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    assert _tinted_lines(out, "removed") == []
+
+
+def test_mark_nested_inside_a_table_row_does_not_apply_wrong_highlight():
+    # A table row shares its enclosing table's box-drawn top/bottom border, which only renders
+    # once at the true start/end of the whole table -- a "closed early" partial-table
+    # reconstruction would draw that border prematurely and silently mismeasure every later
+    # line, so nesting into a table row is deliberately not supported (_is_recursable_container).
+    # The safe fallback (VIEWMD-0104 requirement 10) is simply no highlight, not a wrong one.
+    text = (
+        "| a | b |\n|---|---|\n| 1 | 2 |\n"
+        f"{_marked('changed', '| 3 | 4 |')}\n"
+        "| 5 | 6 |\n"
+    )
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    assert _tinted_lines(out, "changed") == []
+    # And nothing else gets wrongly tinted either.
+    for kind in ("added", "changed", "removed"):
+        assert _tinted_lines(out, kind) == []
