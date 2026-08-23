@@ -704,21 +704,179 @@ def _apply_tints(text: str, tint_ranges: list[tuple[int, int, str]], *, width: i
     return "\n".join(lines)
 
 
-def _group_top_level(tokens: list) -> list[tuple[int, int]]:
-    """Contiguous `(first_index, last_index)` pairs, each spanning one whole top-level block --
-    including everything nested inside it (a whole list, table, or blockquote counts as one
-    group) -- found by tracking markdown-it's own `token.nesting` (+1 open / -1 close / 0
-    self-closing) back to zero."""
+def _child_groups(tokens: list, start: int, end: int) -> list[tuple[int, int]]:
+    """Contiguous `(first_index, last_index)` pairs, each spanning one whole immediate child block
+    of the container occupying `tokens[start:end]` (or the top level of `tokens` itself, when
+    `start=0, end=len(tokens)`) -- including everything nested inside it (a whole list, table, or
+    blockquote counts as one group) -- found by tracking markdown-it's own `token.nesting` (+1
+    open / -1 close / 0 self-closing) back to zero. Indices are absolute into `tokens`, not
+    re-based to `start`, so a group from a deeper call composes directly with one from a
+    shallower call (see `_RegionPath`)."""
     groups: list[tuple[int, int]] = []
     depth = 0
-    start = 0
-    for i, tok in enumerate(tokens):
+    group_start = start
+    for i in range(start, end):
         if depth == 0:
-            start = i
-        depth += tok.nesting
+            group_start = i
+        depth += tokens[i].nesting
         if depth == 0:
-            groups.append((start, i))
+            groups.append((group_start, i))
     return groups
+
+
+@dataclass(frozen=True)
+class _RegionPath:
+    """Where a `MarkRegion`'s rendered content lives among `tokens` (VIEWMD-0106): `groups` is
+    the child-groups list (absolute indices into `tokens`, from `_child_groups`) at whatever
+    nesting level the match was found; `gi_first`/`gi_last` bound it within `groups`. `nested` is
+    `None` when the match sits at this level directly (VIEWMD-0104's original top-level-only
+    case); otherwise it's another `_RegionPath`, found among the single group at `gi_first`'s own
+    children (`gi_first == gi_last` whenever `nested` is set -- one containing group, recursed
+    into), for a region nested one or more levels deeper inside a single enclosing container (a
+    new list item appended to an existing list; a paragraph inside a blockquote; ...)."""
+
+    groups: list[tuple[int, int]]
+    gi_first: int
+    gi_last: int
+    nested: "_RegionPath | None"
+
+
+def _is_recursable_container(tokens: list, a: int, b: int) -> bool:
+    """Whether the container `tokens[a:b+1]` is safe to *partially* reconstruct for boundary
+    measurement (VIEWMD-0106) -- its rendering must be a pure per-child concatenation with no
+    shared whole-container framing that a "closed early" partial would duplicate prematurely.
+
+    Verified empirically: a table's box-drawn top/bottom border rows, and an admonition callout's
+    header/footer border (`ViewmdBlockQuote`, VIEWMD-0059), each render only once, at the true
+    start/end of the *whole* container -- reconstructing a partial table or partial admonition
+    (fewer rows/paragraphs, re-closed early) draws that same framing prematurely, silently
+    shifting every line-count measurement taken past that point by however many framing lines it
+    added.
+
+    An *ordered* list has the same hazard in a subtler form, verified empirically against this
+    project's pinned rich version: `ListElement.render_number` derives its numbering column's
+    width from `len(self.items) `-- the count of items *actually present in that render*, not the
+    real document's true total. A partial reconstruction (fewer items, re-closed early) therefore
+    picks a numbering-column width that can differ from the real full-list render's own whenever
+    the two item counts have a different digit count (e.g. a 12-item list truncated to 4 items:
+    real width from `len("13")+2` vs. reconstructed width from `len("4")+2`), which shifts every
+    item's own content-wrap width -- silently mismeasuring, and potentially tinting the wrong
+    item's lines rather than just failing to tint (caught by hand-verifying a 12-item ordered-list
+    repro during this issue's own review, not merely by reasoning about it). A *bullet* list has no
+    such hazard: `ListItem.render_bullet` always reserves a fixed 3-column bullet regardless of
+    item count, so a plain bullet list, and a single list item's own children (needed to recurse a
+    further level into a sub-list nested inside one item), are always safe -- but an *ordered*
+    list is deliberately excluded here, falling back to VIEWMD-0104 requirement 10's "just don't
+    tint it" fail-safe rather than risk a wrong tint. A blockquote is safe unless it renders as an
+    admonition callout, which is exactly the same unsafe shape as a table."""
+    tok = tokens[a]
+    if tok.type in ("bullet_list_open", "list_item_open"):
+        return True
+    if tok.type == "blockquote_open":
+        first_child = tokens[a + 1] if a + 1 <= b else None
+        if first_child is not None and first_child.type == "paragraph_open":
+            inline = tokens[a + 2] if a + 2 <= b else None
+            if (
+                inline is not None
+                and inline.type == "inline"
+                and parse_admonition_marker(inline.content) is not None
+            ):
+                return False
+        return True
+    return False
+
+
+def _group_line_span(tokens: list, a: int, b: int) -> tuple[int, int] | None:
+    """The `(start_line, end_line)` a whole group `tokens[a:b+1]` actually spans, scanning every
+    token in the group for its own `.map` rather than trusting just the group's first token.
+
+    `list_item_open`'s own `.map` covers only its first child's lines -- it does NOT extend over a
+    further nested block that follows within the same item (e.g. a sub-list under a list item
+    that also has its own paragraph text), unlike `bullet_list_open`/`table_open`, whose `.map`
+    does span their full nested content (verified empirically: a marked item nested two levels
+    deep, inside a sub-list inside a list item, was invisible to the containment check below until
+    this scanned the group's full token range instead of relying on `tokens[a].map` alone)."""
+    starts: list[int] = []
+    ends: list[int] = []
+    for i in range(a, b + 1):
+        token_map = tokens[i].map
+        if token_map is not None:
+            starts.append(token_map[0])
+            ends.append(token_map[1] - 1)
+    if not starts:
+        return None
+    return min(starts), max(ends)
+
+
+def _find_region_path(
+    tokens: list, region: MarkRegion, start: int = 0, end: int | None = None
+) -> _RegionPath | None:
+    """Locate `region` among `tokens[start:end]`'s own immediate child blocks, recursing one
+    level deeper into a single enclosing container when the region doesn't align with any child
+    at this level but sits entirely inside exactly one of them *and* that container is safe to
+    partially reconstruct (`_is_recursable_container`). Returns `None` if no match at any depth --
+    VIEWMD-0104 requirement 10's fail-safe: an unmatched region is simply left untinted, not an
+    error -- which also covers a region nested inside a container this function deliberately
+    never recurses into (a table row, an admonition callout's own paragraph)."""
+    if end is None:
+        end = len(tokens)
+    groups = _child_groups(tokens, start, end)
+    group_lines = [_group_line_span(tokens, a, b) for a, b in groups]
+
+    # Membership is decided by a group's *start* line only, not also requiring its end line fall
+    # inside the region: markdown-it's own block `.map` for a container (a list, in particular)
+    # legitimately extends past its last visible content line to absorb any trailing blank line
+    # consumed while deciding tight/loose list rendering, which would otherwise push a marked
+    # list's own map past the sentinel-derived `region.end_line` and silently exclude it. A
+    # group's start line is never subject to that overshoot.
+    member = [
+        i
+        for i, gl in enumerate(group_lines)
+        if gl is not None and region.start_line <= gl[0] <= region.end_line
+    ]
+    if member:
+        return _RegionPath(groups, member[0], member[-1], None)
+
+    for i, gl in enumerate(group_lines):
+        if gl is not None and gl[0] <= region.start_line and region.end_line <= gl[1]:
+            a, b = groups[i]
+            if not _is_recursable_container(tokens, a, b):
+                continue
+            nested = _find_region_path(tokens, region, a + 1, b)
+            if nested is not None:
+                return _RegionPath(groups, i, i, nested)
+    return None
+
+
+def _prefix_through(tokens: list, groups: list[tuple[int, int]], boundary_gi: int) -> list:
+    """`groups[0..boundary_gi-1]`, verbatim, as absolute tokens -- `[]` when `boundary_gi <= 0`."""
+    if boundary_gi <= 0:
+        return []
+    return tokens[groups[0][0] : groups[boundary_gi - 1][1] + 1]
+
+
+def _region_boundary_tokens(tokens: list, path: _RegionPath, side: str) -> list:
+    """Tokens forming a valid, render-safe prefix reaching exactly the `"start"` or `"end"`
+    boundary of the region `path` locates.
+
+    A bare `tokens[:cut]` slice stops being safe the moment a region is nested inside a container
+    (VIEWMD-0106): `ListElement`/`TableElement`-style container elements only emit their rendered
+    content once their own *closing* token is reached (verified empirically against this
+    project's pinned rich version) -- a prefix that stops mid-list or mid-table renders as
+    nothing at all, silently. Every group strictly before the matched one, at every nesting level,
+    is included verbatim; the single matched (or containing) group is handled at the *innermost*
+    level where the match lives (whole for `"end"`, absent for `"start"`, exactly `_prefix_through`
+    at that level), and -- when nested -- re-wrapped in its own container's open/close tokens on
+    the way back out, one level at a time, so Rich's renderer actually emits the reconstructed
+    partial container's content instead of silently absorbing it.
+    """
+    if path.nested is None:
+        boundary_gi = path.gi_first if side == "start" else path.gi_last + 1
+        return _prefix_through(tokens, path.groups, boundary_gi)
+    before = _prefix_through(tokens, path.groups, path.gi_first)
+    a, b = path.groups[path.gi_first]
+    inner = _region_boundary_tokens(tokens, path.nested, side)
+    return before + [tokens[a]] + inner + [tokens[b]]
 
 
 def _count_rendered_lines(markdown: Markdown, tokens: list, *, width: int, color: bool) -> int:
@@ -741,7 +899,7 @@ def _mark_line_ranges(
 ) -> list[tuple[int, int, str]]:
     """`(start_line, end_line, kind)` triples, 0-indexed and inclusive, relative to a single
     continuous render of `tokens` -- one per `regions` entry whose source-line span this slice
-    covers.
+    covers (at any nesting depth -- `_find_region_path`/VIEWMD-0106).
 
     Splitting `tokens` into multiple `console.print()` calls to isolate a region turns out to be
     unsafe: `Markdown.__rich_console__` tracks a single flat `new_line` flag across the whole
@@ -749,14 +907,17 @@ def _mark_line_ranges(
     children's closes even when those children are only absorbed, not rendered -- printing such
     an element as the first thing in a fresh call can emit a leading blank line that wouldn't be
     there in one continuous render (verified empirically against this project's pinned rich
-    version). Rather than special-case every element type that can do this, this instead renders
-    successive real *prefixes* of `tokens` (one continuous parse-order slice each, so Rich's own
-    new_line bookkeeping stays correct by construction) into throwaway buffers and takes the
-    difference in line counts between two prefixes to learn exactly how many lines the tokens
-    between them render to, in context. The real, single, unmodified `console.print(tokens, ...)`
-    call in `render_markdown` is untouched; this only measures it.
+    version, and true even of a genuinely continuous render whose own first element happens to be
+    a container -- this is a real Rich behavior, not a splitting artifact). Rather than
+    special-case every element type that can do this, this instead renders a real *prefix* of
+    `tokens` for each boundary (one continuous parse-order slice, so Rich's own new_line
+    bookkeeping stays correct by construction -- reconstructed with any container it cuts through
+    properly re-closed, per `_region_boundary_tokens`, so that container's content actually
+    renders instead of being silently absorbed) into a throwaway buffer and counts its lines. The
+    real, single, unmodified `console.print(tokens, ...)` call in `render_markdown` is untouched;
+    this only measures it.
 
-    Known cost: this re-renders a growing prefix from token 0 for every boundary, so total work is
+    Known cost: this re-renders a prefix from token 0 for every boundary, so total work is
     roughly quadratic in the number of marked-region boundaries in one document -- noticeable on a
     document with several hundred marked blocks (gitgleam's own stated behavior of marking nearly
     every block of a brand-new file). Deliberately not optimized away here: every faster scheme
@@ -766,49 +927,19 @@ def _mark_line_ranges(
     thoroughly, rather than a rushed change to logic that already required careful empirical
     verification once.
     """
-    groups = _group_top_level(tokens)
-    if not groups:
-        return []
-
-    group_lines: list[tuple[int, int] | None] = []
-    for a, _b in groups:
-        token_map = tokens[a].map
-        group_lines.append((token_map[0], token_map[1] - 1) if token_map else None)
-
-    spans: list[tuple[int, int, str]] = []  # (first_group_index, last_group_index, kind)
-    boundaries: set[int] = set()
-    for region in regions:
-        # Membership is decided by a group's *start* line only, not also requiring its end line
-        # fall inside the region: markdown-it's own block `.map` for a container (a list, in
-        # particular) legitimately extends past its last visible content line to absorb any
-        # trailing blank line consumed while deciding tight/loose list rendering, which would
-        # otherwise push a marked list's own map past the sentinel-derived `region.end_line` and
-        # silently exclude it. A group's start line is never subject to that overshoot.
-        member = [
-            i
-            for i, gl in enumerate(group_lines)
-            if gl is not None and region.start_line <= gl[0] <= region.end_line
-        ]
-        if not member:
-            continue
-        gi_first, gi_last = member[0], member[-1]
-        spans.append((gi_first, gi_last, region.kind))
-        boundaries.add(gi_first)
-        boundaries.add(gi_last + 1)
-    if not spans:
-        return []
-
-    cumulative: dict[int, int] = {0: 0}
-    for gi in sorted(b for b in boundaries if b > 0):
-        prefix_tokens = tokens[: groups[gi - 1][1] + 1]
-        cumulative[gi] = _count_rendered_lines(markdown, prefix_tokens, width=width, color=color)
-
     ranges: list[tuple[int, int, str]] = []
-    for gi_first, gi_last, kind in spans:
-        start_line = cumulative.get(gi_first, 0)
-        end_line = cumulative[gi_last + 1] - 1
+    for region in regions:
+        path = _find_region_path(tokens, region)
+        if path is None:
+            continue
+        start_tokens = _region_boundary_tokens(tokens, path, "start")
+        end_tokens = _region_boundary_tokens(tokens, path, "end")
+        start_line = _count_rendered_lines(markdown, start_tokens, width=width, color=color)
+        end_line = (
+            _count_rendered_lines(markdown, end_tokens, width=width, color=color) - 1
+        )
         if end_line >= start_line:
-            ranges.append((start_line, end_line, kind))
+            ranges.append((start_line, end_line, region.kind))
     return ranges
 
 
