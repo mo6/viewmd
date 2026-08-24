@@ -73,7 +73,7 @@ class UnsupportedDiagramError(MermaidError):
 
 
 def render(text: str, *, use_ascii: bool = False, color: bool = False,
-           width: int | None = None) -> str:
+           width: int | None = None, theme: str = "dark") -> str:
     """Render Mermaid source `text` to a box-drawing ASCII/Unicode string.
 
     `color` (VIEWMD-0043) is read by the pie, quadrant-chart (VIEWMD-0047),
@@ -86,6 +86,11 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
     it's embedded in.
     xychart additionally caps its plot area at 100% of `width` (and will not
     shrink it below 50%) rather than treating `width` as a soft target.
+    `theme` (VIEWMD-0091 amended requirement 4) is passed only to the quadrant
+    renderer, to lighten its quadrant-background fills under `"light"` --
+    every other diagram type's coloring is driven solely by `color`/`use_ascii`
+    and does not receive `theme` at all, deliberately, per that requirement's
+    "MUST NOT otherwise change Mermaid diagram coloring" clause.
     Raises `UnsupportedDiagramError` if `text` isn't a diagram type this module
     supports, or `MermaidError` if it looks like a supported type but fails to
     parse.
@@ -130,7 +135,7 @@ def render(text: str, *, use_ascii: bool = False, color: bool = False,
             chart = _parse_quadrant(text)
         except _QuadrantParseError as e:
             raise MermaidError(str(e)) from e
-        return _render_quadrant(chart, use_ascii=use_ascii, color=color, width=width)
+        return _render_quadrant(chart, use_ascii=use_ascii, color=color, width=width, theme=theme)
     if _is_kanban_diagram(text):
         try:
             board = _parse_kanban(text)

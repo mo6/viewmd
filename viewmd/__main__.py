@@ -11,11 +11,18 @@ import shutil
 import sys
 
 from viewmd import __version__
-from viewmd.config import ConfigError, coalesce, read_config
+from viewmd.config import THEME_CHOICES, ConfigError, coalesce, read_config
 
 # A common prose line-length standard; the render width default, capped further by a narrower
 # terminal. --width overrides it, either to an exact column count or to "full" (VIEWMD-0003).
 DEFAULT_MAX_WIDTH = 100
+
+# Upper bound for --depth (VIEWMD-0089 requirement 4): a directory-listing table of entries is a
+# quick-orientation view of a small vault, not a general-purpose `find -maxdepth`, and an
+# unreasonably large depth against a very large tree would both flood the terminal and take a
+# while to walk. A depth beyond this is silently capped (with a warning) rather than rejected, so
+# a config-file or muscle-memory `--depth 999` still does something useful instead of erroring.
+MAX_DEPTH = 10
 
 
 def _width_arg(value: str) -> str:
@@ -31,6 +38,29 @@ def _width_arg(value: str) -> str:
             f"invalid width {value!r}: must be a positive integer or 'full'"
         )
     return value
+
+
+def _depth_arg(value: str) -> int:
+    """argparse type for --depth: a positive integer, as an int (unlike `_width_arg`, --depth has
+    no 'full'-style literal alternative to keep as a string)."""
+    if not value.isdigit() or int(value) <= 0:
+        raise argparse.ArgumentTypeError(f"invalid depth {value!r}: must be a positive integer")
+    return int(value)
+
+
+def _resolve_depth(depth: int | None, *, max_depth: int = MAX_DEPTH) -> int:
+    """Resolve the effective --depth: `1` (today's original behavior) when omitted, otherwise the
+    requested depth capped at `max_depth` with a warning printed to stderr (VIEWMD-0089
+    requirement 4) -- never a hard error, so an over-large value still renders something."""
+    if depth is None:
+        return 1
+    if depth > max_depth:
+        print(
+            f"viewmd: --depth {depth} capped to {max_depth}",
+            file=sys.stderr,
+        )
+        return max_depth
+    return depth
 
 
 def _resolve_width(width_arg: str | None, terminal_width: int, *,
@@ -65,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--width", type=_width_arg, default=None,
                         help=f"render width in columns, or 'full' for the full terminal width "
                              f"(default: min({DEFAULT_MAX_WIDTH}, detected terminal width))")
+    # default=None (not "dark") for the same reason as --color above: an omitted --theme must
+    # fall through to the config file rather than looking identical to an explicit `--theme dark`.
+    parser.add_argument("--theme", choices=THEME_CHOICES, default=None,
+                        help="color palette tuned for a dark or light terminal background, or "
+                             "'auto' to detect it via an OSC 11 query (default: dark)")
     # BooleanOptionalAction (not store_true) so `--no-full-front-matter` can override a
     # config-file `full_front_matter = true`; default=None means "flag omitted."
     parser.add_argument("--full-front-matter", action=argparse.BooleanOptionalAction, default=None,
@@ -75,6 +110,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--toc", action=argparse.BooleanOptionalAction, default=None,
                         help="render a table of contents from h1/h2/h3 headings "
                              "(default: on; omitted when the document has fewer than two)")
+    parser.add_argument("--depth", type=_depth_arg, default=None, metavar="N",
+                        help="for a bare directory listing, list subdirectories up to N levels "
+                             f"deep, indented (default: 1, today's behavior; capped at "
+                             f"{MAX_DEPTH}); has no effect on a directory with an index file, a "
+                             "single document, or multi-file concatenation")
     parser.add_argument("--config", metavar="PATH", default=None,
                         help="read configuration from PATH instead of "
                              "$XDG_CONFIG_HOME/viewmd/config (or ~/.config/viewmd/config)")
@@ -107,6 +147,13 @@ def main(argv: list[str] | None = None) -> int:
     directory_width = _resolve_width(width_arg, terminal_width, default_max_width=terminal_width)
     full_front_matter = coalesce(args.full_front_matter, cfg.full_front_matter, False)
     toc = coalesce(args.toc, cfg.toc, True)
+    theme = coalesce(args.theme, cfg.theme, "dark")
+    if theme == "auto":
+        # Only resolved (and only ever queries the terminal) when "auto" is what actually wins
+        # the CLI/config/default coalesce -- --theme dark/light/an omitted --theme never reach
+        # this import or call at all (VIEWMD-0105 requirement 7: zero added latency for those).
+        from viewmd.theme_detect import detect_terminal_theme
+        theme = detect_terminal_theme()
 
     # A single path renders exactly as before VIEWMD-0013 -- no heading or divider added -- so
     # existing single-file output stays byte-for-byte identical. Paged interactively (VIEWMD-0007)
@@ -128,11 +175,20 @@ def main(argv: list[str] | None = None) -> int:
             markdown_text, name = resolved
             from viewmd.pager import display_document
             display_document(markdown_text, name, no_pager=args.no_pager, width=width,
-                             color=color, full_front_matter=full_front_matter, toc=toc)
+                             color=color, full_front_matter=full_front_matter, toc=toc,
+                             theme=theme)
             return 0
 
+        # --depth (VIEWMD-0089) is resolved here, not up front with the other flags: it only
+        # applies to a bare directory listing (never a single document or multi-file
+        # concatenation, see its own Non-goals), and `_resolve_depth` prints a capping warning to
+        # stderr when over `MAX_DEPTH` -- resolving it unconditionally for every invocation would
+        # print that warning even for a `--depth` value that goes on to have no effect at all.
         from viewmd.pager import display_directory_listing
-        display_directory_listing(path, no_pager=args.no_pager, width=directory_width, color=color)
+        depth = _resolve_depth(coalesce(args.depth, cfg.depth))
+        display_directory_listing(path, no_pager=args.no_pager, width=width,
+                                  directory_width=directory_width, color=color, depth=depth,
+                                  theme=theme)
         return 0
 
     had_error = False
@@ -161,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     from viewmd.pager import display_multi_file
     display_multi_file(entries, no_pager=args.no_pager, width=width,
                        directory_width=directory_width, color=color,
-                       full_front_matter=full_front_matter, toc=toc)
+                       full_front_matter=full_front_matter, toc=toc, theme=theme)
     return 1 if had_error else 0
 
 

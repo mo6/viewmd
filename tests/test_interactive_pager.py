@@ -9,6 +9,8 @@ a click-to-quit consumes its paired SGR release rather than leaving it for the s
 
 import os
 import pathlib
+import threading
+import time
 
 import pytest
 
@@ -159,6 +161,68 @@ def test_run_loader_reports_front_matter_body_start(monkeypatch):
     assert ip._strip_ansi(plain[body_start]).strip() == "Title"
     assert ip._home_top(body_start, max_top=50) == body_start
     assert ip._home_top(body_start, max_top=0) == 0
+
+
+def test_run_loader_narrows_for_scrollbar_at_full_width_when_document_overflows(monkeypatch):
+    # Bug found in manual maintainer testing: `--width full README.md` showed `›` truncation
+    # markers on ordinary prose lines with nothing to actually horizontally scroll to. Root cause,
+    # the same two-pass problem `run_directory_listing`'s own loader already solves (VIEWMD-0089):
+    # `run()`'s loader wrapped body text to the full terminal width `w` before `_run` knew whether
+    # it would end up reserving `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079) --
+    # once the document had more lines than fit on screen, `draw()`'s crop silently truncated the
+    # right edge of every already-wrapped-to-`w` line. `_load_avoiding_scrollbar_crop` now
+    # re-renders one `_SCROLLBAR_RESERVED_W` narrower whenever `w` is exactly the terminal's own
+    # width and the result needs a scrollbar.
+    long_doc = "# Title\n\n" + "\n\n".join(
+        f"Paragraph {i} with enough words in it to reliably wrap across the full width of a "
+        f"reasonably narrow terminal pane, so this document overflows a small terminal height."
+        for i in range(40)
+    )
+
+    # A small terminal (`columns=100, lines=10` -> `body_h = 10 - 2 = 8`) so the wrapped document
+    # overflows, and `w == term_w` (100) so the full-width condition applies.
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(long_doc, "test.md", width=100, color=False, toc=False)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
+def test_run_loader_does_not_narrow_an_intentionally_oversized_width(monkeypatch):
+    # An oversized `--width` (wider than the terminal) is the documented way to exercise real
+    # horizontal scroll (`_run`'s own `configured_width` docstring) -- it must keep wrapping at
+    # its own requested width unchanged even when a scrollbar shows, not get silently narrowed
+    # the way the full-terminal-width case above does.
+    long_doc = "# Title\n\n" + "\n\n".join(
+        f"Paragraph {i} with enough words in it to reliably wrap across a wide render width, so "
+        f"this document overflows a small terminal height." for i in range(40)
+    )
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run(long_doc, "test.md", width=200, color=False, toc=False)
+
+    _colored, plain, _headings, _body_start = captured["loader"](200)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    assert max(ip._display_width(line) for line in plain) > 190  # not narrowed
 
 
 # --- _popup_box --------------------------------------------------------------------------------
@@ -768,16 +832,84 @@ def test_run_directory_listing_wires_doc_dir_and_subdirectory_open_path(monkeypa
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    # `width` (document default) and `directory_width` (listing default) deliberately differ so a
+    # subdirectory target's returned default width (VIEWMD-0089) can be told apart from a
+    # document's -- a subdirectory row should get `directory_width` back, not `width`.
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=120, color=False)
 
     assert captured["doc_dir"] == str(tmp_path)
-    new_loader, new_display_name, new_doc_dir = captured["open_path"](str(sub))
+    new_loader, new_display_name, new_doc_dir, new_default_width = captured["open_path"](str(sub))
     assert new_display_name == "sub/"
     assert new_doc_dir == str(sub)
+    assert new_default_width == 120
     colored, _plain, headings, body_start = new_loader(80)
     assert any("nested.md" in ip._strip_ansi(line) for line in colored)
     assert headings == []
     assert body_start == 0
+
+
+def test_run_directory_listing_depth_carries_over_into_a_navigated_subdirectory(
+    monkeypatch, tmp_path
+):
+    # VIEWMD-0089: a listing shown with `--depth 2` still shows two levels of a subdirectory's
+    # own children after clicking into it, the same way `width`/`color` already carry over
+    # unchanged rather than resetting to the `depth=1` default.
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["open_path"] = open_path
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False, depth=2)
+
+    new_loader, _new_display_name, _new_doc_dir, _new_default_width = captured["open_path"](
+        str(sub)
+    )
+    colored, _plain, _headings, _body_start = new_loader(80)
+    assert any("deepest.md" in ip._strip_ansi(line) for line in colored)
+
+
+def test_run_directory_listing_loader_narrows_for_scrollbar_when_listing_overflows(
+    monkeypatch, tmp_path
+):
+    # Bug found in manual maintainer testing: `render_directory_listing`'s table used to be
+    # rendered at the *full* width `w` inside `make_loader`, with no way to know yet whether
+    # `_run` would end up reserving `_SCROLLBAR_RESERVED_W` columns for a scrollbar (VIEWMD-0079)
+    # -- once there were enough rows to trigger one, `draw()`'s crop silently truncated the
+    # table's own right border/rightmost column on every single row (a `›` marker on every
+    # line). `make_loader` now checks the rendered line count against the terminal's available
+    # body height and, if it overflows, re-renders at `w - _SCROLLBAR_RESERVED_W` so the table
+    # already fits the space the scrollbar will actually leave.
+    for i in range(30):
+        (tmp_path / f"file-{i:02d}.md").write_text(f"# File {i}\n")
+
+    # A small terminal (`lines=10` -> `body_h = 10 - 2 = 8`) so 30 files' worth of rows overflow.
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10))
+    )
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback, doc_dir=None, open_path=None):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_directory_listing(str(tmp_path), width=100, directory_width=100, color=False)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
 
 
 # --- .md file rows clickable in the directory listing (VIEWMD-0093) -----------------------------
@@ -813,13 +945,17 @@ def test_run_directory_listing_open_path_opens_an_md_file(monkeypatch, tmp_path)
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    # `width` (document default) and `directory_width` (listing default) deliberately differ, the
+    # same way they do in real usage when `--width` is omitted (VIEWMD-0089) -- a `.md` file
+    # target must get `width` back, not `directory_width`.
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=200, color=False)
 
     opened = captured["open_path"](str(tmp_path / "a.md"))
     assert opened is not None
-    new_loader, new_display_name, new_doc_dir = opened
+    new_loader, new_display_name, new_doc_dir, new_default_width = opened
     assert new_display_name == "a.md"
     assert new_doc_dir == str(tmp_path)
+    assert new_default_width == 80
     colored, _plain, headings, _body_start = new_loader(80)
     assert any("Body text." in ip._strip_ansi(line) for line in colored)
     assert len(headings) == 1
@@ -832,11 +968,191 @@ def test_run_directory_listing_open_path_returns_none_for_unreadable_file(monkey
         captured["open_path"] = open_path
 
     monkeypatch.setattr(ip, "_run", fake_run)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False)
 
     # Never written -- resolved and then removed/never-existed by the time open_path runs, the
     # same race `run()`'s own open_path guards against (VIEWMD-0076).
     assert captured["open_path"](str(tmp_path / "missing.md")) is None
+
+
+# --- width-reset-on-navigation bug (VIEWMD-0089, per maintainer's manual testing) --------------
+#
+# Opening a directory listing with no explicit --width defaults its own table to the full
+# terminal width (VIEWMD-0071's `directory_width`), while a plain `.md` file defaults to a
+# narrower, prose-readability-capped width. Before this fix, `_run`'s `configured_width` was set
+# once at the top of the session and never updated on navigation -- so a `.md` file clicked open
+# from inside a directory listing kept inheriting the *listing's* full-width baseline instead of
+# getting its own default, and going back with 'B' would then apply whatever width was active at
+# that moment rather than restoring the width the target being returned to actually used. These
+# tests drive the real event loop (via a pipe standing in for /dev/tty, the same technique
+# `_run_pager_with_input` above uses for `run()`) rather than only checking `open_path`'s return
+# value in isolation, so they also cover `_run`'s own click-dispatch/`nav_stack` wiring, not just
+# the contract `open_path` promises to satisfy.
+
+
+def _run_dir_pager_with_input(
+    monkeypatch, dir_path: str, data: bytes, *, term_size, width, directory_width, depth=1
+) -> None:
+    """Drive `run_directory_listing()` against a pipe standing in for `/dev/tty`, feeding `data`
+    as the pager's input -- the `run_directory_listing()` analogue of `_run_pager_with_input`
+    above."""
+    r, w = os.pipe()
+    os.write(w, data)
+    os.close(w)
+    pager_fd = os.dup(r)
+
+    real_open = ip.os.open
+
+    def fake_open(path, flags, *args, **kwargs):
+        if path == "/dev/tty":
+            return pager_fd
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(ip.os, "open", fake_open)
+    monkeypatch.setattr(ip.termios, "tcgetattr", lambda fd: [0, 0, 0, 0, 0, 0, [0] * 32])
+    monkeypatch.setattr(ip.termios, "tcsetattr", lambda fd, when, mode: None)
+    monkeypatch.setattr(ip.tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
+    )
+
+    ip.run_directory_listing(
+        dir_path, width=width, directory_width=directory_width, color=False, depth=depth
+    )
+    os.close(r)
+
+
+def _click_bytes(col: int, row: int) -> bytes:
+    """A press+release SGR mouse-click pair at 1-indexed screen column/row -- the same encoding
+    `test_echo_area_click_quit_consumes_paired_sgr_release` above uses."""
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    return press + release
+
+
+def test_navigating_into_a_file_from_a_directory_listing_uses_the_files_own_default_width(
+    monkeypatch, tmp_path
+):
+    # The exact bug scenario: `--width` omitted, so `directory_width` (the listing's own default,
+    # full terminal width) and `width` (a document's own default, prose-capped) genuinely differ
+    # -- clicking a `.md` file row must render it at `width`, not `directory_width`.
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    directory_width, doc_width = 200, 100
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=directory_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1  # 1-indexed SGR column
+    row = line_no + 1  # 1-indexed SGR row (top == 0, so doc_row == body_row)
+
+    load_calls: list[int] = []
+    real_load = ip._load
+
+    def spy_load(text, w, *, color_kwargs):
+        load_calls.append(w)
+        return real_load(text, w, color_kwargs=color_kwargs)
+
+    monkeypatch.setattr(ip, "_load", spy_load)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"q",
+        term_size=(term_w, term_h),
+        width=doc_width,
+        directory_width=directory_width,
+    )
+
+    assert load_calls == [doc_width]
+
+
+def test_going_back_from_a_navigated_file_restores_the_listings_own_width(monkeypatch, tmp_path):
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    directory_width, doc_width = 200, 100
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=directory_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1
+    row = line_no + 1
+
+    import viewmd.render as render_mod
+
+    render_calls: list[int] = []
+    real_render = render_mod.render_directory_listing
+
+    def spy_render(d, *, width, color, depth=1, theme="dark"):
+        render_calls.append(width)
+        return real_render(d, width=width, color=color, depth=depth, theme=theme)
+
+    # `run_directory_listing()`'s `make_loader` does `from viewmd.render import
+    # render_directory_listing` *inside* the function body on every call, so it always resolves
+    # against `viewmd.render`'s own module attribute at call time -- patching that module
+    # attribute (not any name on `ip`, which never binds it at module scope) is what's needed for
+    # the spy to actually intercept it.
+    monkeypatch.setattr(render_mod, "render_directory_listing", spy_render)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"Bq",
+        term_size=(term_w, term_h),
+        width=doc_width,
+        directory_width=directory_width,
+    )
+
+    # The listing is re-rendered (colored + plain twin) once up front and once more on 'B' going
+    # back to it -- every one of those calls must be at `directory_width`, never the document's
+    # `doc_width` that was briefly `configured_width` while the file was open.
+    assert len(render_calls) >= 2
+    assert all(w == directory_width for w in render_calls)
+
+
+def test_navigating_into_a_file_with_explicit_width_is_unchanged(monkeypatch, tmp_path):
+    # No visible behavior change when --width was explicitly passed: `width` and `directory_width`
+    # already come out equal in that case (viewmd/__main__.py), so this locks in that a future
+    # regression here (e.g. `width`/`directory_width` accidentally diverging when both were
+    # supplied explicitly) would be caught.
+    (tmp_path / "note.md").write_text("# Note\n\nbody text.\n")
+    term_w, term_h = 200, 24
+    same_width = 80
+
+    from viewmd.render import render_directory_listing
+
+    colored = render_directory_listing(str(tmp_path), width=same_width, color=True).rstrip(
+        "\n"
+    ).split("\n")
+    line_no = next(i for i, line in enumerate(colored) if "note.md" in ip._strip_ansi(line))
+    col = _col_of(colored[line_no], "note.md") + 1
+    row = line_no + 1
+
+    load_calls: list[int] = []
+    real_load = ip._load
+
+    def spy_load(text, w, *, color_kwargs):
+        load_calls.append(w)
+        return real_load(text, w, color_kwargs=color_kwargs)
+
+    monkeypatch.setattr(ip, "_load", spy_load)
+
+    _run_dir_pager_with_input(
+        monkeypatch,
+        str(tmp_path),
+        _click_bytes(col, row) + b"q",
+        term_size=(term_w, term_h),
+        width=same_width,
+        directory_width=same_width,
+    )
+
+    assert load_calls == [same_width]
 
 
 def test_content_col_maps_through_no_scroll():
@@ -905,14 +1221,51 @@ def _pipe_with(data: bytes) -> int:
 
 
 def _run_pager_with_input(
-    monkeypatch, data: bytes, *, term_size=(80, 24), width=80, text="# Hi\n\nbody\n"
+    monkeypatch,
+    data: bytes | None = None,
+    *,
+    term_size=(80, 24),
+    width=80,
+    text="# Hi\n\nbody\n",
+    name="file.md",
+    chunks: list[bytes] | None = None,
 ) -> bytes:
     """Drive `run()` against a pipe standing in for `/dev/tty`, feeding `data` as the pager's
     input. Returns whatever bytes were still unread on that pipe after `run()` returned --
-    VIEWMD-0094's leak is exactly those leftover SGR-release bytes."""
+    VIEWMD-0094's leak is exactly those leftover SGR-release bytes.
+
+    `name` (VIEWMD-0090) defaults to the bare, non-existent "file.md" every pre-existing caller
+    here relies on -- `run()` only needs it as a display name/`doc_dir` source, never actually
+    reads it, so a name with no real file backing it is fine for anything that doesn't click a
+    link. A click-to-follow test passes a real on-disk path instead, since `open_path` (VIEWMD-
+    0076) does actually open whatever a click resolves to.
+
+    `chunks` (VIEWMD-0090), when given instead of `data`, is written to the pipe from a
+    background thread with a short real sleep between each chunk, rather than all of `data`
+    up front. `_drain_paired_sgr_release` (VIEWMD-0094) greedily reads *everything* currently
+    queued on the fd looking for a click's own paired release -- fine for a single click, where
+    at most one real following keystroke can possibly already be queued, but a second scripted
+    click's whole press+release (and everything after it) sitting in the pipe from the start
+    would get swept into that first drain's leftover-bytes buffer too, then have nothing left on
+    the raw fd for the second click's own drain call to find (found while developing this test's
+    two-navigation sequence: manifested as a spurious empty `Event('key', '')` and an extra
+    redraw right after the second click). A real terminal session never has this problem --
+    keystrokes arrive as the reader actually presses them, never all buffered at once before the
+    session even starts -- so `chunks` exists to make this harness behave the same way for a
+    multi-click script, without touching the drain logic itself (out of this issue's scope)."""
     r, w = os.pipe()
-    os.write(w, data)
-    os.close(w)
+    if chunks is not None:
+
+        def feed() -> None:
+            for chunk in chunks:
+                os.write(w, chunk)
+                time.sleep(0.15)
+            os.close(w)
+
+        threading.Thread(target=feed, daemon=True).start()
+    else:
+        os.write(w, data)
+        os.close(w)
     pager_fd = os.dup(r)
 
     real_open = ip.os.open
@@ -930,7 +1283,7 @@ def _run_pager_with_input(
         ip.shutil, "get_terminal_size", lambda *a, **k: os.terminal_size(term_size)
     )
 
-    ip.run(text, "file.md", width=width, color=False)
+    ip.run(text, name, width=width, color=False)
 
     leftover = os.read(r, 64)
     os.close(r)
@@ -1170,13 +1523,29 @@ def test_keybind_help_shows_contents_hint_with_headings_by_default():
 
 def test_keybind_help_omits_prev_file_hint_before_any_navigation():
     line, _spans = ip._keybind_help(False, None, False)
-    assert "prev file" not in ip._strip_ansi(line)
+    plain = ip._strip_ansi(line)
+    assert "back (" not in plain
+    assert "fwd (" not in plain
 
 
-def test_keybind_help_shows_prev_file_hint_once_has_back_is_true():
-    # VIEWMD-0076: 'B' is only advertised once there's actually something to go back to.
-    line, _spans = ip._keybind_help(False, None, False, has_back=True)
-    assert "prev file" in ip._strip_ansi(line)
+def test_keybind_help_shows_back_hint_with_trail_depth_once_back_count_is_positive():
+    # VIEWMD-0076: 'b' is only advertised once there's actually something to go back to;
+    # VIEWMD-0090 extends this to a full stack, so the hint's label carries the depth
+    # (requirement 6 -- a discoverable trail position) rather than just "yes/no".
+    line, _spans = ip._keybind_help(False, None, False, back_count=2)
+    assert "back (2)" in ip._strip_ansi(line)
+
+
+def test_keybind_help_omits_forward_hint_with_nothing_ahead():
+    line, _spans = ip._keybind_help(False, None, False, back_count=1)
+    assert "fwd (" not in ip._strip_ansi(line)
+
+
+def test_keybind_help_shows_forward_hint_with_trail_depth_once_forward_count_is_positive():
+    # VIEWMD-0090 requirement 3/6: 'f' is only advertised once there's somewhere to go forward
+    # to, and its label carries the depth the same way the back hint's does.
+    line, _spans = ip._keybind_help(False, None, False, forward_count=3)
+    assert "fwd (3)" in ip._strip_ansi(line)
 
 
 # --- _keybind_help spans / _chip_at (VIEWMD-0078) -------------------------------------------
@@ -1186,17 +1555,18 @@ def test_keybind_help_every_chip_has_a_resolvable_span():
     # Requirement 2/acceptance: every chip `_keybind_help()` can render, in both layouts, has a
     # span that covers at least one column and doesn't overlap its neighbors.
     for popup_open in (False, True):
-        for width_toggle, highlight_active, has_headings, has_back in (
-            (None, False, True, False),
-            ("full width", True, True, True),
-            (None, False, False, False),
+        for width_toggle, highlight_active, has_headings, back_count, forward_count in (
+            (None, False, True, 0, 0),
+            ("full width", True, True, 1, 2),
+            (None, False, False, 0, 0),
         ):
             _text, spans = ip._keybind_help(
                 popup_open,
                 width_toggle,
                 highlight_active,
                 has_headings=has_headings,
-                has_back=has_back,
+                back_count=back_count,
+                forward_count=forward_count,
             )
             assert spans
             prev_end = 0
@@ -1208,12 +1578,13 @@ def test_keybind_help_every_chip_has_a_resolvable_span():
 
 def test_keybind_help_base_layout_chip_invokes_match_their_key():
     _text, spans = ip._keybind_help(
-        False, "full width", True, has_headings=True, has_back=True
+        False, "full width", True, has_headings=True, back_count=1, forward_count=1
     )
     invokes = {inv.value: inv for _s, _e, inv in spans if inv is not None}
     assert invokes["/"] == ip.Event("key", "/")
     assert invokes["t"] == ip.Event("key", "t")
-    assert invokes["B"] == ip.Event("key", "B")
+    assert invokes["b"] == ip.Event("key", "b")
+    assert invokes["f"] == ip.Event("key", "f")
     assert invokes["w"] == ip.Event("key", "w")
     assert invokes["esc"] == ip.Event("key", "esc")
     assert invokes["?"] == ip.Event("key", "?")
@@ -1563,9 +1934,113 @@ def test_run_directory_listing_falls_back_to_plain_print(monkeypatch, capsys, tm
         raise OSError("no controlling terminal")
 
     monkeypatch.setattr(ip.os, "open", fake_open)
-    ip.run_directory_listing(str(tmp_path), width=80, color=False)
+    ip.run_directory_listing(str(tmp_path), width=80, directory_width=80, color=False)
     out = capsys.readouterr().out
     assert out == render_directory_listing(str(tmp_path), width=80, color=False)
+
+
+def test_run_multi_file_loader_narrows_directory_width_for_scrollbar_when_overflowing(
+    monkeypatch, tmp_path
+):
+    # Same two-pass scrollbar problem as `run_directory_listing`, applied to a bare directory
+    # listing embedded among a multi-file concatenation's entries: `directory_width` is a fixed
+    # full-terminal-width value that doesn't shrink for the 'w' toggle, so if the whole
+    # concatenation ends up tall enough to need a scrollbar, the embedded listing's own table
+    # (rendered at the un-reduced `directory_width`) would get silently cropped by `draw()` the
+    # same way. `run_multi_file`'s loader now re-renders at `directory_width -
+    # _SCROLLBAR_RESERVED_W` once it detects the whole thing overflows the body.
+    for i in range(30):
+        (tmp_path / f"file-{i:02d}.md").write_text(f"# File {i}\n")
+    entries = [(str(tmp_path), None)]
+
+    monkeypatch.setattr(
+        ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10))
+    )
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=100, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    # Only the embedded directory-listing table's own rows are under test here (its own file
+    # heading line above it is a long absolute `tmp_path`, unrelated pre-existing overflow with
+    # nothing to do with the scrollbar-cropping bug this test targets).
+    table_plain = [line for line in plain if line[:1] in "│╭├╰"]
+    table_colored = [line for line in colored if ip._strip_ansi(line)[:1] in "│╭├╰"]
+    assert table_plain
+    for line in table_plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in table_colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
+def test_run_multi_file_loader_narrows_markdown_width_for_scrollbar_at_full_width(monkeypatch):
+    # Same bug as `run()`'s own loader (`_load_avoiding_scrollbar_crop`), for a multi-file
+    # concatenation with no embedded directory listing at all: ordinary markdown content's own
+    # `width` used to stay fixed at `w` regardless of whether a scrollbar would end up reserving
+    # `_SCROLLBAR_RESERVED_W` columns, so a `--width full` multi-file view with enough content to
+    # need a scrollbar showed the same '>' truncation markers on wrapped prose.
+    paragraph = (
+        "Paragraph with enough words in it to reliably wrap across the full width of a "
+        "reasonably narrow terminal pane, so this document overflows a small terminal height. "
+    )
+    text = "# Title\n\n" + "\n\n".join(paragraph * 3 for _ in range(20))
+    entries = [("a.md", text), ("b.md", text)]
+
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=100, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    w = 100
+    colored, plain, _headings, _body_start = captured["loader"](w)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    narrow_w = w - ip._SCROLLBAR_RESERVED_W
+    for line in plain:
+        assert ip._display_width(line) <= narrow_w
+    for line in colored:
+        assert ip._display_width(ip._strip_ansi(line)) <= narrow_w
+
+
+def test_run_multi_file_loader_does_not_narrow_an_intentionally_oversized_width(monkeypatch):
+    # An oversized `--width` (wider than the terminal) must keep wrapping unchanged even when a
+    # scrollbar shows, matching `run()`'s own rule -- only `directory_width` (a fixed
+    # full-terminal-width value with no toggle of its own) narrows regardless of `w`.
+    paragraph = (
+        "Paragraph with enough words in it to reliably wrap across a wide render width, so this "
+        "document overflows a small terminal height. "
+    )
+    text = "# Title\n\n" + "\n\n".join(paragraph * 3 for _ in range(20))
+    entries = [("a.md", text), ("b.md", text)]
+
+    monkeypatch.setattr(ip.shutil, "get_terminal_size", lambda: os.terminal_size((100, 10)))
+
+    captured = {}
+
+    def fake_run(loader, display_name, *, width, fallback):
+        captured["loader"] = loader
+
+    monkeypatch.setattr(ip, "_run", fake_run)
+    ip.run_multi_file(entries, width=200, directory_width=100, color=False,
+                      full_front_matter=False, toc=True)
+
+    _colored, plain, _headings, _body_start = captured["loader"](200)
+    assert len(plain) > 8  # confirms this test actually exercises the overflow branch
+    assert max(ip._display_width(line) for line in plain) > 190  # not narrowed
 
 
 def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
@@ -1581,6 +2056,216 @@ def test_run_multi_file_falls_back_to_plain_print(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out == render_multi_file(entries, width=80, directory_width=80, color=False,
                                     full_front_matter=False, toc=True)
+
+
+# --- Multi-level b/f trail (VIEWMD-0090) --------------------------------------------------
+
+
+def _sgr_click(col: int, row: int) -> bytes:
+    """A plain left-click press + its paired release, 1-indexed SGR mouse-report coordinates --
+    same shape every other click-driven test in this file sends."""
+    press = f"\x1b[<0;{col};{row}M".encode()
+    release = f"\x1b[<0;{col};{row}m".encode()
+    return press + release
+
+
+def test_multilevel_back_and_forward_walk_a_three_document_trail(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 acceptance: a three-hop link-following sequence (A -> B -> C), back-back
+    # returns to the origin (A), forward-forward re-reaches the final hop (C), and each
+    # document's own scroll position -- not just its home position -- is restored exactly on
+    # both directions. Driven through the real `_run()` event loop (via a pipe standing in for
+    # `/dev/tty`, `_run_pager_with_input`), since click-to-follow's own scroll-restoration math
+    # only lives inside that loop's closures, not in any separately-testable helper.
+    width = 80
+    term_size = (width, 24)
+    body_h = term_size[1] - 2
+
+    def make_doc(label: str, link_target: str | None) -> str:
+        # A single tight list, one item per source line -- deliberately not blank-line-separated
+        # paragraphs, so each item is exactly one rendered row with no interleaved blank rows to
+        # account for (found while developing this test: paragraph-per-line content renders with
+        # an unpredictable number of blank divider rows between items, depending on Rich's own
+        # Markdown wrapping, which would make every row index below a guess rather than a fact).
+        items = []
+        for i in range(60):
+            if link_target is not None and i == 20:
+                items.append(f"- [NEXT]({link_target})")
+            else:
+                items.append(f"- {label} filler {i}")
+        return f"# {label}\n\n" + "\n".join(items) + "\n"
+
+    text_a = make_doc("A", "b.md")
+    text_b = make_doc("B", "c.md")
+    text_c = make_doc("C", None)
+    a_path = tmp_path / "a.md"
+    a_path.write_text(text_a)
+    (tmp_path / "b.md").write_text(text_b)
+    (tmp_path / "c.md").write_text(text_c)
+
+    def row_of(plain_lines: list[str], marker: str) -> int:
+        return next(i for i, line in enumerate(plain_lines) if marker in line)
+
+    # `ip.run()` itself defaults to `toc=True` -- matched here rather than reusing plain `_KW`
+    # (toc=False), even though a single-heading doc makes no practical difference (a ToC block
+    # only renders with >= 2 headings, `render.py`'s own `render_markdown`), so this test's row
+    # math is never relying on that incidental equivalence.
+    kw = {**_KW, "toc": True}
+    colored_a, plain_a, _h, _bs = ip._load(text_a, width, color_kwargs=kw)
+    colored_b, plain_b, _h, _bs = ip._load(text_b, width, color_kwargs=kw)
+    _colored_c, plain_c, _h, _bs = ip._load(text_c, width, color_kwargs=kw)
+
+    link_row_a = row_of(plain_a, "NEXT")
+    link_row_b = row_of(plain_b, "NEXT")
+    # Scrolled a few rows short of the link, not all the way to it or left at the top -- proves
+    # the exact scroll position (not just "somewhere"/"the top") survives the round trip.
+    top_a, top_b, top_c = link_row_a - 3, link_row_b - 3, 9
+    # The link's own screen row after scrolling to `top_*` -- must stay on-screen (0 <= . < body_h)
+    # for the click below to actually land on it.
+    assert 0 <= link_row_a - top_a < body_h
+    assert 0 <= link_row_b - top_b < body_h
+    expect_a, expect_b, expect_c = plain_a[top_a], plain_b[top_b], plain_c[top_c]
+    # Guards the test itself against a vacuous pass: an empty/blank expected row would make the
+    # substring check below trivially true regardless of what the pager actually restored.
+    assert expect_a.strip() and expect_b.strip() and expect_c.strip()
+
+    # The scrollbar-plus-gap column (VIEWMD-0079) is reserved to the left of every body row
+    # whenever the document doesn't fit in one screen -- true for all three here (60-item
+    # lists) -- so a click's screen column has to account for it, same as `_run`'s own click
+    # handling does when mapping a screen column back to a content column.
+    reserved = ip._scrollbar_reserved(len(colored_a), body_h)
+    assert reserved == ip._scrollbar_reserved(len(colored_b), body_h)
+    col_a = reserved + _col_of(colored_a[link_row_a], "NEXT")
+    col_b = reserved + _col_of(colored_b[link_row_b], "NEXT")
+
+    # Split around the two navigating clicks (`chunks`, not one plain `data` blob) -- two real
+    # clicks in one script needs the paced delivery `_run_pager_with_input`'s own docstring
+    # explains, or the second click's paired-release drain finds nothing left to drain.
+    chunks = [
+        b"j" * top_a + _sgr_click(col_a + 1, (link_row_a - top_a) + 1),  # A -> B
+        b"j" * top_b + _sgr_click(col_b + 1, (link_row_b - top_b) + 1),  # B -> C
+        b"j" * top_c + b"bb" + b"ff" + b"q",  # C -> B -> A -> B -> C, then quit
+    ]
+
+    _run_pager_with_input(
+        monkeypatch, chunks=chunks, term_size=term_size, width=width, text=text_a, name=str(a_path)
+    )
+    out = capsys.readouterr().out
+    frames = out.split(ip._HOME)[1:]
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    # Event order -> frame index: 0 is the initial draw; each subsequent key/click event (never
+    # a "motion" event here) produces exactly one more, in order (see `_run`'s main loop -- every
+    # branch reaches its own `draw()` call at the bottom before the next event is read).
+    n_scroll_a, n_scroll_b, n_scroll_c = top_a, top_b, top_c
+    idx_after_click_to_c = n_scroll_a + 1 + n_scroll_b + 1  # two clicks: A->B, B->C
+    idx_back_to_b = idx_after_click_to_c + n_scroll_c + 1
+    idx_back_to_a = idx_back_to_b + 1
+    idx_fwd_to_b = idx_back_to_a + 1
+    idx_fwd_to_c = idx_fwd_to_b + 1
+    assert len(frames) == idx_fwd_to_c + 1
+
+    assert expect_c.strip() in first_body_row(frames[idx_after_click_to_c + n_scroll_c])
+    # Back, back: C -> B (B's own saved scroll) -> A (A's own saved scroll, the origin).
+    assert expect_b.strip() in first_body_row(frames[idx_back_to_b])
+    assert expect_a.strip() in first_body_row(frames[idx_back_to_a])
+    # Forward, forward: A -> B (redone) -> C, each landing back at its own saved scroll position,
+    # not just the top of the document -- the final hop is exactly where it was left.
+    assert expect_b.strip() in first_body_row(frames[idx_fwd_to_b])
+    assert expect_c.strip() in first_body_row(frames[idx_fwd_to_c])
+
+
+def test_forward_is_a_no_op_with_nothing_ahead(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 requirement 3: 'f' with nothing on the forward stack (no 'b' yet pressed, or
+    # after a fresh navigation has discarded it) is inert, same as 'b' already is at the start of
+    # a session -- an echo-area message, not a crash or an unexplained no-op.
+    (tmp_path / "a.md").write_text("# A\n")
+    data = b"f" + b"q"
+    _run_pager_with_input(
+        monkeypatch, data, text="# A\n", name=str(tmp_path / "a.md")
+    )
+    out = capsys.readouterr().out
+    assert "No next file to go forward to" in ip._strip_ansi(out)
+
+
+def test_new_navigation_clears_the_forward_stack(monkeypatch, capsys, tmp_path):
+    # VIEWMD-0090 design decision: following a new link after backing up discards whatever was
+    # ahead on the trail (the same rule a browser's own forward history follows) -- 'f' must not
+    # resurrect a document the reader has since navigated away from through a different link.
+    text_a = "# A\n\n[to B](b.md)\n"
+    text_c = "# C\n\nonly C\n"
+    (tmp_path / "a.md").write_text(text_a)
+    (tmp_path / "b.md").write_text("# B\n\n[to C](c.md)\n")
+    (tmp_path / "c.md").write_text(text_c)
+
+    colored, plain, _h, _bs = ip._load(text_a, 80, color_kwargs={**_KW, "toc": True})
+    link_row = next(i for i, line in enumerate(plain) if "to B" in line)
+    col = _col_of(colored[link_row], "to B")
+    row = link_row + 1  # 1-indexed screen row, top == 0
+
+    # Split around the two navigating clicks (see `_run_pager_with_input`'s own docstring for
+    # why: the second click's paired-release drain finds nothing left to drain otherwise, once
+    # everything is available on the pipe from the very start).
+    chunks = [
+        _sgr_click(col + 1, row),  # A -> B
+        b"b",  # B -> A (now something to go forward to)
+        _sgr_click(col + 1, row),  # A -> B again, a *new* navigation
+        b"f" + b"q",  # nothing ahead any more -- must be inert
+    ]
+    _run_pager_with_input(monkeypatch, chunks=chunks, text=text_a, name=str(tmp_path / "a.md"))
+    out = capsys.readouterr().out
+    assert "No next file to go forward to" in ip._strip_ansi(out)
+
+
+# --- page-back-up key remap (maintainer review, VIEWMD-0090) --------------------------------
+#
+# The maintainer asked for lowercase 'b'/'f' as the trail keys instead of 'B'/'F', which
+# collided with lowercase 'b' already meaning "page back up" (the standard `less`-style
+# binding). Resolution (maintainer's explicit call): drop 'b' from page-back-up entirely,
+# leaving only '-'/Backspace for it, freeing 'b' for trail-back.
+
+
+def test_page_back_up_still_works_via_dash_and_backspace(monkeypatch, capsys):
+    # '-' and Backspace must still page back up exactly as before the remap.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    for key in (b"-", b"\x7f"):  # '-' and Backspace (DEL)
+        data = b" " + key + b"q"  # page down, then page back up, then quit
+        _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+        out = capsys.readouterr().out
+        frames = out.split(ip._HOME)[1:]
+        assert len(frames) == 3
+        after_page_down = first_body_row(frames[1])
+        after_page_back = first_body_row(frames[2])
+        # Paging down then back up returns to the same first body row it started from.
+        assert after_page_back == first_body_row(frames[0])
+        assert after_page_down != after_page_back
+
+
+def test_lowercase_b_alone_no_longer_pages_back_up(monkeypatch, capsys):
+    # Lowercase 'b' is now the trail-back key, not page-back-up -- with an empty history stack
+    # it must be an inert no-op (an echo-area message), never scrolling the viewport at all.
+    term_size = (80, 24)
+    text = "# Doc\n\n" + "\n".join(f"- line {i}" for i in range(200)) + "\n"
+
+    def first_body_row(frame: str) -> str:
+        return ip._strip_ansi(frame.split("\n", 1)[0])
+
+    data = b" " + b"b" + b"q"  # page down, then 'b' (no trail to go back to), then quit
+    _run_pager_with_input(monkeypatch, data, term_size=term_size, width=80, text=text)
+    out = capsys.readouterr().out
+    frames = out.split(ip._HOME)[1:]
+    assert len(frames) == 3
+    after_page_down = first_body_row(frames[1])
+    after_b = first_body_row(frames[2])
+    # 'b' left the viewport exactly where it was -- no page-back-up happened.
+    assert after_b == after_page_down
+    assert "No previous file to go back to" in ip._strip_ansi(out)
 
 
 if __name__ == "__main__":

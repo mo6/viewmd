@@ -3,7 +3,9 @@
 import io
 import os
 import re
+import sys
 import urllib.parse
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -23,6 +25,7 @@ from rich.text import Text
 from wcwidth import wcswidth
 
 from viewmd.frontmatter import drop_empty, parse_front_matter, split_front_matter
+from viewmd.highlight import DEFAULT_KIND, MarkRegion, strip_marks
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.preprocessors import preprocess
 
@@ -178,7 +181,7 @@ class _AdmonitionKind:
 
 # GitHub's five canonical alert types. Colors follow Primer's dark-theme
 # palette so the card stays readable on the dark terminals viewmd pages into.
-_CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
+_CANONICAL_ADMONITIONS_DARK: dict[str, _AdmonitionKind] = {
     "NOTE": _AdmonitionKind("📝", "#58a6ff"),
     "TIP": _AdmonitionKind("💡", "#3fb950"),
     "IMPORTANT": _AdmonitionKind("❗", "#bc8cff"),
@@ -187,7 +190,60 @@ _CANONICAL_ADMONITIONS: dict[str, _AdmonitionKind] = {
     "WARNING": _AdmonitionKind("⚠️", "#d29922", icon_pad=2, icon_width=1),
     "CAUTION": _AdmonitionKind("🛑", "#f85149"),
 }
+# VIEWMD-0091: the `--theme light` counterpart, same icons/pad/width (those are terminal-glyph
+# quirks, not background-color-dependent) with colors swapped for Primer's *light*-theme alert
+# palette instead of its dark one -- the same design system the dark colors above already follow,
+# so this is the natural light-mode source rather than an arbitrary independent pick. Each of
+# these has a documented ~4.5:1+ contrast ratio against white in Primer's own token set.
+_CANONICAL_ADMONITIONS_LIGHT: dict[str, _AdmonitionKind] = {
+    "NOTE": _AdmonitionKind("📝", "#0969da"),
+    "TIP": _AdmonitionKind("💡", "#1a7f37"),
+    "IMPORTANT": _AdmonitionKind("❗", "#8250df"),
+    "WARNING": _AdmonitionKind("⚠️", "#9a6700", icon_pad=2, icon_width=1),
+    "CAUTION": _AdmonitionKind("🛑", "#cf222e"),
+}
+_ADMONITIONS_BY_THEME: dict[str, dict[str, _AdmonitionKind]] = {
+    "dark": _CANONICAL_ADMONITIONS_DARK,
+    "light": _CANONICAL_ADMONITIONS_LIGHT,
+}
 _GENERIC_ADMONITION = _AdmonitionKind("", "default")
+
+# VIEWMD-0091: the front-matter table's header/column color, dark vs. light -- "cyan" (a plain
+# ANSI 16-color name, not a hex code, unlike the admonition palette above) reads fine on today's
+# dark background but is noticeably washed out on white in several terminal color schemes, so
+# light uses the same Primer "note" blue as the NOTE admonition above instead, for one consistent
+# accent color across both themed surfaces.
+_TABLE_STYLE_BY_THEME: dict[str, tuple[str, str]] = {
+    "dark": ("bold cyan", "cyan"),
+    "light": ("bold #0969da", "#0969da"),
+}
+
+# VIEWMD-0091 (amended requirement 6): Pygments theme for fenced-code-block (and, via
+# rich's own inline_code_theme-defaults-to-code_theme fallback, inline-code-span) syntax
+# highlighting -- "monokai" (dark) is today's existing, unchanged default. "friendly"
+# (`#f0f0f0`) was tried first but read as barely-off-white against a real light terminal
+# background, not enough contrast (maintainer testing feedback); "paraiso-light" is a
+# built-in light Pygments theme (surveyed from this worktree's own
+# `.venv/lib/python*/site-packages/pygments/styles/`, not guessed) with a visibly grey-tinted
+# `#e7e9db` background and full syntax-color highlighting, giving clearer contrast on a light
+# terminal while still reading as a light theme.
+_CODE_THEME_BY_THEME: dict[str, str] = {
+    "dark": "monokai",
+    "light": "paraiso-light",
+}
+
+# VIEWMD-0091: the table-of-contents entry text normally reuses rich's own named
+# "markdown.h1"/"h2"/"h3" theme styles (`_toc_lines`, below) so it always matches the body
+# heading's own weight/color -- h1 there is bold+underline with no explicit color (the terminal's
+# own default foreground), which already suits either background, so it needs no light variant.
+# h2/h3 do set an explicit color (rich's default theme's plain "magenta"), which is legible but
+# not particularly high-contrast on white -- light swaps both to the same Primer "important"
+# purple the IMPORTANT admonition above uses, again for one shared accent rather than a second
+# independent color choice.
+_TOC_HEADING_STYLE_LIGHT: dict[int, str] = {
+    2: "bold underline #8250df",
+    3: "bold #8250df",
+}
 
 
 def parse_admonition_marker(text: str) -> tuple[str, str] | None:
@@ -233,6 +289,18 @@ class ViewmdBlockQuote(BlockQuote):
         super().__init__()
         self._admonition_inspected = False
         self._admonition_token: str | None = None
+        self.theme = "dark"
+
+    @classmethod
+    def create(cls, markdown: Markdown, token) -> "ViewmdBlockQuote":
+        # VIEWMD-0091: `markdown` here is the `ViewmdMarkdown` instance being rendered --
+        # `render_markdown`/`_markdown_with_tokens` stamp `viewmd_theme` onto it before printing,
+        # so each blockquote picks the right admonition palette without threading `theme` through
+        # every call in rich's own element-construction path (`create` is rich's own factory hook,
+        # not something this module controls the signature of).
+        element = cls()
+        element.theme = getattr(markdown, "viewmd_theme", "dark")
+        return element
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -242,7 +310,8 @@ class ViewmdBlockQuote(BlockQuote):
             yield from super().__rich_console__(console, options)
             return
 
-        kind = _CANONICAL_ADMONITIONS.get(token.upper(), _GENERIC_ADMONITION)
+        admonitions = _ADMONITIONS_BY_THEME.get(self.theme, _CANONICAL_ADMONITIONS_DARK)
+        kind = admonitions.get(token.upper(), _GENERIC_ADMONITION)
         border_style = Style() if kind.color == "default" else Style(color=kind.color)
         width = options.max_width
         label = token.upper()
@@ -443,7 +512,20 @@ def _toc_occurrence_ranks(full_outline: list[HeadingOutline]) -> dict[int, int]:
     return ranks
 
 
-def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]) -> list[Text]:
+def _toc_heading_style(level: int, theme: str) -> str:
+    """The rich style to render a ToC entry's heading text in, for `level` (1-3) under `theme`.
+
+    Dark keeps the named "markdown.h1"/"h2"/"h3" theme styles so the ToC entry always matches the
+    body heading's own weight/color exactly (VIEWMD-0068); light overrides h2/h3's color only,
+    per `_TOC_HEADING_STYLE_LIGHT`'s own docstring above."""
+    if theme == "light" and level in _TOC_HEADING_STYLE_LIGHT:
+        return _TOC_HEADING_STYLE_LIGHT[level]
+    return f"markdown.h{level}"
+
+
+def _toc_lines(
+    outline: list[HeadingOutline], full_outline: list[HeadingOutline], theme: str = "dark"
+) -> list[Text]:
     """One bulleted, heading-styled line per outline entry, nested by level. `outline` is what's
     actually rendered (post `_fit_toc_outline`); `full_outline` is the un-fitted result, needed
     only to disambiguate a duplicate heading text's link target (see `_toc_occurrence_ranks`)."""
@@ -459,7 +541,7 @@ def _toc_lines(outline: list[HeadingOutline], full_outline: list[HeadingOutline]
         line = Text()
         line.append(indent + _TOC_BULLET, style="markdown.item.bullet")
         heading_start = len(line)
-        line.append(heading.text, style=f"markdown.h{heading.level}")
+        line.append(heading.text, style=_toc_heading_style(heading.level, theme))
         # `stylize`, not folded into the `append` above's own `style=` -- a `Style(link=...)`
         # carries no color/weight of its own, so layering it on top via a second span leaves the
         # heading's visible styling completely unchanged (VIEWMD-0077 requirement 2) while still
@@ -503,7 +585,362 @@ def _markdown_with_tokens(source: Markdown, tokens: list) -> ViewmdMarkdown:
     view.hyperlinks = source.hyperlinks
     view.inline_code_lexer = source.inline_code_lexer
     view.inline_code_theme = source.inline_code_theme
+    # VIEWMD-0091: carry the source document's theme along too, so an admonition inside the
+    # title-slice or rest-slice (`ViewmdBlockQuote.create`, above) still picks the right palette
+    # -- `source` here is always a `ViewmdMarkdown` already carrying `viewmd_theme`
+    # (`render_markdown` stamps it before either slice is built).
+    view.viewmd_theme = getattr(source, "viewmd_theme", "dark")
     return view
+
+
+# VIEWMD-0104: background SGR (truecolor) per `viewmd:mark` kind -- green/amber/red, matching the
+# common diff-viewer convention (requirement 3). Not theme-dependent (VIEWMD-0091's dark/light
+# split): the issue's own requirements never ask for a light-mode variant, and these are dark
+# enough to keep the usual light-on-dark foreground colors readable, which is what gitgleam (the
+# concrete driver) always renders against (`--color=always`).
+_MARK_BACKGROUND: dict[str, str] = {
+    "added": "\x1b[48;2;20;83;45m",
+    "changed": "\x1b[48;2;90;62;0m",
+    "removed": "\x1b[48;2;91;26;26m",
+}
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
+_SGR_RE = re.compile(r"\x1b\[([0-9;]*)m")
+_RESET = "\x1b[0m"
+# Background-setting SGR codes recognized as single tokens -- `40`-`47` (16-color), `100`-`107`
+# (bright 16-color), and `49` (default background) each occupy exactly one parameter; the
+# truecolor/256 forms (`48;5;N`, `48;2;r;g;b`) are handled separately in `_strip_bg_params` since
+# they consume trailing parameters too.
+_SIMPLE_BG_CODES = {str(c) for c in (*range(40, 48), *range(100, 108), 49)}
+
+
+def _strip_ansi(s: str) -> str:
+    """`s` with every SGR and OSC8 escape sequence removed, for display-width measurement."""
+    return _ANSI_ESCAPE_RE.sub("", s)
+
+
+def _strip_bg_params(params: list[str]) -> list[str]:
+    """`params` (an SGR escape's already-split-on-`;` code list) with every background-setting
+    component removed -- the plain codes in `_SIMPLE_BG_CODES`, each their own token, and the
+    extended truecolor/256 forms (`48;5;N`, `48;2;r;g;b`), which also consume their own trailing
+    parameters -- so a combined sequence like a themed code fence's own
+    `38;2;r;g;b;48;2;r;g;b` keeps its foreground color and drops only the background half.
+
+    `38;5;N`/`38;2;r;g;b` (extended *foreground*) is special-cased the same way, copying its own
+    trailing components verbatim rather than matching each one individually against
+    `_SIMPLE_BG_CODES` below -- a truecolor component can numerically coincide with a bright-
+    background code (e.g. `38;2;102;217;239`, where `102` is a plain RGB green value, not the
+    bright-background code `102`), so those trailing components must never be tested against that
+    table at all, only ever copied through as part of the foreground sequence that owns them."""
+    out: list[str] = []
+    i = 0
+    n = len(params)
+    while i < n:
+        p = params[i]
+        if p == "48":
+            if i + 1 < n and params[i + 1] == "5":
+                i += 3
+            elif i + 1 < n and params[i + 1] == "2":
+                i += 5
+            else:
+                i += 1
+            continue
+        if p == "38":
+            out.append(p)
+            if i + 1 < n and params[i + 1] == "5":
+                out.extend(params[i + 1 : i + 3])
+                i += 3
+            elif i + 1 < n and params[i + 1] == "2":
+                out.extend(params[i + 1 : i + 5])
+                i += 5
+            else:
+                i += 1
+            continue
+        if p in _SIMPLE_BG_CODES:
+            i += 1
+            continue
+        out.append(p)
+        i += 1
+    return out
+
+
+def _strip_line_backgrounds(line: str) -> str:
+    """`line` with every background-color SGR component removed from its own escape sequences
+    (foreground colors, bold/italic/underline, and OSC8 links untouched) -- so a mark's own
+    background can be layered on top without the content's original background winning the "last
+    one wins" SGR precedence race (requirement 4)."""
+
+    def _repl(match: re.Match[str]) -> str:
+        raw = match.group(1)
+        filtered = _strip_bg_params(raw.split(";") if raw else [])
+        return f"\x1b[{';'.join(filtered)}m" if filtered else ""
+
+    return _SGR_RE.sub(_repl, line)
+
+
+def _tint_line(line: str, background: str, width: int) -> str:
+    """`line` (one already fully-rendered/colored output row) with `background` painted behind
+    its full rendered width (requirement 5), taking precedence over any background the line's own
+    content already set (requirement 4) while leaving foreground styling untouched (requirement
+    3) -- reasserting `background` after every embedded `_RESET` the same way `_wrap_hover`
+    (`interactive_pager.py`, VIEWMD-0092) re-asserts its own wrapping style, since a fenced code
+    block's or Mermaid diagram's own syntax colors reset mid-line."""
+    plain_width = _display_width(_strip_ansi(line))
+    body = _strip_line_backgrounds(line).replace(_RESET, _RESET + background)
+    pad = " " * max(0, width - plain_width)
+    return f"{background}{body}{pad}{_RESET}"
+
+
+def _apply_tints(text: str, tint_ranges: list[tuple[int, int, str]], *, width: int) -> str:
+    """`text` with every `(start_line, end_line, kind)` in `tint_ranges` (absolute 0-indexed line
+    numbers into `text.split("\\n")`, inclusive) background-tinted per kind (requirement 3)."""
+    if not tint_ranges:
+        return text
+    lines = text.split("\n")
+    for start, end, kind in tint_ranges:
+        background = _MARK_BACKGROUND.get(kind, _MARK_BACKGROUND[DEFAULT_KIND])
+        for i in range(start, min(end, len(lines) - 1) + 1):
+            lines[i] = _tint_line(lines[i], background, width)
+    return "\n".join(lines)
+
+
+def _child_groups(tokens: list, start: int, end: int) -> list[tuple[int, int]]:
+    """Contiguous `(first_index, last_index)` pairs, each spanning one whole immediate child block
+    of the container occupying `tokens[start:end]` (or the top level of `tokens` itself, when
+    `start=0, end=len(tokens)`) -- including everything nested inside it (a whole list, table, or
+    blockquote counts as one group) -- found by tracking markdown-it's own `token.nesting` (+1
+    open / -1 close / 0 self-closing) back to zero. Indices are absolute into `tokens`, not
+    re-based to `start`, so a group from a deeper call composes directly with one from a
+    shallower call (see `_RegionPath`)."""
+    groups: list[tuple[int, int]] = []
+    depth = 0
+    group_start = start
+    for i in range(start, end):
+        if depth == 0:
+            group_start = i
+        depth += tokens[i].nesting
+        if depth == 0:
+            groups.append((group_start, i))
+    return groups
+
+
+@dataclass(frozen=True)
+class _RegionPath:
+    """Where a `MarkRegion`'s rendered content lives among `tokens` (VIEWMD-0106): `groups` is
+    the child-groups list (absolute indices into `tokens`, from `_child_groups`) at whatever
+    nesting level the match was found; `gi_first`/`gi_last` bound it within `groups`. `nested` is
+    `None` when the match sits at this level directly (VIEWMD-0104's original top-level-only
+    case); otherwise it's another `_RegionPath`, found among the single group at `gi_first`'s own
+    children (`gi_first == gi_last` whenever `nested` is set -- one containing group, recursed
+    into), for a region nested one or more levels deeper inside a single enclosing container (a
+    new list item appended to an existing list; a paragraph inside a blockquote; ...)."""
+
+    groups: list[tuple[int, int]]
+    gi_first: int
+    gi_last: int
+    nested: "_RegionPath | None"
+
+
+def _is_recursable_container(tokens: list, a: int, b: int) -> bool:
+    """Whether the container `tokens[a:b+1]` is safe to *partially* reconstruct for boundary
+    measurement (VIEWMD-0106) -- its rendering must be a pure per-child concatenation with no
+    shared whole-container framing that a "closed early" partial would duplicate prematurely.
+
+    Verified empirically: a table's box-drawn top/bottom border rows, and an admonition callout's
+    header/footer border (`ViewmdBlockQuote`, VIEWMD-0059), each render only once, at the true
+    start/end of the *whole* container -- reconstructing a partial table or partial admonition
+    (fewer rows/paragraphs, re-closed early) draws that same framing prematurely, silently
+    shifting every line-count measurement taken past that point by however many framing lines it
+    added.
+
+    An *ordered* list has the same hazard in a subtler form, verified empirically against this
+    project's pinned rich version: `ListElement.render_number` derives its numbering column's
+    width from `len(self.items) `-- the count of items *actually present in that render*, not the
+    real document's true total. A partial reconstruction (fewer items, re-closed early) therefore
+    picks a numbering-column width that can differ from the real full-list render's own whenever
+    the two item counts have a different digit count (e.g. a 12-item list truncated to 4 items:
+    real width from `len("13")+2` vs. reconstructed width from `len("4")+2`), which shifts every
+    item's own content-wrap width -- silently mismeasuring, and potentially tinting the wrong
+    item's lines rather than just failing to tint (caught by hand-verifying a 12-item ordered-list
+    repro during this issue's own review, not merely by reasoning about it). A *bullet* list has no
+    such hazard: `ListItem.render_bullet` always reserves a fixed 3-column bullet regardless of
+    item count, so a plain bullet list, and a single list item's own children (needed to recurse a
+    further level into a sub-list nested inside one item), are always safe -- but an *ordered*
+    list is deliberately excluded here, falling back to VIEWMD-0104 requirement 10's "just don't
+    tint it" fail-safe rather than risk a wrong tint. A blockquote is safe unless it renders as an
+    admonition callout, which is exactly the same unsafe shape as a table."""
+    tok = tokens[a]
+    if tok.type in ("bullet_list_open", "list_item_open"):
+        return True
+    if tok.type == "blockquote_open":
+        first_child = tokens[a + 1] if a + 1 <= b else None
+        if first_child is not None and first_child.type == "paragraph_open":
+            inline = tokens[a + 2] if a + 2 <= b else None
+            if (
+                inline is not None
+                and inline.type == "inline"
+                and parse_admonition_marker(inline.content) is not None
+            ):
+                return False
+        return True
+    return False
+
+
+def _group_line_span(tokens: list, a: int, b: int) -> tuple[int, int] | None:
+    """The `(start_line, end_line)` a whole group `tokens[a:b+1]` actually spans, scanning every
+    token in the group for its own `.map` rather than trusting just the group's first token.
+
+    `list_item_open`'s own `.map` covers only its first child's lines -- it does NOT extend over a
+    further nested block that follows within the same item (e.g. a sub-list under a list item
+    that also has its own paragraph text), unlike `bullet_list_open`/`table_open`, whose `.map`
+    does span their full nested content (verified empirically: a marked item nested two levels
+    deep, inside a sub-list inside a list item, was invisible to the containment check below until
+    this scanned the group's full token range instead of relying on `tokens[a].map` alone)."""
+    starts: list[int] = []
+    ends: list[int] = []
+    for i in range(a, b + 1):
+        token_map = tokens[i].map
+        if token_map is not None:
+            starts.append(token_map[0])
+            ends.append(token_map[1] - 1)
+    if not starts:
+        return None
+    return min(starts), max(ends)
+
+
+def _find_region_path(
+    tokens: list, region: MarkRegion, start: int = 0, end: int | None = None
+) -> _RegionPath | None:
+    """Locate `region` among `tokens[start:end]`'s own immediate child blocks, recursing one
+    level deeper into a single enclosing container when the region doesn't align with any child
+    at this level but sits entirely inside exactly one of them *and* that container is safe to
+    partially reconstruct (`_is_recursable_container`). Returns `None` if no match at any depth --
+    VIEWMD-0104 requirement 10's fail-safe: an unmatched region is simply left untinted, not an
+    error -- which also covers a region nested inside a container this function deliberately
+    never recurses into (a table row, an admonition callout's own paragraph)."""
+    if end is None:
+        end = len(tokens)
+    groups = _child_groups(tokens, start, end)
+    group_lines = [_group_line_span(tokens, a, b) for a, b in groups]
+
+    # Membership is decided by a group's *start* line only, not also requiring its end line fall
+    # inside the region: markdown-it's own block `.map` for a container (a list, in particular)
+    # legitimately extends past its last visible content line to absorb any trailing blank line
+    # consumed while deciding tight/loose list rendering, which would otherwise push a marked
+    # list's own map past the sentinel-derived `region.end_line` and silently exclude it. A
+    # group's start line is never subject to that overshoot.
+    member = [
+        i
+        for i, gl in enumerate(group_lines)
+        if gl is not None and region.start_line <= gl[0] <= region.end_line
+    ]
+    if member:
+        return _RegionPath(groups, member[0], member[-1], None)
+
+    for i, gl in enumerate(group_lines):
+        if gl is not None and gl[0] <= region.start_line and region.end_line <= gl[1]:
+            a, b = groups[i]
+            if not _is_recursable_container(tokens, a, b):
+                continue
+            nested = _find_region_path(tokens, region, a + 1, b)
+            if nested is not None:
+                return _RegionPath(groups, i, i, nested)
+    return None
+
+
+def _prefix_through(tokens: list, groups: list[tuple[int, int]], boundary_gi: int) -> list:
+    """`groups[0..boundary_gi-1]`, verbatim, as absolute tokens -- `[]` when `boundary_gi <= 0`."""
+    if boundary_gi <= 0:
+        return []
+    return tokens[groups[0][0] : groups[boundary_gi - 1][1] + 1]
+
+
+def _region_boundary_tokens(tokens: list, path: _RegionPath, side: str) -> list:
+    """Tokens forming a valid, render-safe prefix reaching exactly the `"start"` or `"end"`
+    boundary of the region `path` locates.
+
+    A bare `tokens[:cut]` slice stops being safe the moment a region is nested inside a container
+    (VIEWMD-0106): `ListElement`/`TableElement`-style container elements only emit their rendered
+    content once their own *closing* token is reached (verified empirically against this
+    project's pinned rich version) -- a prefix that stops mid-list or mid-table renders as
+    nothing at all, silently. Every group strictly before the matched one, at every nesting level,
+    is included verbatim; the single matched (or containing) group is handled at the *innermost*
+    level where the match lives (whole for `"end"`, absent for `"start"`, exactly `_prefix_through`
+    at that level), and -- when nested -- re-wrapped in its own container's open/close tokens on
+    the way back out, one level at a time, so Rich's renderer actually emits the reconstructed
+    partial container's content instead of silently absorbing it.
+    """
+    if path.nested is None:
+        boundary_gi = path.gi_first if side == "start" else path.gi_last + 1
+        return _prefix_through(tokens, path.groups, boundary_gi)
+    before = _prefix_through(tokens, path.groups, path.gi_first)
+    a, b = path.groups[path.gi_first]
+    inner = _region_boundary_tokens(tokens, path.nested, side)
+    return before + [tokens[a]] + inner + [tokens[b]]
+
+
+def _count_rendered_lines(markdown: Markdown, tokens: list, *, width: int, color: bool) -> int:
+    """Number of complete lines a fresh, standalone render of `tokens` produces -- used only to
+    measure where a mark region's rendered lines start/end (see `_mark_line_ranges`), never as
+    the actual displayed output."""
+    buffer = io.StringIO()
+    console = _make_console(buffer, width=width, color=color)
+    console.print(_markdown_with_tokens(markdown, tokens), crop=False)
+    return buffer.getvalue().count("\n")
+
+
+def _mark_line_ranges(
+    markdown: Markdown,
+    tokens: list,
+    regions: list[MarkRegion],
+    *,
+    width: int,
+    color: bool,
+) -> list[tuple[int, int, str]]:
+    """`(start_line, end_line, kind)` triples, 0-indexed and inclusive, relative to a single
+    continuous render of `tokens` -- one per `regions` entry whose source-line span this slice
+    covers (at any nesting depth -- `_find_region_path`/VIEWMD-0106).
+
+    Splitting `tokens` into multiple `console.print()` calls to isolate a region turns out to be
+    unsafe: `Markdown.__rich_console__` tracks a single flat `new_line` flag across the whole
+    call, and a container element (table/list/blockquote) toggles it via its own *nested*
+    children's closes even when those children are only absorbed, not rendered -- printing such
+    an element as the first thing in a fresh call can emit a leading blank line that wouldn't be
+    there in one continuous render (verified empirically against this project's pinned rich
+    version, and true even of a genuinely continuous render whose own first element happens to be
+    a container -- this is a real Rich behavior, not a splitting artifact). Rather than
+    special-case every element type that can do this, this instead renders a real *prefix* of
+    `tokens` for each boundary (one continuous parse-order slice, so Rich's own new_line
+    bookkeeping stays correct by construction -- reconstructed with any container it cuts through
+    properly re-closed, per `_region_boundary_tokens`, so that container's content actually
+    renders instead of being silently absorbed) into a throwaway buffer and counts its lines. The
+    real, single, unmodified `console.print(tokens, ...)` call in `render_markdown` is untouched;
+    this only measures it.
+
+    Known cost: this re-renders a prefix from token 0 for every boundary, so total work is
+    roughly quadratic in the number of marked-region boundaries in one document -- noticeable on a
+    document with several hundred marked blocks (gitgleam's own stated behavior of marking nearly
+    every block of a brand-new file). Deliberately not optimized away here: every faster scheme
+    considered (rendering just the incremental slice between two boundaries, rather than the whole
+    prefix again) reintroduces exactly the same new_line-quirk risk this function's own docstring
+    above exists to avoid, in a subtler form -- worth its own follow-up issue with room to verify
+    thoroughly, rather than a rushed change to logic that already required careful empirical
+    verification once.
+    """
+    ranges: list[tuple[int, int, str]] = []
+    for region in regions:
+        path = _find_region_path(tokens, region)
+        if path is None:
+            continue
+        start_tokens = _region_boundary_tokens(tokens, path, "start")
+        end_tokens = _region_boundary_tokens(tokens, path, "end")
+        start_line = _count_rendered_lines(markdown, start_tokens, width=width, color=color)
+        end_line = (
+            _count_rendered_lines(markdown, end_tokens, width=width, color=color) - 1
+        )
+        if end_line >= start_line:
+            ranges.append((start_line, end_line, region.kind))
+    return ranges
 
 
 def _print_toc(
@@ -511,14 +948,45 @@ def _print_toc(
     outline: list[HeadingOutline],
     full_outline: list[HeadingOutline],
     omitted: int = 0,
+    theme: str = "dark",
 ) -> None:
     if not outline:
         return
-    for line in _toc_lines(outline, full_outline):
+    for line in _toc_lines(outline, full_outline, theme):
         console.print(line)
     if omitted:
         console.print(f"... {omitted} more")
     console.print()
+
+
+def _print_body(
+    buffer: io.StringIO,
+    markdown: Markdown,
+    tokens: list,
+    regions: list[MarkRegion],
+    print_fn: Callable[[], None],
+    *,
+    width: int,
+    color: bool,
+    tint_ranges: list[tuple[int, int, str]],
+) -> None:
+    """Call `print_fn()` -- the actual, unmodified body print (whichever of the two forms
+    `render_markdown` uses at this call site) -- and, when `color` is on and `regions` is
+    non-empty, append any of `regions`' rendered line spans that `tokens` (the parsed-token slice
+    `print_fn` renders) covers onto `tint_ranges`, as absolute line numbers into `buffer`'s
+    eventual full text (measured via `buffer`'s own line count just before/after this call, since
+    nothing else writes to it concurrently). `render_markdown` calls this once per body slice it
+    prints (there can be more than one, per the h1-title/ToC split below) and applies every
+    recorded range in one pass, via `_apply_tints`, right before returning."""
+    local_ranges = (
+        _mark_line_ranges(markdown, tokens, regions, width=width, color=color)
+        if color and regions
+        else []
+    )
+    start_offset = buffer.getvalue().count("\n")
+    print_fn()
+    for start, end, kind in local_ranges:
+        tint_ranges.append((start_offset + start, start_offset + end, kind))
 
 
 def render_markdown(
@@ -528,6 +996,7 @@ def render_markdown(
     color: bool,
     full_front_matter: bool = False,
     toc: bool = True,
+    theme: str = "dark",
 ) -> str:
     """Render `text` to an ANSI string, `width` columns wide.
 
@@ -558,17 +1027,36 @@ def render_markdown(
     instead of being cropped away; ``ViewmdCodeBlock`` is what renders them at their own natural
     width in the first place. Paragraphs, tables, and other elements still wrap to ``width``
     during render — only fenced code is exempt, and only the final buffer crop is disabled.
+
+    `theme` (VIEWMD-0091) picks the color palette for admonition callouts, the front-matter
+    table, and the ToC's heading colors -- `"dark"` (the default) is today's original, unlabeled
+    palette; `"light"` swaps those three surfaces for higher-contrast colors tuned for a light
+    terminal background. It also reaches the Mermaid quadrant chart's quadrant-background fills
+    specifically (amended requirement 4) -- passed into `preprocess` below, which threads it only
+    to `render_mermaid_blocks` -> `viewmd.mermaid.render`'s quadrant branch; every other Mermaid
+    diagram type's coloring remains driven solely by `color`, untouched by `theme`.
+
+    `viewmd:mark` sentinel HTML comments (VIEWMD-0104) are stripped from the body -- the last
+    text-level rewrite before Rich's own parser ever sees it, same principle as the wikilink and
+    Mermaid rewrites above -- and, with `color` on, the block(s) they bracketed are re-rendered
+    with a background tint per `kind` (green/amber/red for added/changed/removed). With `color`
+    off, stripping the sentinels is the *only* effect; requirement 6 (VIEWMD-0104) requires the
+    output be otherwise identical to the same document with no marks at all, so no tint-measuring
+    machinery runs in that case.
     """
     raw_front_matter, body = split_front_matter(text)
     front_matter = parse_front_matter(raw_front_matter) if raw_front_matter is not None else {}
     if not full_front_matter:
         front_matter = drop_empty(front_matter)
-    body = preprocess(body, color=color, width=width)
+    body = preprocess(body, color=color, width=width, theme=theme)
+    body, regions, mark_warnings = strip_marks(body)
+    for warning in mark_warnings:
+        print(f"viewmd: {warning}", file=sys.stderr)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
     if front_matter:
-        console.print(_front_matter_table(front_matter))
+        console.print(_front_matter_table(front_matter, theme=theme))
         # A double-line rule, distinct from Markdown's own "-" horizontal rule, so a reader never
         # mistakes this divider for document content.
         console.print(Rule(characters="═", style="dim"))
@@ -577,29 +1065,58 @@ def render_markdown(
     # h1 is sliced out of that stream and rendered from the same tokens so it is
     # not duplicated in the ToC or again below it, and so later link-reference
     # definitions still resolve in the title (VIEWMD-0062).
-    markdown = ViewmdMarkdown(body, code_theme="monokai")
+    markdown = ViewmdMarkdown(
+        body, code_theme=_CODE_THEME_BY_THEME.get(theme, _CODE_THEME_BY_THEME["dark"])
+    )
+    # VIEWMD-0091: stamped onto the instance (not a constructor arg -- `ViewmdMarkdown`'s is
+    # fixed by rich's own `Markdown.__init__`) so `ViewmdBlockQuote.create` can read it back per
+    # admonition (see that method's own comment).
+    markdown.viewmd_theme = theme
+    tint_ranges: list[tuple[int, int, str]] = []
     if toc:
         outline = heading_outline(markdown)
         if len(outline) >= 2:
             split = _split_parsed_at_leading_h1(markdown.parsed)
             if split is not None and outline[0].level == 1:
                 title_tokens, rest_tokens = split
-                console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
+
+                def _print_title() -> None:
+                    console.print(_markdown_with_tokens(markdown, title_tokens), crop=False)
+
+                _print_body(
+                    buffer, markdown, title_tokens, regions, _print_title,
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
                 console.print()
                 fitted, omitted = _fit_toc_outline(outline[1:])
                 # `outline` (title included), not `outline[1:]` -- occurrence ranks (VIEWMD-0077)
                 # must be computed against the *same* full list `_locate_headings()`
                 # (`viewmd/interactive_pager.py`) builds its own `headings` from, which also
                 # includes the title.
-                _print_toc(console, fitted, outline, omitted)
-                console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
+                _print_toc(console, fitted, outline, omitted, theme=theme)
+
+                def _print_rest() -> None:
+                    console.print(_markdown_with_tokens(markdown, rest_tokens), crop=False)
+
+                _print_body(
+                    buffer, markdown, rest_tokens, regions, _print_rest,
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
             else:
                 fitted, omitted = _fit_toc_outline(outline)
-                _print_toc(console, fitted, outline, omitted)
-                console.print(markdown, crop=False)
-            return buffer.getvalue()
-    console.print(markdown, crop=False)
-    return buffer.getvalue()
+                _print_toc(console, fitted, outline, omitted, theme=theme)
+                _print_body(
+                    buffer, markdown, markdown.parsed, regions,
+                    lambda: console.print(markdown, crop=False),
+                    width=width, color=color, tint_ranges=tint_ranges,
+                )
+            return _apply_tints(buffer.getvalue(), tint_ranges, width=width)
+    _print_body(
+        buffer, markdown, markdown.parsed, regions,
+        lambda: console.print(markdown, crop=False),
+        width=width, color=color, tint_ranges=tint_ranges,
+    )
+    return _apply_tints(buffer.getvalue(), tint_ranges, width=width)
 
 
 def render_file_heading(path: str, *, width: int, color: bool) -> str:
@@ -621,7 +1138,8 @@ def render_divider(*, width: int, color: bool) -> str:
 
 
 def render_front_matter_block(
-    text: str, *, width: int, color: bool = False, full_front_matter: bool = False
+    text: str, *, width: int, color: bool = False, full_front_matter: bool = False,
+    theme: str = "dark",
 ) -> str:
     """The front-matter table plus divider exactly as `render_markdown` would print them, or
     empty string if it would print neither (no front matter, an unterminated `---` block, or a
@@ -637,7 +1155,7 @@ def render_front_matter_block(
         return ""
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
-    console.print(_front_matter_table(front_matter))
+    console.print(_front_matter_table(front_matter, theme=theme))
     console.print(Rule(characters="═", style="dim"))
     return buffer.getvalue()
 
@@ -671,12 +1189,25 @@ def _markdown_title(path: str) -> str:
     return os.path.basename(path)
 
 
-def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
-    """Render a one-level table-of-contents view of `dir_path`, used when a `path` argument is a
-    directory with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
-    subdirectories and Markdown files only (no recursion), subdirectories first then files, each
-    alphabetically; a raw `OSError` from listing the directory (e.g. permission denied) is left
-    to propagate, matching how an unreadable file is handled elsewhere in this module.
+def _format_size(num_bytes: int) -> str:
+    """Human-readable byte size (`340B`, `1.2K`, `4.0M`, ...) for the directory-listing size
+    column -- base-1024 units, one decimal place from `K` up, no decimal for a plain byte count.
+    """
+    if num_bytes < 1024:
+        return f"{num_bytes}B"
+    size = float(num_bytes)
+    for unit in "KMGT":
+        size /= 1024
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+    return f"{size:.1f}P"
+
+
+def _list_dir_entries(dir_path: str) -> tuple[list[str], list[str]]:
+    """`(dirs, files)` immediately inside `dir_path`, each sorted alphabetically -- `dirs` every
+    subdirectory, `files` every `.md` file -- the shared listing/filtering/sort rule
+    `render_directory_listing` applies at every depth level and `_entry_count` reuses to describe
+    a subdirectory's own contents without listing them.
     """
     entry_names = os.listdir(dir_path)
     dirs = sorted(
@@ -686,34 +1217,176 @@ def render_directory_listing(dir_path: str, *, width: int, color: bool) -> str:
         name for name in entry_names
         if name.lower().endswith(".md") and os.path.isfile(os.path.join(dir_path, name))
     )
+    return dirs, files
 
-    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    table.add_column("Name", style="cyan", no_wrap=True)
+
+def _entry_count(dir_path: str) -> str:
+    """`"N items"` (or `"1 item"`) for a subdirectory row's size column -- the count of that
+    subdirectory's own immediate children that would themselves appear in a listing (subdirs plus
+    `.md` files, same rule as `_list_dir_entries`), not a byte size, since a directory has no
+    single meaningful size of its own (VIEWMD-0089 requirement 1).
+
+    Blank (not a raised `OSError`) if `dir_path` can't be listed (e.g. permission denied): unlike
+    `depth > 1` actually descending into a subdirectory -- where an unreadable one is left to
+    propagate, matching this module's existing "an unreadable path aborts the render" precedent --
+    showing *some* row for every subdirectory, blank count included, is more useful than a bare
+    listing of a directory's immediate children (still depth 1 by default) suddenly crashing on a
+    subdirectory whose contents were never otherwise inspected before this issue.
+    """
+    try:
+        dirs, files = _list_dir_entries(dir_path)
+    except OSError:
+        return ""
+    count = len(dirs) + len(files)
+    return f"{count} item" if count == 1 else f"{count} items"
+
+
+def _iter_listing_rows(
+    dir_path: str, depth: int, level: int = 0
+) -> list[tuple[int, str, str, str]]:
+    """Flattened `(level, kind, name, full_path)` rows for `dir_path` down to `depth` levels,
+    `kind` being `"dir"` or `"file"` -- depth-first so each subdirectory's own children (if any,
+    within `depth`) immediately follow it, subdirectories-first-then-alphabetical within every
+    directory visited, matching the flat (depth-1) order exactly when `depth == 1`."""
+    dirs, files = _list_dir_entries(dir_path)
+    rows: list[tuple[int, str, str, str]] = []
+    for name in dirs:
+        full_path = os.path.join(dir_path, name)
+        rows.append((level, "dir", name, full_path))
+        if level + 1 < depth:
+            rows.extend(_iter_listing_rows(full_path, depth, level + 1))
+    for name in files:
+        rows.append((level, "file", name, os.path.join(dir_path, name)))
+    return rows
+
+
+def _truncate_filename(name: str, max_len: int = 25) -> str:
+    """Truncate a bare filename (or `name + "/"` directory display string) to at most `max_len`
+    characters, always preserving its extension in full, with the `...` ellipsis placed right
+    before the extension rather than at the very end of the whole string -- e.g.
+    `"VIEWMD-0031-er-layout-legibility-review.md"` (44 chars) becomes `"VIEWMD-0031-er-layo....md"`
+    (25 chars: a 19-char stem fragment, `...`, then the full `.md` extension), per the maintainer's
+    second round of manual testing feedback on VIEWMD-0089 (superseding the earlier Rich
+    `max_width=55, overflow="ellipsis"` column-width-based approach, which truncated by raw display
+    width with no awareness of extensions or a fixed character budget).
+
+    `name` is expected to be just the filename/directory-name portion, with no `--depth` indent
+    prefix -- callers must truncate first and prepend the (structural, not part of the "name")
+    indent afterward, so the budget is always spent on the name itself, not swallowed by
+    indentation at deeper levels.
+
+    A trailing `/` (this module's convention for a subdirectory row's display name) is treated as
+    the "extension" that always survives truncation, the same way a file's `.md` does -- so a long
+    subdirectory name doesn't lose its trailing slash, keeping the row visually identifiable as a
+    directory at a glance, and keeping directory/file truncation one consistent rule rather than a
+    special case.
+
+    A name with no extension at all (no `.`) or a dotfile like `.gitignore` (a leading dot with
+    nothing before it, so there's no real "stem") falls back to treating the whole name as the
+    stem, with the ellipsis at the very end and no separate extension to preserve -- there's
+    nothing to protect it from.
+
+    If the extension itself is long enough that `max_len - len(extension) - len("...")` would be
+    non-positive (a pathological input, not expected from any real filename this project handles),
+    the ellipsis-plus-extension scheme is abandoned entirely and the whole string is hard-truncated
+    to `max_len` characters -- a plain, if unhelpful, floor rather than a negative-length slice or
+    an over-length result.
+    """
+    if len(name) <= max_len:
+        return name
+
+    if name.endswith("/"):
+        stem, ext = name[:-1], "/"
+    else:
+        stem, dot, ext_part = name.rpartition(".")
+        if dot and stem:
+            ext = dot + ext_part
+        else:
+            stem, ext = name, ""
+
+    ellipsis = "..."
+    budget = max_len - len(ext) - len(ellipsis)
+    if budget < 1:
+        return name[:max_len]
+    return stem[:budget] + ellipsis + ext
+
+
+def render_directory_listing(
+    dir_path: str, *, width: int, color: bool, depth: int = 1, theme: str = "dark"
+) -> str:
+    """Render a table-of-contents view of `dir_path`, used when a `path` argument is a directory
+    with none of `INDEX_FILENAMES` inside it (VIEWMD-0065, VIEWMD-0074). Lists immediate
+    subdirectories and Markdown files, subdirectories first then files, each alphabetically; a raw
+    `OSError` from listing the directory (e.g. permission denied) is left to propagate, matching
+    how an unreadable file is handled elsewhere in this module.
+
+    `depth` (default `1`, today's original behavior) descends into subdirectories up to that many
+    levels, each row indented two spaces per level below the top (VIEWMD-0089 requirement 2); a
+    caller passing `depth > 1` is expected to have already capped it to something reasonable for a
+    terminal-rendering tool (`viewmd.__main__`'s `--depth`, requirement 4) -- this function itself
+    does not re-clamp.
+
+    Only top-level (`depth == 1`, i.e. `level == 0`) subdirectory rows carry a clickable
+    `_DIR_ANCHOR_SCHEME` href: `_resolve_dir_target` (`interactive_pager.py`) resolves that scheme
+    by joining the name directly onto the *currently displayed* directory, an invariant that only
+    holds for an immediate child -- a `level > 0` row names a deeper descendant, not an immediate
+    child of `dir_path`, so it is rendered as plain (still escaped) text instead of a link rather
+    than widening that resolver's contract.
+
+    `theme` (VIEWMD-0091) picks the header/`Name`-column accent color via `_TABLE_STYLE_BY_THEME`,
+    the same dict the front-matter table uses, for one consistent accent across both tables.
+    """
+    header_style, column_style = _TABLE_STYLE_BY_THEME.get(theme, _TABLE_STYLE_BY_THEME["dark"])
+    table = Table(show_header=True, header_style=header_style, box=box.ROUNDED, expand=False)
+    # No `max_width`/`overflow` here: Rich's own column-width truncation crops by raw display
+    # width with no awareness of file extensions or a fixed character budget (the earlier
+    # `max_width=55, overflow="ellipsis"` attempt at this same problem, superseded per the
+    # maintainer's second round of manual testing feedback). Instead, `_truncate_filename` caps
+    # each bare name to 25 characters *before* it ever reaches the table, always preserving the
+    # extension (or a directory's trailing `/`) in full with the `...` ellipsis placed right
+    # before it -- `no_wrap=True` is kept only so Rich never re-wraps the (already short) result.
+    table.add_column("Name", style=column_style, no_wrap=True)
     table.add_column("Type", no_wrap=True)
     table.add_column("Title")
+    table.add_column("Size", no_wrap=True, justify="right")
     table.add_column("Modified", no_wrap=True)
 
-    for name in dirs:
-        # A `Text` cell (rather than the plain, markup-escaped strings the other columns use)
-        # so a real OSC8 link can be layered on via `stylize` -- same pattern as the static ToC
-        # block's own heading links (`_toc_lines`, above). `Text` never parses console markup,
-        # so no `escape()` call is needed here the way the plain-string cells still need one.
-        name_cell = Text(name + "/")
-        href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
-        name_cell.stylize(Style(link=href))
-        table.add_row(name_cell, "dir", "", "")
-    for name in files:
-        full_path = os.path.join(dir_path, name)
-        title = _markdown_title(full_path)
-        modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime("%Y-%m-%d %H:%M")
-        # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use (VIEWMD-0081) --
-        # a plain relative-path href (no scheme prefix), unlike the `_DIR_ANCHOR_SCHEME`-tagged
-        # subdirectory hrefs, since this needs to resolve through `_resolve_link_target()`
-        # (`interactive_pager.py`) the same way an ordinary in-document relative link does, not
-        # through `_resolve_dir_target()` (VIEWMD-0093).
-        name_cell = Text(name)
-        name_cell.stylize(Style(link=urllib.parse.quote(name)))
-        table.add_row(name_cell, "file", escape(title), modified)
+    for level, kind, name, full_path in _iter_listing_rows(dir_path, depth):
+        indent = "  " * level
+        if kind == "dir":
+            display_name = _truncate_filename(name + "/")
+            if level == 0:
+                # A `Text` cell (rather than the plain, markup-escaped strings the other columns
+                # use) so a real OSC8 link can be layered on via `stylize` -- same pattern as the
+                # static ToC block's own heading links (`_toc_lines`, above). `Text` never parses
+                # console markup, so no `escape()` call is needed here the way the plain-string
+                # cells still need one.
+                name_cell: Text | str = Text(indent + display_name)
+                href = f"{_DIR_ANCHOR_SCHEME}{urllib.parse.quote(name)}"
+                name_cell.stylize(Style(link=href))
+            else:
+                name_cell = escape(indent + display_name)
+            table.add_row(name_cell, "dir", "", _entry_count(full_path), "")
+        else:
+            title = _markdown_title(full_path)
+            size = _format_size(os.path.getsize(full_path))
+            modified = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime(
+                "%Y-%m-%d %H:%M"
+            )
+            display_name = _truncate_filename(name)
+            if level == 0:
+                # Same `Text`-cell-plus-`stylize` pattern the subdirectory rows above use
+                # (VIEWMD-0081) -- a plain relative-path href (no scheme prefix), unlike the
+                # `_DIR_ANCHOR_SCHEME`-tagged subdirectory hrefs, since this needs to resolve
+                # through `_resolve_link_target()` (`interactive_pager.py`) the same way an
+                # ordinary in-document relative link does, not through `_resolve_dir_target()`
+                # (VIEWMD-0093). The href uses the untruncated `name` -- only the displayed text
+                # is shortened, navigation still targets the real file.
+                name_cell = Text(indent + display_name)
+                name_cell.stylize(Style(link=urllib.parse.quote(name)))
+            else:
+                name_cell = escape(indent + display_name)
+            table.add_row(name_cell, "file", escape(title), size, modified)
 
     buffer = io.StringIO()
     console = _make_console(buffer, width=width, color=color)
@@ -730,6 +1403,7 @@ def render_multi_file(
     color: bool,
     full_front_matter: bool,
     toc: bool,
+    theme: str = "dark",
 ) -> str:
     """Render a resolved multi-file concatenation (two or more `path` arguments, VIEWMD-0013),
     each entry preceded by a heading naming its path and separated by a divider. `entries` is
@@ -747,16 +1421,21 @@ def render_multi_file(
             parts.append(render_divider(width=width, color=color))
         parts.append(render_file_heading(display_path, width=width, color=color))
         if text is None:
-            parts.append(render_directory_listing(display_path, width=directory_width, color=color))
+            parts.append(render_directory_listing(display_path, width=directory_width,
+                                                    color=color, theme=theme))
         else:
             parts.append(render_markdown(text, width=width, color=color,
-                                         full_front_matter=full_front_matter, toc=toc))
+                                         full_front_matter=full_front_matter, toc=toc,
+                                         theme=theme))
     return "".join(parts)
 
 
-def _front_matter_table(data: dict[str, str]) -> Table:
-    table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED, expand=False)
-    table.add_column("Field", style="cyan", no_wrap=True)
+def _front_matter_table(data: dict[str, str], *, theme: str = "dark") -> Table:
+    header_style, column_style = _TABLE_STYLE_BY_THEME.get(
+        theme, _TABLE_STYLE_BY_THEME["dark"]
+    )
+    table = Table(show_header=True, header_style=header_style, box=box.ROUNDED, expand=False)
+    table.add_column("Field", style=column_style, no_wrap=True)
     table.add_column("Value")
     for key, value in data.items():
         table.add_row(key, value)

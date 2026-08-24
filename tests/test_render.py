@@ -1,7 +1,11 @@
+import os
 import re
+from pathlib import Path
 
 from viewmd.mermaid.preprocess import MERMAID_RENDERED_INFO
 from viewmd.render import (
+    _format_size,
+    _truncate_filename,
     render_directory_listing,
     render_divider,
     render_file_heading,
@@ -10,6 +14,7 @@ from viewmd.render import (
 )
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m|\x1b\]8;[^\x1b]*\x1b\\")
+THEME_FIXTURES = Path(__file__).parent / "fixtures" / "theme"
 
 
 def strip_ansi(text: str) -> str:
@@ -151,6 +156,189 @@ def test_front_matter_block_empty_when_no_table_would_render():
     ) == ""
 
 
+# VIEWMD-0091: `--theme {dark,light}` selects the color palette for admonition callouts and the
+# front-matter table (and, separately, the ToC's heading colors -- see
+# test_toc_heading_color_differs_between_dark_and_light_theme below). `theme` defaults to "dark",
+# today's original unlabeled palette, so every fixture/test elsewhere in this file that never
+# passes `theme=` is itself an implicit "dark (default)" pin -- these tests below are the explicit
+# ones the issue's acceptance criteria calls for: a `--theme light` fixture for an admonition
+# block and for the front-matter table, each alongside its `--theme dark` counterpart so a
+# regression in either palette, or an accidental cross-theme bleed, shows up as a fixture diff.
+def test_admonition_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-dark.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="dark") == expected
+
+
+def test_admonition_theme_light_matches_fixture():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    expected = (THEME_FIXTURES / "note-light.out").read_text()
+    assert render_markdown(md, width=60, color=True, theme="light") == expected
+
+
+def test_admonition_theme_defaults_to_dark():
+    md = (THEME_FIXTURES.parent / "admonition" / "note.md").read_text()
+    assert render_markdown(md, width=60, color=True) == render_markdown(
+        md, width=60, color=True, theme="dark"
+    )
+
+
+def test_front_matter_table_theme_dark_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-dark.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="dark") == expected
+
+
+def test_front_matter_table_theme_light_matches_fixture():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    expected = (THEME_FIXTURES / "frontmatter-light.out").read_text()
+    assert render_front_matter_block(md, width=80, color=True, theme="light") == expected
+
+
+def test_front_matter_table_theme_defaults_to_dark():
+    md = (THEME_FIXTURES / "frontmatter.md").read_text()
+    assert render_front_matter_block(md, width=80, color=True) == render_front_matter_block(
+        md, width=80, color=True, theme="dark"
+    )
+
+
+def _toc_entry_lines(rendered: str) -> list[str]:
+    """The rendered ToC's own bulleted lines -- identified by the `viewmd-toc:` OSC8 hyperlink
+    `_toc_lines` (viewmd/render.py) attaches to each entry -- as opposed to the body's own later
+    heading lines, which reuse the same heading *text* but are unaffected by this issue's ToC
+    color theming (see _toc_heading_style's own docstring: only the ToC entry, not the body
+    heading, is retargeted for `light`)."""
+    return [line for line in rendered.splitlines() if "viewmd-toc:" in line]
+
+
+def test_toc_heading_color_differs_between_dark_and_light_theme():
+    # Rich's default theme colors markdown.h2 plain "magenta" (SGR 35); light overrides that to
+    # an explicit truecolor purple (see _TOC_HEADING_STYLE_LIGHT in viewmd/render.py) for better
+    # contrast on a light background -- so the two themes' ToC entries must carry different SGR
+    # codes for the same heading, while the heading *text* itself stays identical either way. The
+    # body's own (later, separate) h2 heading line is intentionally left unthemed either way --
+    # this issue's requirement is the ToC's heading colors specifically, not the body's.
+    md = "# Title\n\n## Section A\n\n## Section B\n\nbody\n"
+    dark = render_markdown(md, width=80, color=True, theme="dark")
+    light = render_markdown(md, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_toc_lines = _toc_entry_lines(dark)
+    light_toc_lines = _toc_entry_lines(light)
+    assert len(dark_toc_lines) == len(light_toc_lines) == 2
+    assert all("\x1b[4;35m" in line for line in dark_toc_lines)  # markdown.h2: underline+magenta
+    assert not any("\x1b[4;35m" in line for line in light_toc_lines)
+
+
+def test_no_color_theme_output_is_unaffected_by_theme():
+    # `color=False` strips every SGR/OSC8 sequence regardless of palette, so dark vs. light must
+    # be visually indistinguishable -- and byte-identical -- when color is off entirely.
+    md = "---\ntitle: Hello\n---\n\n# Title\n\n## A\n\n## B\n\n> [!NOTE]\n> a note\n"
+    dark = render_markdown(md, width=80, color=False, theme="dark")
+    light = render_markdown(md, width=80, color=False, theme="light")
+    assert dark == light
+
+
+# VIEWMD-0091 amended requirement 4: `--theme` reaches Mermaid quadrant-chart background fills
+# specifically, end to end through render_markdown -> preprocess -> render_mermaid_blocks ->
+# viewmd.mermaid.render's quadrant branch -- exercised here against the real doc,
+# docs/mermaid-quadrant.md, not a synthetic fixture, per AGENTS.md's own "verify in composition"
+# lesson.
+_QUADRANT_DOC = (
+    "```mermaid\n"
+    "quadrantChart\n"
+    "    title Priority Matrix\n"
+    "    x-axis Low Effort --> High Effort\n"
+    "    y-axis Low Impact --> High Impact\n"
+    "    quadrant-1 Do First\n"
+    "    quadrant-2 Plan\n"
+    "    quadrant-3 Delegate\n"
+    "    quadrant-4 Skip\n"
+    "    Cache: [0.2, 0.8]\n"
+    "    Rewrite: [0.9, 0.3]\n"
+    "```\n"
+)
+
+
+def test_quadrant_background_fill_reaches_light_theme_end_to_end_through_render_markdown():
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="light")
+    dark_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", dark))
+    light_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", light))
+    assert dark_bg and light_bg
+    assert dark_bg != light_bg
+
+    def brightness(rgb: str) -> int:
+        return sum(int(c) for c in rgb.split(";"))
+
+    assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
+
+
+def test_quadrant_background_fill_omitted_theme_matches_dark_default_through_render_markdown():
+    omitted = render_markdown(_QUADRANT_DOC, width=80, color=True)
+    dark = render_markdown(_QUADRANT_DOC, width=80, color=True, theme="dark")
+    assert strip_ansi(omitted) == strip_ansi(dark)
+    assert set(re.findall(r"48;2;(\d+;\d+;\d+)", omitted)) == set(
+        re.findall(r"48;2;(\d+;\d+;\d+)", dark)
+    )
+
+
+# Requirement 4's "MUST NOT" clause: pie-chart coloring is driven only by `color`, never `theme`
+# -- byte-identical output across every `--theme` value.
+_PIE_DOC = (
+    "```mermaid\n"
+    "pie title Pets\n"
+    "    \"Dogs\" : 40\n"
+    "    \"Cats\" : 35\n"
+    "    \"Birds\" : 25\n"
+    "```\n"
+)
+
+
+def test_pie_chart_rendering_is_unaffected_by_theme():
+    omitted = render_markdown(_PIE_DOC, width=80, color=True)
+    dark = render_markdown(_PIE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_PIE_DOC, width=80, color=True, theme="light")
+    assert omitted == dark == light
+
+
+# VIEWMD-0091 amended requirement 6: `--theme` also picks the Pygments theme used for fenced
+# code blocks (and, via rich's own inline_code_theme-defaults-to-code_theme fallback, inline
+# code spans) -- `render_markdown`'s `ViewmdMarkdown(body, code_theme="monokai")` used to be
+# hardcoded regardless of `theme`; "dark" now maps to the same "monokai" as before (unchanged),
+# "light" to Pygments' built-in "paraiso-light" theme. A fenced block using a real lexer (Python) is
+# needed here, not a bare ``` fence -- Pygments only emits per-token color codes when there's a
+# lexer with a syntax to highlight, so a codeless fence wouldn't actually exercise a theme's
+# palette differences the way this issue's own acceptance criteria calls for.
+_CODE_FENCE_DOC = "```python\nimport os\n\ndef greet(name):\n    return f\"hi {name}\"\n```\n"
+
+
+def test_code_fence_theme_light_differs_from_dark_and_is_not_the_old_dark_codes():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    dark_codes = set(ANSI_RE.findall(dark)) - {"\x1b[0m"}
+    light_codes = set(ANSI_RE.findall(light)) - {"\x1b[0m"}
+    assert dark_codes and light_codes
+    # The light theme must not reuse monokai's own background/foreground SGR codes -- i.e. this
+    # isn't accidentally still rendering with the old hardcoded dark theme. ("\x1b[0m", the plain
+    # reset sequence, is excluded above -- it's shared trivially by any two colored renders.)
+    assert not (light_codes & dark_codes)
+
+
+def test_code_fence_theme_defaults_to_dark_monokai_unchanged():
+    omitted = render_markdown(_CODE_FENCE_DOC, width=80, color=True)
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=True, theme="dark")
+    assert omitted == dark
+
+
+def test_code_fence_no_color_output_is_unaffected_by_theme():
+    dark = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="dark")
+    light = render_markdown(_CODE_FENCE_DOC, width=80, color=False, theme="light")
+    assert dark == light
+
+
 # Rich's markdown.link_url style is underline + blue (SGR 4;34).
 LINK_URL_ANSI = re.compile(r"\x1b\[4;34m")
 
@@ -273,6 +461,7 @@ def test_render_directory_listing_escapes_rich_markup_in_names_and_titles(tmp_pa
                         lambda p: p.endswith("[red]evil[/red].md"))
     monkeypatch.setattr(render_module, "_markdown_title", lambda p: "[link=x]y[/link]")
     monkeypatch.setattr(render_module.os.path, "getmtime", lambda p: 0)
+    monkeypatch.setattr(render_module.os.path, "getsize", lambda p: 0)
 
     out = render_directory_listing(str(tmp_path), width=80, color=False)
 
@@ -334,6 +523,131 @@ def test_render_directory_listing_no_file_link_without_color(tmp_path):
     assert "a.md" in out
 
 
+def _column_widths(out: str) -> list[int]:
+    """Segment widths (Name, Type, Title, Size, Modified) of a `render_directory_listing` table,
+    read off its own top border row (`╭─...─┬─...─┬...─╮`) rather than the header text, since a
+    column's rendered width (its actual constraint on wrapping) includes the padding either side
+    of the label, not just the label's own length."""
+    border = next(line for line in out.split("\n") if line.startswith("╭"))
+    return [len(seg) for seg in border.strip("╭╮").split("┬")]
+
+
+def test_render_directory_listing_caps_a_long_name_at_25_chars_preserving_extension(tmp_path):
+    # Bug found in manual maintainer testing (first fix attempt, `max_width=55,
+    # overflow="ellipsis"`, was insufficient -- the maintainer wanted a specific 25-char,
+    # extension-preserving scheme instead of Rich's generic column-width truncation). A name's
+    # extension must always survive in full, with `...` right before it, and the whole displayed
+    # name capped at exactly 25 characters.
+    long_name = "a" * 80 + ".md"
+    (tmp_path / long_name).write_text("# Heading\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=160, color=False))
+
+    assert long_name not in out  # the full 83-char name never appears uncapped
+    expected = "a" * 19 + "..." + ".md"  # budget: 25 - len(".md") - len("...") = 19 stem chars
+    assert len(expected) == 25
+    assert expected in out
+    assert ".md" in out  # extension survives in full
+
+
+def test_render_directory_listing_title_column_wider_with_a_long_name_present(tmp_path):
+    # Companion to the cap test above: verify the *point* of the cap actually holds -- with the
+    # `Name` column now capped to 25 characters by `_truncate_filename` before it ever reaches the
+    # table, `Title` gets materially more of the remaining width than an uncapped `Name` column
+    # (built the same way `render_directory_listing` used to, before either fix) would have left
+    # it. Reproduces the maintainer's own screenshot scenario: a long filename alongside a long
+    # title sentence that used to wrap across 6 narrow lines.
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    long_name = "VIEWMD-0031-er-layout-legibility-review-with-a-really-long-filename-example.md"
+    title = ("Review Mermaid ER diagram entity placement and connector routing for "
+             "unnecessary visual clutter on small diagrams")
+    (tmp_path / long_name).write_text(f"---\ntitle: {title}\n---\n\nbody\n")
+
+    fixed_out = render_directory_listing(str(tmp_path), width=120, color=False)
+    fixed_title_w = _column_widths(fixed_out)[2]
+
+    # The pre-fix shape: the same five columns, but `Name` with no cap at all.
+    old_table = Table(show_header=True, box=box.ROUNDED, expand=False)
+    old_table.add_column("Name", no_wrap=True)
+    old_table.add_column("Type", no_wrap=True)
+    old_table.add_column("Title")
+    old_table.add_column("Size", no_wrap=True)
+    old_table.add_column("Modified", no_wrap=True)
+    old_table.add_row(long_name, "file", title, "135B", "2026-08-20 20:25")
+    import io
+    buf = io.StringIO()
+    Console(file=buf, width=120, force_terminal=False).print(old_table)
+    old_out = buf.getvalue()
+    old_title_w = _column_widths(old_out)[2]
+
+    assert fixed_title_w > old_title_w
+
+
+# --- _truncate_filename (VIEWMD-0089, second-round manual testing feedback) -----------------
+
+
+def test_truncate_filename_leaves_a_short_name_untouched():
+    name = "short-name.md"  # well under 25 chars
+    assert _truncate_filename(name) == name
+
+
+def test_truncate_filename_truncates_a_long_name_to_25_preserving_extension():
+    name = "VIEWMD-0031-er-layout-legibility-review.md"  # 43 chars, well over 25
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result.endswith(".md")
+    assert "..." in result
+    assert result.index("...") + 3 == len(result) - 3  # ellipsis sits right before the extension
+
+
+def test_truncate_filename_boundary_at_exactly_25_chars_is_untouched():
+    name = "a" * 22 + ".md"  # exactly 25 chars
+    assert len(name) == 25
+    assert _truncate_filename(name) == name  # "already <= 25" -- shown as-is, no truncation
+
+    name_over = "a" * 23 + ".md"  # 26 chars, one over the boundary
+    result = _truncate_filename(name_over)
+    assert len(result) == 25
+    assert result.endswith(".md")
+
+
+def test_truncate_filename_with_no_extension():
+    name = "a" * 30  # no "." anywhere
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == "a" * 22 + "..."  # ellipsis at the very end, whole name treated as the stem
+
+
+def test_truncate_filename_dotfile_with_no_real_stem_has_no_extension_to_preserve():
+    # A leading-dot name like ".gitignore" has nothing before the dot -- treated as "no
+    # extension" (whole name is the stem), not as an empty-stem extension of ".gitignore".
+    name = "." + "a" * 30
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == "." + "a" * 21 + "..."
+
+
+def test_truncate_filename_preserves_a_long_directory_name_trailing_slash():
+    name = "a" * 30 + "/"  # a subdirectory display name, 31 chars
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result.endswith("/")
+    assert result == "a" * 21 + ".../"
+
+
+def test_truncate_filename_degenerate_budget_falls_back_to_a_hard_truncation():
+    # Extension alone (30 chars incl. leading dot) leaves no room for a stem fragment plus "...".
+    # Documented floor behavior: abandon the ellipsis/extension scheme, hard-truncate the whole
+    # string to max_len instead of producing a negative-length slice or an over-length result.
+    name = "a" + "." + "x" * 29  # ext is ".xxx...x" (30 chars), name is 31 chars total
+    result = _truncate_filename(name)
+    assert len(result) == 25
+    assert result == name[:25]
+
+
 def test_render_directory_listing_does_not_recurse(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()
@@ -342,6 +656,204 @@ def test_render_directory_listing_does_not_recurse(tmp_path):
     out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
 
     assert "nested.md" not in out
+
+
+# --- size column (VIEWMD-0089) ---------------------------------------------------------------
+
+
+def test_format_size_boundaries():
+    assert _format_size(0) == "0B"
+    assert _format_size(340) == "340B"
+    assert _format_size(1023) == "1023B"
+    assert _format_size(1024) == "1.0K"
+    assert _format_size(1536) == "1.5K"
+    assert _format_size(1024 * 1024) == "1.0M"
+    assert _format_size(1024 * 1024 - 1) == "1024.0K"
+
+
+def test_render_directory_listing_shows_human_readable_file_size(tmp_path):
+    (tmp_path / "small.md").write_bytes(b"#" + b" " * 339)  # 340 bytes
+    (tmp_path / "big.md").write_bytes(b"#" + b" " * 1535)  # 1536 bytes
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "340B" in out
+    assert "1.5K" in out
+
+
+def test_render_directory_listing_size_column_is_right_aligned(tmp_path):
+    # Maintainer testing feedback: the Size column should be right-aligned rather than left,
+    # matching how numeric/size columns conventionally read (`ls -l`, `du`, etc.).
+    (tmp_path / "small.md").write_bytes(b"#" + b" " * 339)  # 340 bytes, "340B"
+    (tmp_path / "big.md").write_bytes(b"#" + b" " * 1535)  # 1536 bytes, "1.5K"
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+    size_col_w = _column_widths(out)[3]
+
+    for line in out.split("\n"):
+        if "340B" in line or "1.5K" in line:
+            cell = line.split("│")[4]  # Name│Type│Title│Size│Modified
+            assert cell.rstrip().endswith(("340B", "1.5K"))
+            assert len(cell) == size_col_w
+
+
+def test_render_directory_listing_subdirectory_size_column_is_entry_count_not_bytes(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "a.md").write_text("# A\n")
+    (sub / "b.md").write_text("# B\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "2 items" in out
+
+
+def test_render_directory_listing_empty_subdirectory_shows_singular_item(tmp_path):
+    (tmp_path / "empty").mkdir()
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "0 items" in out
+
+
+def test_render_directory_listing_unreadable_subdirectory_shows_blank_size_not_a_crash(
+    tmp_path, monkeypatch
+):
+    # A depth-1 (the default) listing never used to need permission to peek inside a
+    # subdirectory's own contents -- it only listed the parent. Showing an entry count for each
+    # subdirectory row must not turn a permission-denied subdirectory into a crash for the
+    # otherwise-unaffected default case (found in self-review).
+    import viewmd.render as render_module
+
+    (tmp_path / "sub").mkdir()
+    real_listdir = render_module.os.listdir
+
+    def fake_listdir(path):
+        if os.path.basename(path) == "sub":
+            raise PermissionError(13, "Permission denied")
+        return real_listdir(path)
+
+    monkeypatch.setattr(render_module.os, "listdir", fake_listdir)
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+
+    assert "sub" in out
+
+
+# --- --depth (VIEWMD-0089) -------------------------------------------------------------------
+
+
+def test_render_directory_listing_default_depth_matches_pre_existing_depth_1_output(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    (tmp_path / "a.md").write_text("# A\n")
+
+    default_depth = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False))
+    explicit_depth_1 = strip_ansi(
+        render_directory_listing(str(tmp_path), width=80, color=False, depth=1)
+    )
+
+    assert default_depth == explicit_depth_1
+    assert "sub" in default_depth
+    assert "a.md" in default_depth
+    assert "nested.md" not in default_depth
+
+
+def test_render_directory_listing_depth_2_lists_one_level_of_nested_entries_indented(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=2))
+
+    assert "sub" in out
+    assert "  deeper/" in out
+    assert "  nested.md" in out
+    # `deeper`'s own child is a third level, past --depth 2.
+    assert "deepest.md" not in out
+
+
+def test_render_directory_listing_depth_3_lists_two_levels_of_nested_entries(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    deeper = sub / "deeper"
+    deeper.mkdir()
+    (deeper / "deepest.md").write_text("# Deepest\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=3))
+
+    assert "sub" in out
+    assert "  deeper/" in out
+    assert "    deepest.md" in out
+
+
+def test_render_directory_listing_depth_orders_subdirectories_before_files_at_each_level(
+    tmp_path,
+):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "z_file.md").write_text("# Z\n")
+    (sub / "a_dir").mkdir()
+    (sub / "a_dir" / "child.md").write_text("# Child\n")
+
+    out = strip_ansi(render_directory_listing(str(tmp_path), width=80, color=False, depth=3))
+
+    # Within `sub`, its own subdirectory ("a_dir") is listed -- and thus its child recursed into
+    # -- before `sub`'s own file ("z_file.md"), matching the flat depth-1 subdirectories-first
+    # rule applied at every level.
+    assert out.index("a_dir/") < out.index("child.md") < out.index("z_file.md")
+
+
+# --- directory listing theme (VIEWMD-0091 amended requirement 6) -----------------------------
+
+
+def test_directory_listing_theme_light_differs_from_dark_and_is_not_the_old_cyan_codes(tmp_path):
+    # VIEWMD-0091 (amended requirement 6): the directory-listing table's header/Name-column accent
+    # reuses `_TABLE_STYLE_BY_THEME`, the same dict the front-matter table already uses -- dark
+    # stays plain-cyan (today's unchanged SGR 36 codes), light switches to the Primer NOTE blue
+    # `#0969da` (a truecolor `38;2;9;105;218`/`48;...` sequence), so the two must render with
+    # disjoint color codes, not just "differ" for some unrelated reason.
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=True, theme="light")
+    assert strip_ansi(dark) == strip_ansi(light)
+    assert dark != light
+    # "\x1b[0m" (plain reset) and "\x1b[1m" (plain bold, shared by the header style in both
+    # themes) are excluded -- neither is specific to a theme's own accent color, unlike the
+    # actual color codes below. OSC8 hyperlinks carry a random `id=` (VIEWMD-0081), so are
+    # excluded from this particular comparison too.
+    _neutral = ("\x1b[0m", "\x1b[1m", "\x1b]8;;\x1b\\")
+    dark_codes = {
+        c for c in ANSI_RE.findall(dark) if c not in _neutral and "id=" not in c
+    }
+    light_codes = {
+        c for c in ANSI_RE.findall(light) if c not in _neutral and "id=" not in c
+    }
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+    assert "9;105;218" in light  # #0969da's truecolor RGB triplet
+    assert "\x1b[36m" not in light and "\x1b[1;36m" not in light
+
+
+def test_directory_listing_theme_defaults_to_dark_cyan_unchanged(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    omitted = render_directory_listing(str(tmp_path), width=80, color=True)
+    dark = render_directory_listing(str(tmp_path), width=80, color=True, theme="dark")
+    # Normalize the OSC8 hyperlink's random `id=` (VIEWMD-0081) before comparing, the same way
+    # prior VIEWMD-0091 verification passes did when diffing full renders.
+    id_re = re.compile(r"id=\d+")
+    assert id_re.sub("id=X", omitted) == id_re.sub("id=X", dark)
+
+
+def test_directory_listing_no_color_output_is_unaffected_by_theme(tmp_path):
+    (tmp_path / "a.md").write_text("# A\n")
+    dark = render_directory_listing(str(tmp_path), width=80, color=False, theme="dark")
+    light = render_directory_listing(str(tmp_path), width=80, color=False, theme="light")
+    assert dark == light
 
 
 def test_render_divider_matches_the_front_matter_divider_style():

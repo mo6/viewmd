@@ -26,7 +26,9 @@ MERMAID_RENDERED_INFO = "mermaid-rendered"
 _FENCE_RE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
 
 
-def render_mermaid_blocks(text: str, *, color: bool = False, width: int | None = None) -> str:
+def render_mermaid_blocks(
+    text: str, *, color: bool = False, width: int | None = None, theme: str = "dark"
+) -> str:
     lines = text.split("\n")
     out: list[str] = []
     i = 0
@@ -37,7 +39,7 @@ def render_mermaid_blocks(text: str, *, color: bool = False, width: int | None =
             indent, fence, _ = match.groups()
             body, end = _find_closing_fence(lines, i + 1, fence[0])
             if end is not None:
-                rendered = _try_render("\n".join(body), color=color, width=width)
+                rendered = _try_render("\n".join(body), color=color, width=width, theme=theme)
                 if rendered is not None:
                     out.append(f"{indent}{fence}{MERMAID_RENDERED_INFO}")
                     out.extend(rendered.rstrip("\n").split("\n"))
@@ -64,9 +66,9 @@ def _find_closing_fence(
 
 
 def _try_render(
-    mermaid_source: str, *, color: bool = False, width: int | None = None
+    mermaid_source: str, *, color: bool = False, width: int | None = None, theme: str = "dark"
 ) -> str | None:
     try:
-        return render(mermaid_source, color=color, width=width)
+        return render(mermaid_source, color=color, width=width, theme=theme)
     except MermaidError:
         return None

@@ -25,7 +25,10 @@ cat notes.md | ./viewmd.sh          # read from stdin
 ./viewmd.sh notes.md --width full   # render at the full terminal width, uncapped
 ./viewmd.sh notes.md --full-front-matter  # show every front-matter field, including empty ones
 ./viewmd.sh notes.md --no-toc             # skip the heading table of contents (on by default)
+./viewmd.sh notes.md --theme light        # use the light-terminal-background color palette (default: dark)
+./viewmd.sh notes.md --theme auto         # detect dark/light from the terminal's own background color
 ./viewmd.sh notes.md --config ./my.conf   # read config from an explicit path instead of the default
+./viewmd.sh a-directory --depth 2   # a bare directory listing: also list its subdirectories' entries
 ./viewmd.sh *.md                    # render every matched file, in order, in one pager session
 ```
 
@@ -49,11 +52,14 @@ scroll (see "Interactive pager" below). Mixing stdin (`-`) with a file path is r
 
 Passing a directory renders its index file if one exists — `_Index.md`, `index.md`, or
 `_index.md`, checked in that order (exact case match) — exactly as if that file had been passed
-directly; otherwise it renders a table-of-contents listing of the directory's immediate entries
+directly; otherwise it renders a table-of-contents listing of the directory's entries
 (subdirectories first, then Markdown files, each alphabetically) —
-a file's title (from front matter, its first heading, or its filename) and last-modified time,
-one level deep, no recursion. This applies the same way whether the directory is the only `path`
-argument or one of several.
+a file's title (from front matter, its first heading, or its filename), human-readable size
+(e.g. `1.2K`), and last-modified time; a subdirectory row shows its own entry count instead of a
+size. One level deep, no recursion, by default; `--depth N` (single-path bare directory listings
+only, capped at 10) descends N levels, each row indented to show its depth. This applies the same
+way whether the directory is the only `path` argument or one of several, except `--depth`, which
+has no effect for more than one `path` argument.
 
 Obsidian-style wikilinks (`[[Target]]`, `[[Target|Display text]]`) render highlighted the same
 way a standard Markdown link does, brackets gone — outside of fenced code blocks and inline code
@@ -72,6 +78,30 @@ its top border, instead of a plain quote. GitHub's five canonical types — `NOT
 `IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
 Obsidian-only aliases) still renders as a generic card, using the type token as its label.
 
+A pair of `<!-- viewmd:mark start kind=KIND --> ... <!-- viewmd:mark end -->` sentinel HTML comments, each alone on its own line between blocks, marks the block-level content between them as a *region* — with color enabled, it renders with a background tint per `kind` (`added` green, `changed` amber, `removed` red; an unrecognized or omitted `kind` defaults to `changed`). The sentinels are ordinary HTML comments — invisible in every other Markdown renderer, and inert in viewmd itself without color — so a caller that already knows what changed in a file (the concrete driver is [gitgleam](https://github.com/mo6/gitgleam), a sibling app that previews a changed Markdown file through viewmd instead of a raw diff) can inject them into a throwaway copy of the document to show *what* changed directly inside the formatted render, not just as a separate line diff. viewmd never computes the diff itself — marking regions, and picking `kind`, is entirely the caller's job. Malformed input (an unbalanced start, a stray end, an unparseable marker) warns once to stderr and renders the rest of the document normally rather than crashing.
+
+Any other standalone HTML comment — one alone on its own line (or spanning several, ending at the first line containing `-->`), not `viewmd:mark` — is stripped the same way, so an ordinary editorial/TODO-style comment left in a Markdown file renders cleanly too, with no stray blank line around it. An HTML comment embedded inline in running text (`text <!-- x --> more text`) is untouched by this — inline HTML already renders as nothing, via Rich's own handling, regardless.
+
+`--theme {dark,light,auto}` selects the color palette used for admonition callout borders/icons, the
+front-matter table, and the table of contents' heading colors — `dark` (the default, today's
+original colors) is tuned for a dark terminal background; `light` swaps in a higher-contrast
+palette for a light one. It does not affect Mermaid diagram coloring, which has its own
+color-capability-driven logic.
+
+`--theme auto` detects which of `dark`/`light` to use from the terminal's own actual background
+color, instead of you having to know and pass it yourself: when stdout is a terminal, it briefly
+puts the tty in raw mode and sends an OSC 11 query (`\x1b]11;?\x07`, "what is your background
+color?") to `/dev/tty`, classifying the reply's RGB by relative luminance. If the terminal doesn't
+answer within a short timeout, the query can't be made at all (piped/`--no-pager` output, no tty),
+or the reply doesn't parse, it silently falls back to `dark` — the same default as an omitted
+`--theme` — rather than hanging or erroring. **Known limitation:** tmux and GNU screen intercept
+OSC queries by default and don't forward them to the outer terminal unless OSC passthrough is
+explicitly configured (tmux: `set -g allow-passthrough on`; screen's OSC support is limited even
+with passthrough enabled) — inside an unconfigured multiplexer, `--theme auto` will reliably time
+out and silently fall back to `dark`, the same as any other non-answering terminal. Detection runs
+once at startup; a theme switched mid-session isn't picked up until the next invocation.
+`--theme dark`/`--theme light` are unaffected by any of this — the query only ever runs for `auto`.
+
 Once installed (`pip install -e .`), the `viewmd` command is also on `PATH` inside the venv, so
 `viewmd README.md` works the same as `./viewmd.sh README.md` from an activated shell.
 
@@ -82,16 +112,19 @@ a directory listing with no index file, or more than one path at once — pages 
 interactive pager. viewmd never spawns an external pager process: no `less` by default, and no
 `$PAGER` override either — mouse-wheel/trackpad scrolling, search with match highlighting,
 horizontal scrolling for a Mermaid diagram or code block wider than the terminal, hover highlighting
-of whatever clickable thing the mouse is over, and more are all built in. Press `?` at any time for
-the full keybinding reference; a few of the more useful ones:
+of whatever clickable thing the mouse is over, and more are all built in. The pager is Unix-only
+(macOS, Linux, BSD, WSL); native Windows is not supported, because it talks to the terminal via
+`termios` and `/dev/tty`, which Windows Python does not provide.
+
+Press `?` at any time for the full keybinding reference; a few of the more useful ones:
 
 ```
 up/down, wheel, j/k     scroll one line                    t        open the table of contents*
-space / b               page down / back up                /        search forward
+space / - / Backspace   page down / back up                /        search forward
 g / G                   jump to top / bottom               N        repeat the last search
 n / p                   jump to next / previous heading*   w        toggle full terminal width
 left/right, h/l         scroll sideways (wide content)     m        toggle mouse capture
-click a link            follow it, if local†               B        go back†
+click a link            follow it, if local†               b / f    back / forward through the trail†
 q                       quit
 ```
 
@@ -106,14 +139,22 @@ The mouse highlights whatever clickable target it's currently over — a link, a
 row, a table-of-contents/help-screen row, or a keybinding chip in the bottom status row — before
 you click it, so it's clear what will actually respond. Clicking a link (a `[[wikilink]]` or an
 ordinary Markdown link) that resolves to an existing local `.md` file navigates the pager to that
-file in place; `B` goes back to the file you navigated from. Clicking a row in the table-of-contents
+file in place, pushing the file you were on onto a history trail; `b` walks back through that
+trail one hop per press (clicking through A → B → C, then pressing `b` twice returns to A), and
+`f` walks forward again to redo a hop undone by `b` — each is a no-op once there's nothing left in
+that direction. Following a new link from partway back in the trail discards whatever was ahead of
+it, the same way a browser's forward history works. Scroll position is restored exactly on both
+`b` and `f`, and once there's a trail to show, the bottom status row's `b`/`f` hints include how
+many hops are available in each direction. Clicking a row in the table-of-contents
 popup jumps to it, same as Enter; clicking a keybinding row in the `?` help screen performs that
 key's action directly, and the `cancel`/`close help` chip in the bottom row while either popup is
 open does the same as pressing Esc.
 
 A bare directory listing (no index file present) is click-navigable too: clicking a subdirectory
 row descends into that subdirectory's own listing, clicking a `.md` file row opens it in the pager,
-and `B` returns to the listing you came from either way.
+and `b`/`f` walk back and forward through that trail either way. With `--depth` showing more than
+one level, only the top-level rows are click-navigable this way — a deeper row (indented under its
+own parent) is plain text; navigate to it by clicking into its parent subdirectory first.
 
 \* The table-of-contents popup and next/previous-heading jump need a heading outline to act on, so
 they're only available for a single document; viewing more than one file at once or a bare
@@ -122,15 +163,15 @@ it — just without those two, since there's no per-file/per-entry heading struc
 table of contents from. Unlike `less` itself, there's no per-file navigation (`:n`/`:p`) either;
 it's one long continuous scroll through every file in the order given.
 
-† Click-to-follow and `B` work for a single document and for a bare directory listing; a multi-file
-view has no single current file/directory to resolve a relative link against, so a click on a link
-and `B` are both inert there.
+† Click-to-follow and `b`/`f` work for a single document and for a bare directory listing; a
+multi-file view has no single current file/directory to resolve a relative link against, so a
+click on a link and `b`/`f` are both inert there.
 
 ## Configuration file
 
 A per-user config file supplies default values for `--width`, `--color`,
-`--full-front-matter`, and `--toc`, so a standing preference doesn't need to be passed on every
-invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
+`--full-front-matter`, `--toc`, and `--theme`, so a standing preference doesn't need to be passed
+on every invocation. An explicit CLI flag always wins over the file (`--no-toc` / `--no-full-front-matter`
 are the flags that turn those defaults back off if the file sets them on); a missing file is not
 an error — it's the same as viewmd's built-in defaults.
 
@@ -143,6 +184,7 @@ width = 80
 color = never
 full_front_matter = true
 toc = false
+theme = light
 EOF
 ```
 
@@ -157,6 +199,8 @@ keys:
 | `color` | `auto`, `always`, or `never` | `--color` |
 | `full_front_matter` | `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`) | `--full-front-matter` |
 | `toc` | `true`/`false` (same boolean synonyms) | `--toc` / `--no-toc` |
+| `depth` | a positive integer (capped at 10) | `--depth` |
+| `theme` | `dark`, `light`, or `auto` | `--theme` |
 
 An unrecognized key prints a `viewmd: <path>:<line>: unrecognized config key <key>` warning to
 stderr (once per key) but is otherwise ignored — parsing and the run continue, so a newer config
@@ -175,8 +219,9 @@ Tab-completion scripts for bash, zsh, and fish are checked into [completions/](c
 (`./tools.sh completions`, see "Development" below) rather than hand-maintained per shell, so
 they stay in sync with the actual flag surface. They complete every flag name (including both
 spellings of a `--toc`/`--no-toc`-style pair), `--color`'s three literal choices
-(`auto`/`always`/`never`), `--width`'s `full` literal, and fall back to normal filesystem-path
-completion for `--config` and for the positional Markdown-file argument(s).
+(`auto`/`always`/`never`), `--theme`'s three literal choices (`dark`/`light`/`auto`), `--width`'s `full`
+literal, and fall back to normal filesystem-path completion for `--config` and for the positional
+Markdown-file argument(s).
 
 **bash**: source the script directly, e.g. add `source /path/to/viewmd/completions/viewmd.bash`
 to `~/.bashrc`; or copy/symlink it into a directory your `bash-completion` setup already sources,

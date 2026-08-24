@@ -4,6 +4,42 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.52.0] — 2026-08-24
+
+- **Strip all standalone HTML comments, not just `viewmd:mark` sentinels** (VIEWMD-0107, feature): the blank-line-doubling bug VIEWMD-0104 fixed only for mark sentinels — `rich.markdown.Markdown` treating an unrecognized standalone HTML comment as its own block element — is now fixed for any standalone comment (single-line, or spanning several per CommonMark's own comment-block rule), stripped from the source the same way before Rich ever parses it. An inline comment embedded in running text, and one inside a fenced code block, stay untouched. An unterminated comment now warns to stderr instead of silently dropping the rest of the document with no trace. Also documents `viewmd:mark` sentinel highlighting in `README.md` for the first time.
+
+## [1.51.1] — 2026-08-23
+
+- **Fix `viewmd:mark` regions nested inside a list item** (VIEWMD-0106, bug): a mark whose sentinels sat between two items of the same list -- gitgleam's actual generated output for "one new bullet added to an existing list" -- previously rendered with no highlight at all, since VIEWMD-0104's matching only recognized whole top-level blocks. Mark regions are now located recursively inside an enclosing list item (at any nesting depth), reconstructing a properly-closed partial version of the container for measurement rather than a raw token slice, which renders as nothing at all mid-container. Recursing into a table row, an admonition-styled blockquote, or an ordered list is deliberately not supported (each has its own rendering quirk -- a shared border, or a numbering-column width derived from the reconstructed item count -- that would otherwise silently mismeasure or tint the wrong line); those fall back to the existing "just don't tint it" fail-safe instead.
+
+## [1.51.0] — 2026-08-22
+
+- **Highlight regions marked by sentinel HTML comments** (VIEWMD-0104, feature): recognizes a paired `<!-- viewmd:mark start kind=KIND -->` … `<!-- viewmd:mark end -->` HTML comment sentinel and, with color enabled, tints the block-level content between them with a background color per `kind` (`added` green, `changed` amber, `removed` red) — wrapped continuation lines, table rows, fenced code, and Mermaid diagram art alike, overriding any background the content already had while preserving its own foreground/syntax colors. The sentinels are ordinary HTML comments (invisible to other Markdown renderers, inert in viewmd without color) stripped at the text-preprocessing stage so surrounding blank-line spacing is unaffected; a document with no sentinels renders byte-for-byte unchanged, and `--color=never` output is identical to the same document with the sentinels simply deleted. Malformed input (an unbalanced start, a stray end, an unparseable marker) warns once to stderr and never crashes. The concrete driver is gitgleam, a sibling app that previews a changed Markdown file through viewmd instead of a raw diff.
+
+## [1.50.0] — 2026-08-21
+
+- **`--theme auto` detects light/dark from the terminal's own background color** (VIEWMD-0105, feature): a third `--theme` value alongside `dark`/`light` — queries the terminal via an OSC 11 escape sequence when stdout is a tty, classifies the reply by relative luminance, and falls back to `dark` on any failure (non-tty, timeout, malformed reply, an unresponsive terminal or multiplexer). Config-settable via `theme = auto`. `--theme dark`/`--theme light`/an omitted `--theme` are completely unaffected — the query only ever runs for `auto`, so this is purely additive with zero added latency otherwise. Known limitation: tmux/GNU screen intercept OSC queries by default and need explicit passthrough configured, otherwise `auto` reliably times out and falls back to `dark`.
+
+## [1.49.1] — 2026-08-21
+
+- **Fix `--width full` clipping wrapped prose behind the scrollbar** (bug): the interactive pager's document loader (`run()`) wrapped body text to the full terminal width before knowing whether a scrollbar would end up reserving two columns for itself — once a document had more lines than fit on screen, the right edge of every already-wrapped line got silently truncated, showing `›` markers on ordinary prose with nothing to actually horizontally scroll to. The loader now re-renders one column narrower whenever it's asked to render at exactly the terminal's own width and the result needs a scrollbar; an intentionally oversized `--width` (wider than the terminal, the documented way to get real horizontal scroll) is left unchanged. Applies to both a single document and a multi-file concatenation's plain markdown content, alongside the directory-listing table's own existing narrowing.
+
+## [1.49.0] — 2026-08-21
+
+- **`--theme {dark,light}` color palette setting** (VIEWMD-0091, feature): selects between two built-in color palettes for pieces of rendering that previously hardcoded colors tuned for a dark terminal background — admonition callout borders/icons, the front-matter table, the table-of-contents' heading colors, the bare directory-listing table's header/`Name` column, Mermaid quadrant-chart quadrant backgrounds, and fenced-code/inline-code syntax highlighting (Pygments `paraiso-light` for light, `monokai`, today's default, for dark). Defaults to `dark` (today's existing, unlabeled colors), so this is purely additive; config-settable via a matching `theme` key, same `coalesce(CLI, config, default)` precedence as `--width`/`--color`. Does not affect Mermaid pie-chart fills or any other diagram-type coloring, which keep their existing color-capability-driven logic.
+
+## [1.48.0] — 2026-08-20
+
+- **Size column and `--depth` for bare directory listings** (VIEWMD-0089, feature): the directory-listing table gained a human-readable `Size` column (right-aligned; a subdirectory row shows its immediate-child entry count instead of a byte size), and an opt-in `--depth N` flag (config-settable, capped at 10 with a stderr warning above that) to descend into subdirectories rather than the fixed one-level listing, each row indented per level, subdirectories-first-then-alphabetical at every level. A long filename now truncates to 25 characters with its extension always preserved and `...` placed just before it, so a long name no longer squeezes the `Title` column. Fixed a scrollbar-crop bug (the table's right border and rightmost column could get silently cut off once a listing needed a scrollbar) and a bug where a `.md` file opened by clicking through a directory listing inherited the listing's own full-terminal-width default instead of the document's own prose-capped width.
+
+## [1.47.0] — 2026-08-20
+
+- **Multi-level back/forward navigation trail in the interactive pager** (VIEWMD-0090, feature): the `B` back key already walked a full history stack (VIEWMD-0076), not just one step, but had no complement — `f` now redoes a hop undone by `b` (lowercase, matching the pager's otherwise-lowercase keymap; page-back-up narrows from `b`/`-`/Backspace to `-`/Backspace only to free `b` for this), inert when there's nothing to go forward to, and clears on a fresh navigation. Scroll position is preserved on both. The echo-area hint shows a live back/forward count (e.g. `b: back (2)`).
+
+## [1.46.5] — 2026-08-19
+
+- **Document that the interactive pager is Unix-only, and why it does not use curses** (VIEWMD-0103, docs): README's Interactive pager section now states the pager is Unix-only (macOS, Linux, BSD, WSL) and is not supported on native Windows (`termios` / `/dev/tty`). `docs/PLAN.md` records why curses was ruled out — the pager dumps pre-rendered Rich ANSI (OSC-8, 256-color, xterm mouse) rather than a cell grid, and a curses port would not make native Windows work.
+
 ## [1.46.4] — 2026-08-19
 
 - **Fix the ToC/help popup corrupting content and color in the rows around it** (VIEWMD-0102, bug): `_overlay` no longer rebuilds a popup-touched row's margins from a separately-rendered `color=False` twin of the document — for a pie chart (VIEWMD-0043), whose no-color rendering is a structurally different bar-chart layout, that twin diverged in both content and total row count from the colored one, corrupting the diagram with unrelated bar-chart text and misaligning every row below it. Margins are now sliced straight out of the real colored row via `_ansi_slice`, which also restores the row's own color there instead of leaving it monochrome.

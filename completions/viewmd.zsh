@@ -11,10 +11,12 @@ _viewmd() {
   "--no-pager[--no-pager]" \
   "--color[--color]:value:(auto always never)" \
   "--width[--width]:value:(full)" \
+  "--theme[--theme]:value:(dark light auto)" \
   "--full-front-matter[--full-front-matter/--no-full-front-matter]" \
   "--no-full-front-matter[--full-front-matter/--no-full-front-matter]" \
   "--toc[--toc/--no-toc]" \
   "--no-toc[--toc/--no-toc]" \
+  "--depth[--depth]:path:_files" \
   "--config[--config]:path:_files" \
   '*:path:_files'
 }

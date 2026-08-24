@@ -46,10 +46,12 @@ def test_config_path_to_read_does_not_skip_when_viewmd_no_config_is_empty(tmp_pa
 
 def test_parse_config_reads_each_known_key():
     cfg = parse_config(
-        "width = 80\ncolor = never\nfull_front_matter = true\ntoc = false\n",
+        "width = 80\ncolor = never\nfull_front_matter = true\ntoc = false\ntheme = light\n",
         source="config",
     )
-    assert cfg == Config(width="80", color="never", full_front_matter=True, toc=False)
+    assert cfg == Config(
+        width="80", color="never", full_front_matter=True, toc=False, theme="light"
+    )
 
 
 def test_parse_config_accepts_width_full():
@@ -96,6 +98,22 @@ def test_parse_config_rejects_invalid_color():
         parse_config("color = purple\n", source="config")
 
 
+def test_parse_config_accepts_theme_dark_and_light():
+    assert parse_config("theme = dark\n", source="config").theme == "dark"
+    assert parse_config("theme = light\n", source="config").theme == "light"
+
+
+def test_parse_config_accepts_theme_auto():
+    # VIEWMD-0105: a third theme value, resolved via an OSC 11 terminal query at runtime rather
+    # than at config-parse time -- parse_config itself just needs to accept the literal string.
+    assert parse_config("theme = auto\n", source="config").theme == "auto"
+
+
+def test_parse_config_rejects_invalid_theme():
+    with pytest.raises(ConfigError, match="invalid theme 'sepia'"):
+        parse_config("theme = sepia\n", source="config")
+
+
 def test_parse_config_rejects_invalid_width():
     with pytest.raises(ConfigError, match="invalid width"):
         parse_config("width = banana\n", source="config")
@@ -104,6 +122,21 @@ def test_parse_config_rejects_invalid_width():
 def test_parse_config_rejects_invalid_toc():
     with pytest.raises(ConfigError, match="invalid toc 'maybe'"):
         parse_config("toc = maybe\n", source="config")
+
+
+def test_parse_config_accepts_depth():
+    assert parse_config("depth = 3\n", source="config").depth == 3
+
+
+def test_parse_config_rejects_invalid_depth():
+    with pytest.raises(ConfigError, match="invalid depth 'banana'"):
+        parse_config("depth = banana\n", source="config")
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_parse_config_rejects_non_positive_depth(value):
+    with pytest.raises(ConfigError, match="invalid depth"):
+        parse_config(f"depth = {value}\n", source="config")
 
 
 def test_parse_config_rejects_duplicate_key():

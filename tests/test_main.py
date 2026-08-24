@@ -175,6 +175,97 @@ def test_directory_listing_does_not_recurse_into_subdirectories(tmp_path, capsys
     assert "nested.md" not in out
 
 
+def test_depth_flag_recurses_into_subdirectories(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--depth", "2", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" in out
+
+
+def test_depth_flag_absent_still_does_not_recurse(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" not in out
+
+
+def test_depth_flag_caps_an_unreasonably_large_value(tmp_path, capsys):
+    from viewmd.__main__ import MAX_DEPTH
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80",
+               "--depth", str(MAX_DEPTH + 100), str(tmp_path)])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert f"--depth {MAX_DEPTH + 100} capped to {MAX_DEPTH}" in captured.err
+
+
+def test_depth_arg_rejects_non_positive_values():
+    from viewmd.__main__ import _depth_arg
+
+    for value in ("0", "-1", "banana"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            _depth_arg(value)
+
+
+def test_config_depth_overrides_builtin_default(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    cfg = tmp_path / "config"
+    cfg.write_text("depth = 2\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" in out
+
+
+def test_cli_depth_overrides_config_depth(tmp_path, capsys):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.md").write_text("# Nested\n")
+    cfg = tmp_path / "config"
+    cfg.write_text("depth = 2\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80", "--config", str(cfg),
+               "--depth", "1", str(tmp_path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "nested.md" not in out
+
+
+def test_depth_flag_has_no_effect_and_prints_no_warning_for_a_single_document(
+    tmp_path, capsys
+):
+    # VIEWMD-0089 Non-goals: --depth only applies to a bare directory listing. Found in
+    # self-review: resolving/capping --depth unconditionally for every invocation would print the
+    # over-MAX_DEPTH warning even here, where the flag goes on to have no effect at all.
+    from viewmd.__main__ import MAX_DEPTH
+
+    path, _ = _write_md(tmp_path, "# Hello\n")
+
+    rc = main(["--no-pager", "--color", "never", "--width", "80",
+               "--depth", str(MAX_DEPTH + 100), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert captured.err == ""
+
+
 def test_unreadable_directory_errors_gracefully(tmp_path, capsys, monkeypatch):
     def _boom(path):
         raise PermissionError(13, "Permission denied")
@@ -282,15 +373,18 @@ def test_directory_listing_pages_via_the_interactive_pager_when_tty(tmp_path, mo
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(dir_path, *, width, color):
-        calls.append((dir_path, width, color))
+    def fake_run(dir_path, *, width, directory_width, color, depth, theme):
+        calls.append((dir_path, width, directory_width, color, depth, theme))
 
     monkeypatch.setattr("viewmd.interactive_pager.run_directory_listing", fake_run)
 
     rc = main(["--color", "never", "--width", "80", str(tmp_path)])
 
     assert rc == 0
-    assert calls == [(str(tmp_path), 80, False)]
+    # An explicit --width applies identically to both the document default and the listing's own
+    # width (VIEWMD-0089) -- they only diverge when --width is *omitted* (see
+    # test_interactive_pager.py's width-reset-on-navigation coverage for that case).
+    assert calls == [(str(tmp_path), 80, 80, False, 1, "dark")]
 
 
 def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypatch):
@@ -300,7 +394,7 @@ def test_multi_file_pages_via_the_interactive_pager_when_tty(tmp_path, monkeypat
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     calls = []
 
-    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc):
+    def fake_run(entries, *, width, directory_width, color, full_front_matter, toc, theme):
         calls.append(entries)
 
     monkeypatch.setattr("viewmd.interactive_pager.run_multi_file", fake_run)
@@ -328,9 +422,9 @@ def test_directory_listing_defaults_to_full_terminal_width(tmp_path, capsys, mon
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, depth, theme):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, depth=depth, theme=theme)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
@@ -348,9 +442,9 @@ def test_directory_listing_explicit_width_overrides_the_full_default(tmp_path, c
     captured = {}
     orig = render.render_directory_listing
 
-    def spy(dir_path, *, width, color):
+    def spy(dir_path, *, width, color, depth, theme):
         captured["width"] = width
-        return orig(dir_path, width=width, color=color)
+        return orig(dir_path, width=width, color=color, depth=depth, theme=theme)
 
     monkeypatch.setattr("viewmd.pager.render_directory_listing", spy)
 
@@ -660,3 +754,242 @@ def test_invalid_config_toc_exits_nonzero_without_traceback(tmp_path, capsys):
     assert captured.err.startswith("viewmd:")
     assert "invalid toc 'maybe'" in captured.err
     assert "Traceback" not in captured.err
+
+
+# VIEWMD-0091: `--theme {dark,light}`/`theme` follows the same `coalesce(CLI, config, default)`
+# precedence as `--toc`/`toc` above -- these three tests are its end-to-end equivalent of
+# test_cli_toc_overrides_config_false / test_config_toc_false_omits_the_toc /
+# test_toc_is_on_by_default_for_a_multi_heading_document, proving the flag actually reaches
+# rendering through `main()` itself rather than only through a unit test that hands `theme=`
+# directly to `render_markdown` (the exact class of gap AGENTS.md documents from VIEWMD-0043).
+# `--color always` is required throughout since `--theme` only changes emitted SGR codes -- with
+# color off the two palettes are byte-identical (see
+# test_no_color_theme_output_is_unaffected_by_theme in tests/test_render.py).
+_THEME_DOC = "> [!NOTE]\n> a note\n"
+_DARK_NOTE_COLOR = "\x1b[38;2;88;166;255m"  # #58a6ff, _CANONICAL_ADMONITIONS_DARK["NOTE"]
+_LIGHT_NOTE_COLOR = "\x1b[38;2;9;105;218m"  # #0969da, _CANONICAL_ADMONITIONS_LIGHT["NOTE"]
+
+
+def test_cli_theme_overrides_config_light(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = light\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg),
+               "--theme", "dark", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_config_theme_light_sets_it_when_cli_omits_theme(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = light\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+    assert _DARK_NOTE_COLOR not in out
+
+
+def test_theme_defaults_to_dark_when_neither_cli_nor_config_set(tmp_path, capsys):
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_invalid_config_theme_exits_nonzero_without_traceback(tmp_path, capsys):
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = sepia\n")
+    path, _ = _write_md(tmp_path)
+
+    rc = main(["--no-pager", "--config", str(cfg), str(path)])
+    captured = capsys.readouterr()
+
+    assert rc == 1
+    assert captured.err.startswith("viewmd:")
+    assert "invalid theme 'sepia'" in captured.err
+    assert "Traceback" not in captured.err
+
+
+# VIEWMD-0105: `--theme auto` (and config `theme = auto`) must reach `main()`'s own theme
+# resolution and call `viewmd.theme_detect.detect_terminal_theme()` exactly when "auto" is what
+# the coalesce actually resolves to -- the same VIEWMD-0043-class plumbing-gap check the
+# VIEWMD-0091 tests above apply to `--theme light`. `detect_terminal_theme` itself (the OSC 11
+# probe/parsing/timeout logic) is mocked here rather than re-tested -- that's
+# `test_theme_detect.py`'s job -- this only proves the CLI/config value actually reaches the one
+# place that calls it.
+def test_cli_theme_auto_reaches_theme_resolution_end_to_end(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "light")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "auto", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+    assert _DARK_NOTE_COLOR not in out
+
+
+def test_cli_theme_auto_falls_back_to_dark_when_detection_says_dark(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "dark")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "auto", str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _DARK_NOTE_COLOR in out
+    assert _LIGHT_NOTE_COLOR not in out
+
+
+def test_config_theme_auto_sets_it_when_cli_omits_theme(tmp_path, capsys, monkeypatch):
+    import viewmd.theme_detect as theme_detect
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", lambda: "light")
+    cfg = tmp_path / "config"
+    cfg.write_text("theme = auto\n")
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--config", str(cfg), str(path)])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert _LIGHT_NOTE_COLOR in out
+
+
+def test_cli_theme_dark_never_calls_detect_terminal_theme(tmp_path, capsys, monkeypatch):
+    """Requirement 7: --theme dark/light/an omitted --theme MUST NOT attempt an OSC 11 query at
+    all -- asserted here by making the detection function raise if it's ever called, not just by
+    timing (a raise is a hard, unambiguous plumbing check; timing a fast function is not)."""
+    import viewmd.theme_detect as theme_detect
+
+    def _boom():
+        raise AssertionError("detect_terminal_theme must not be called for --theme dark")
+
+    monkeypatch.setattr(theme_detect, "detect_terminal_theme", _boom)
+    path, _ = _write_md(tmp_path, _THEME_DOC)
+
+    rc = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark", str(path)])
+    capsys.readouterr()
+
+    assert rc == 0
+
+
+# VIEWMD-0091 amended requirement 4: `--theme light` must reach Mermaid quadrant-chart
+# background-fill rendering *through the actual CLI entry point*, not just when a test supplies
+# `theme=` directly to render_markdown -- AGENTS.md documents this exact plumbing-gap risk class
+# from VIEWMD-0043 (a comprehensive test suite passing is not proof a CLI flag actually works end
+# to end).
+_QUADRANT_DOC = (
+    "```mermaid\n"
+    "quadrantChart\n"
+    "    title Priority Matrix\n"
+    "    x-axis Low Effort --> High Effort\n"
+    "    y-axis Low Impact --> High Impact\n"
+    "    quadrant-1 Do First\n"
+    "    quadrant-2 Plan\n"
+    "    quadrant-3 Delegate\n"
+    "    quadrant-4 Skip\n"
+    "    Cache: [0.2, 0.8]\n"
+    "    Rewrite: [0.9, 0.3]\n"
+    "```\n"
+)
+
+
+def test_cli_theme_light_reaches_quadrant_background_fill_end_to_end(tmp_path, capsys):
+    import re
+
+    path, _ = _write_md(tmp_path, _QUADRANT_DOC)
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    dark_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", dark_out))
+    light_bg = set(re.findall(r"48;2;(\d+;\d+;\d+)", light_out))
+    assert dark_bg and light_bg
+    assert dark_bg != light_bg
+
+    def brightness(rgb: str) -> int:
+        return sum(int(c) for c in rgb.split(";"))
+
+    assert min(brightness(rgb) for rgb in light_bg) > max(brightness(rgb) for rgb in dark_bg)
+
+
+# VIEWMD-0091 amended requirement 6: `--theme light` must reach fenced-code-block syntax
+# highlighting *through the actual CLI entry point* -- `render_markdown`'s
+# `ViewmdMarkdown(body, code_theme="monokai")` used to be hardcoded regardless of `--theme`,
+# invisible to any test that hands `theme=` directly to `render_markdown` rather than tracing the
+# flag all the way from `main()` (the same VIEWMD-0043-class plumbing gap AGENTS.md documents).
+_CODE_FENCE_DOC = "```python\nimport os\n\ndef greet(name):\n    return f\"hi {name}\"\n```\n"
+
+
+def test_cli_theme_light_reaches_code_fence_highlighting_end_to_end(tmp_path, capsys):
+    import re
+
+    path, _ = _write_md(tmp_path, _CODE_FENCE_DOC)
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    dark_codes = set(re.findall(r"\x1b\[[0-9;]*m", dark_out)) - {"\x1b[0m"}
+    light_codes = set(re.findall(r"\x1b\[[0-9;]*m", light_out)) - {"\x1b[0m"}
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+
+
+# VIEWMD-0091 amended requirement 6: `--theme light` must reach the bare-directory-listing
+# table's header/Name-column accent color *through the actual CLI entry point* --
+# `render_directory_listing`'s `Table(..., header_style="bold cyan")`/`add_column("Name",
+# style="cyan")` used to be hardcoded regardless of `--theme`, invisible to any test that hands
+# `theme=` directly to `render_directory_listing` rather than tracing the flag all the way from
+# `main()` (the same VIEWMD-0043-class plumbing gap AGENTS.md documents; this issue's own
+# amended-requirement-4 and -6/7 reviews already established this end-to-end pattern for the
+# quadrant background fill and code-fence highlighting above).
+def test_cli_theme_light_reaches_directory_listing_end_to_end(tmp_path, capsys):
+    import re
+
+    (tmp_path / "a.md").write_text("# A\n")
+
+    rc_dark = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "dark",
+                     str(tmp_path)])
+    dark_out = capsys.readouterr().out
+    rc_light = main(["--no-pager", "--color", "always", "--width", "80", "--theme", "light",
+                      str(tmp_path)])
+    light_out = capsys.readouterr().out
+
+    assert rc_dark == 0
+    assert rc_light == 0
+    id_re = re.compile(r"id=\d+")
+    _neutral = {"\x1b[0m", "\x1b[1m"}
+    dark_codes = set(re.findall(r"\x1b\[[0-9;]*m", id_re.sub("id=X", dark_out))) - _neutral
+    light_codes = set(re.findall(r"\x1b\[[0-9;]*m", id_re.sub("id=X", light_out))) - _neutral
+    assert dark_codes and light_codes
+    assert not (light_codes & dark_codes)
+    assert "\x1b[38;2;9;105;218m" in light_codes or "\x1b[1;38;2;9;105;218m" in light_codes
