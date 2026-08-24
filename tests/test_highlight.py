@@ -429,3 +429,67 @@ def test_mark_nested_inside_a_table_row_does_not_apply_wrong_highlight():
     # And nothing else gets wrongly tinted either.
     for kind in ("added", "changed", "removed"):
         assert _tinted_lines(out, kind) == []
+
+
+# ---------------------------------------------------------------------------
+# Generic (non-mark) standalone HTML comment stripping (VIEWMD-0107).
+# ---------------------------------------------------------------------------
+
+
+def test_strip_marks_removes_a_plain_single_line_comment():
+    text = "A\n\n<!-- an ordinary editorial comment -->\nB\n"
+    stripped, regions, warnings = strip_marks(text)
+    assert stripped == "A\n\nB\n"
+    assert regions == []
+    assert warnings == []
+
+
+def test_strip_marks_removes_a_multi_line_comment_as_one_block():
+    text = "A\n\n<!--\nmulti\nline\ncomment\n-->\nB\n"
+    stripped, regions, warnings = strip_marks(text)
+    assert stripped == "A\n\nB\n"
+    assert regions == []
+    assert warnings == []
+
+
+def test_strip_marks_leaves_an_inline_comment_in_running_text_untouched():
+    text = "A text <!-- inline --> more text.\n"
+    stripped, regions, warnings = strip_marks(text)
+    assert stripped == text
+    assert regions == []
+    assert warnings == []
+
+
+def test_strip_marks_unterminated_comment_warns_and_drops_the_rest():
+    text = "A\n\n<!-- never closes\nrest\nmore"
+    stripped, regions, warnings = strip_marks(text)
+    assert stripped == "A\n"
+    assert regions == []
+    assert len(warnings) == 1
+    assert "unterminated" in warnings[0]
+
+
+def test_plain_comment_blank_line_spacing_matches_comment_simply_deleted():
+    text = "A\n\n<!-- an ordinary comment -->\n\nB\n"
+    stripped = "A\n\nB\n"
+    with_comment = render_markdown(text, width=WIDTH, color=False, toc=False)
+    without_comment = render_markdown(stripped, width=WIDTH, color=False, toc=False)
+    assert with_comment == without_comment
+
+
+def test_multi_line_comment_blank_line_spacing_matches_comment_simply_deleted():
+    text = "A\n\n<!--\nmulti\nline\ncomment\n-->\n\nB\n"
+    stripped = "A\n\nB\n"
+    with_comment = render_markdown(text, width=WIDTH, color=False, toc=False)
+    without_comment = render_markdown(stripped, width=WIDTH, color=False, toc=False)
+    assert with_comment == without_comment
+
+
+def test_viewmd_mark_handling_is_unaffected_by_generic_comment_stripping():
+    text = f"A\n\n{_marked('added', 'B')}\n\nC\n\n<!-- ordinary -->\n\nD\n"
+    out = render_markdown(text, width=WIDTH, color=True, toc=False)
+    assert has_background(
+        [line for line in out.split("\n") if "B" in strip_ansi(line)][0], "added"
+    )
+    assert "viewmd:mark" not in out
+    assert "ordinary" not in strip_ansi(out)  # the plain comment's own text never appears

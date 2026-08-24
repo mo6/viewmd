@@ -78,6 +78,10 @@ its top border, instead of a plain quote. GitHub's five canonical types — `NOT
 `IMPORTANT`, `WARNING`, `CAUTION` — each get their own icon and color; any other `[!TYPE]` (e.g.
 Obsidian-only aliases) still renders as a generic card, using the type token as its label.
 
+A pair of `<!-- viewmd:mark start kind=KIND --> ... <!-- viewmd:mark end -->` sentinel HTML comments, each alone on its own line between blocks, marks the block-level content between them as a *region* — with color enabled, it renders with a background tint per `kind` (`added` green, `changed` amber, `removed` red; an unrecognized or omitted `kind` defaults to `changed`). The sentinels are ordinary HTML comments — invisible in every other Markdown renderer, and inert in viewmd itself without color — so a caller that already knows what changed in a file (the concrete driver is [gitgleam](https://github.com/mo6/gitgleam), a sibling app that previews a changed Markdown file through viewmd instead of a raw diff) can inject them into a throwaway copy of the document to show *what* changed directly inside the formatted render, not just as a separate line diff. viewmd never computes the diff itself — marking regions, and picking `kind`, is entirely the caller's job. Malformed input (an unbalanced start, a stray end, an unparseable marker) warns once to stderr and renders the rest of the document normally rather than crashing.
+
+Any other standalone HTML comment — one alone on its own line (or spanning several, ending at the first line containing `-->`), not `viewmd:mark` — is stripped the same way, so an ordinary editorial/TODO-style comment left in a Markdown file renders cleanly too, with no stray blank line around it. An HTML comment embedded inline in running text (`text <!-- x --> more text`) is untouched by this — inline HTML already renders as nothing, via Rich's own handling, regardless.
+
 `--theme {dark,light,auto}` selects the color palette used for admonition callout borders/icons, the
 front-matter table, and the table of contents' heading colors — `dark` (the default, today's
 original colors) is tuned for a dark terminal background; `light` swaps in a higher-contrast
