@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0107
 title: Strip all standalone HTML comments, not just viewmd:mark sentinels
-status: in-progress
+status: implemented
 area: [render, docs]
 effort: low
 created: 2026-08-23
-updated: 2026-08-23
+updated: 2026-08-24
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-23
-commits: []
+commits: [d4ad8c6]
 related: [VIEWMD-0104, VIEWMD-0106]
 supersedes: []
-changelog:
+changelog: "[1.52.0]"
 reason:
 ---
 

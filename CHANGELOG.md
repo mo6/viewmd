@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.52.0] — 2026-08-24
+
+- **Strip all standalone HTML comments, not just `viewmd:mark` sentinels** (VIEWMD-0107, feature): the blank-line-doubling bug VIEWMD-0104 fixed only for mark sentinels — `rich.markdown.Markdown` treating an unrecognized standalone HTML comment as its own block element — is now fixed for any standalone comment (single-line, or spanning several per CommonMark's own comment-block rule), stripped from the source the same way before Rich ever parses it. An inline comment embedded in running text, and one inside a fenced code block, stay untouched. An unterminated comment now warns to stderr instead of silently dropping the rest of the document with no trace. Also documents `viewmd:mark` sentinel highlighting in `README.md` for the first time.
+
 ## [1.51.1] — 2026-08-23
 
 - **Fix `viewmd:mark` regions nested inside a list item** (VIEWMD-0106, bug): a mark whose sentinels sat between two items of the same list -- gitgleam's actual generated output for "one new bullet added to an existing list" -- previously rendered with no highlight at all, since VIEWMD-0104's matching only recognized whole top-level blocks. Mark regions are now located recursively inside an enclosing list item (at any nesting depth), reconstructing a properly-closed partial version of the container for measurement rather than a raw token slice, which renders as nothing at all mid-container. Recursing into a table row, an admonition-styled blockquote, or an ordered list is deliberately not supported (each has its own rendering quirk -- a shared border, or a numbering-column width derived from the reconstructed item count -- that would otherwise silently mismeasure or tint the wrong line); those fall back to the existing "just don't tint it" fail-safe instead.
