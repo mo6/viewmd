@@ -10,7 +10,13 @@ in an explicit question to the maintainer.
 1. **Green gate.** Run `./run-tests.sh` in the issue's worktree. It must be clean before anything
    else here happens.
 
-2. **Independent review.** Launch the `peer-reviewer` subagent (via the `Agent` tool,
+2. **Documentation check.** Launch the `documentation` subagent (via the `Agent` tool,
+   `subagent_type: documentation`) on the issue file and the diff (`git diff develop...HEAD`). It
+   checks whether `README.md` or `docs/example.md` need updating to describe user-facing behavior
+   this change adds or alters, and makes those edits directly when needed -- run it before the
+   peer review so any doc edits it makes are included in what gets reviewed.
+
+3. **Independent review.** Launch the `peer-reviewer` subagent (via the `Agent` tool,
    `subagent_type: peer-reviewer`) on the issue file and the diff (`git diff develop...HEAD`). It
    is a fresh agent with no memory of the implementing session and no `Edit`/`Write` tools, which
    is what makes this pass independent rather than self-attested -- never write this review line
@@ -18,16 +24,16 @@ in an explicit question to the maintainer.
    inherits this session's context, defeating the point). If it reports `CHANGES NEEDED`, fix them,
    re-run `./run-tests.sh`, and re-review before continuing.
 
-3. **Append the review.** Add the subagent's verdict line verbatim to the issue's Peer review
+4. **Append the review.** Add the subagent's verdict line verbatim to the issue's Peer review
    section (append, never overwrite any existing line).
 
-4. **Maintainer sign-off.** Show the maintainer the diff and the recorded review findings, then ask
+5. **Maintainer sign-off.** Show the maintainer the diff and the recorded review findings, then ask
    outright: "commit and close this out?" A maintainer verdict on the change is itself a second,
    distinct Peer-review line (`- **<name>** (maintainer), YYYY-MM-DD: ...`) -- append it, attributed
    to the maintainer, transcribing what they actually said rather than the agent's own opinion. Do
    not proceed past this step without both Peer-review lines present and an explicit yes.
 
-5. **Land it -- two commits on `develop`, not one:**
+6. **Land it -- two commits on `develop`, not one:**
    - The implementation commit (code + tests + this Peer-review section), on the
      `bug|feature|story/VIEWMD-NNNN` branch, brought into `develop` via
      `git merge --no-ff` (no squash, no rebase).
@@ -41,8 +47,8 @@ in an explicit question to the maintainer.
      `pyproject.toml`/`viewmd/__init__.py`, add the `CHANGELOG.md` entry, and regenerate the issues
      index (`./tools.sh issues`).
 
-6. **Clean up.** Delete the now-landed branch (`git branch -d <kind>/VIEWMD-NNNN`) and remove the
+7. **Clean up.** Delete the now-landed branch (`git branch -d <kind>/VIEWMD-NNNN`) and remove the
    worktree (`./tools.sh worktree remove VIEWMD-NNNN`) once it has no uncommitted changes.
 
 This does not include the `main`-merge/tag/release step -- that is a separate, explicit maintainer
-decision. Use the `release` skill for that, never as a side effect of landing an issue.
+decision. Use the `dev:release` skill for that, never as a side effect of landing an issue.

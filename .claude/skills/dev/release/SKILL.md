@@ -4,8 +4,8 @@ description: Cut a viewmd release -- merge develop into main, tag, and publish t
 ---
 
 `main` only advances via this explicit step, per `AGENTS.md`. Never run this as a side effect of
-`land-issue` -- ask the maintainer outright "cut a release?" before starting, even if `develop` is
-already green and several issues have landed since the last release.
+`dev:land-issue` -- ask the maintainer outright "cut a release?" before starting, even if `develop`
+is already green and several issues have landed since the last release.
 
 1. Confirm `develop` is where you expect it (`git log --oneline -5`) and `./run-tests.sh` is green
    on it. The version to release is whatever `pyproject.toml`/`viewmd/__init__.py` already carries

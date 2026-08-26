@@ -24,4 +24,4 @@ implementation code before this is done.
    `Accept VIEWMD-NNNN, move to in-progress` (matches the existing history's pattern, e.g. commit
    `c54a02e`) -- only after an explicit "yes, commit this" from the maintainer, same as any commit.
 
-Next step is the `start-issue` skill, to create the implementation worktree.
+Next step is the `dev:start-issue` skill, to create the implementation worktree.
