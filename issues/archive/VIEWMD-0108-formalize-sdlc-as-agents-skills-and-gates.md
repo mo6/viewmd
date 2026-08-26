@@ -1,17 +1,17 @@
 ---
 id: VIEWMD-0108
 title: Formalize the SDLC as Claude Code skills/agent plus real CI/CD gates
-status: in-progress
+status: implemented
 area: [tools, docs, ci]
 effort: high
 created: 2026-08-26
 updated: 2026-08-26
 accepted_by: George Moses <gmo6nl@gmail.com>
 accepted_at: 2026-08-26
-commits: []
+commits: [04c6bc3, 72d9225]
 related: []
 supersedes: []
-changelog:
+changelog: "[1.53.0]"
 reason:
 ---
 
