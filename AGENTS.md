@@ -134,10 +134,10 @@ approval carrying forward to a later, unrelated change; ask each time the way `a
 and close this out?" are already asked each time. When in doubt, use the worktree.
 
 **The issue lifecycle above is also encoded as Claude Code skills, not just this prose.**
-`.claude/skills/dev/{new-issue,start-issue,land-issue,release}` (listed as `dev:new-issue`,
-`dev:start-issue`, `dev:land-issue`, `dev:release`) each walk one stage of it (draft+accept,
+`.claude/skills/sdlc-{new-issue,start-issue,land-issue,release}` (listed as `sdlc-new-issue`,
+`sdlc-start-issue`, `sdlc-land-issue`, `sdlc-release`) each walk one stage of it (draft+accept,
 worktree, Definition-of-Done landing, `main` release) and ask the same gate questions this file
-describes. `dev:land-issue` launches `.claude/agents/documentation` — checking whether `README.md`
+describes. `sdlc-land-issue` launches `.claude/agents/documentation` — checking whether `README.md`
 or `docs/example.md` need updating for the change, not just `CHANGELOG.md` — and then
 `.claude/agents/peer-reviewer` — a fresh, non-forked agent with no `Edit`/`Write` tools — for the
 Definition of Done's independent reviewing pass, so that step is a technically separate agent

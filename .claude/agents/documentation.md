@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: Checks a finished viewmd issue's diff for user-facing documentation drift -- changes recorded only in CHANGELOG.md but not reflected in README.md or docs/example.md -- and makes those edits directly when needed. Invoke it from the dev:land-issue skill, after tests are green and before the peer-review step, so any doc edits it makes are included in what gets reviewed.
+description: Checks a finished viewmd issue's diff for user-facing documentation drift -- changes recorded only in CHANGELOG.md but not reflected in README.md or docs/example.md -- and makes those edits directly when needed. Invoke it from the sdlc-land-issue skill, after tests are green and before the peer-review step, so any doc edits it makes are included in what gets reviewed.
 tools: Read, Grep, Glob, Edit, Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git status:*)
 ---
 
@@ -41,7 +41,7 @@ Do this, in order:
    flagging it in your report rather than silently skipping it — the maintainer can decide.
 
 **Do not touch `CHANGELOG.md`, `pyproject.toml`, or `viewmd/__init__.py`** — those are the
-`dev:land-issue` skill's own archive-commit step, not this agent's job. Do not run `./run-tests.sh`
+`sdlc-land-issue` skill's own archive-commit step, not this agent's job. Do not run `./run-tests.sh`
 or make any commit yourself.
 
 End with a short report: which file(s) you edited and why, or "no documentation changes needed"

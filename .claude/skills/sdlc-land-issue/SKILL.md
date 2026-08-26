@@ -1,5 +1,5 @@
 ---
-name: land-issue
+name: sdlc-land-issue
 description: Land a finished viewmd issue on develop through the Definition of Done -- independent review, maintainer sign-off, and the two-commit landing pattern. Use once an issue's implementation is complete and ./run-tests.sh is green in its worktree, before merging anything into develop.
 ---
 
@@ -51,4 +51,4 @@ in an explicit question to the maintainer.
    worktree (`./tools.sh worktree remove VIEWMD-NNNN`) once it has no uncommitted changes.
 
 This does not include the `main`-merge/tag/release step -- that is a separate, explicit maintainer
-decision. Use the `dev:release` skill for that, never as a side effect of landing an issue.
+decision. Use the `sdlc-release` skill for that, never as a side effect of landing an issue.

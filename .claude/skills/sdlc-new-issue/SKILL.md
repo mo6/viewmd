@@ -1,5 +1,5 @@
 ---
-name: new-issue
+name: sdlc-new-issue
 description: Draft a new viewmd issue and get it through the Definition of Ready. Use whenever a change (feature, bug fix, refactor) is about to start and no issues/VIEWMD-NNNN file exists for it yet -- AGENTS.md requires every change to have one.
 ---
 
@@ -24,4 +24,4 @@ implementation code before this is done.
    `Accept VIEWMD-NNNN, move to in-progress` (matches the existing history's pattern, e.g. commit
    `c54a02e`) -- only after an explicit "yes, commit this" from the maintainer, same as any commit.
 
-Next step is the `dev:start-issue` skill, to create the implementation worktree.
+Next step is the `sdlc-start-issue` skill, to create the implementation worktree.

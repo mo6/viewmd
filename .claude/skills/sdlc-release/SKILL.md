@@ -1,10 +1,10 @@
 ---
-name: release
+name: sdlc-release
 description: Cut a viewmd release -- merge develop into main, tag, and publish the GitHub release. Use only on the maintainer's own explicit "cut a release" decision, never automatically after landing an issue.
 ---
 
 `main` only advances via this explicit step, per `AGENTS.md`. Never run this as a side effect of
-`dev:land-issue` -- ask the maintainer outright "cut a release?" before starting, even if `develop`
+`sdlc-land-issue` -- ask the maintainer outright "cut a release?" before starting, even if `develop`
 is already green and several issues have landed since the last release.
 
 1. Confirm `develop` is where you expect it (`git log --oneline -5`) and `./run-tests.sh` is green
