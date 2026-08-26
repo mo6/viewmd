@@ -54,6 +54,16 @@ optional guidance. Two things it's worth being explicit about here:
   was agent-assisted, landing a change still requires the maintainer's explicit go-ahead, not an
   agent's own initiative.
 
+## Hooks, gates, skills, and agents
+
+The process above is enforced automatically at several layers, not just by reading this file.
+
+- **Gates.** `./run-tests.sh` is the whole dev gate — `pytest`, `ruff check` (including the `S`-prefixed security rules, per [docs/SECURITY.md](docs/SECURITY.md)), `pip-audit`, and `./tools.sh issues --check`. Two backstops run it whether or not you remember to: `.github/workflows/ci.yml` runs it on every push/PR to `develop`/`main` (Python 3.10 and 3.12), and a pre-push git hook (`tools/hooks/pre-push`) runs it before any push leaves the machine, blocking the push if it fails (`git push --no-verify` bypasses it, but don't). The hook is wired in automatically by `./tools.sh worktree add`, or manually via `./tools.sh install_hooks`.
+- **Skills** (`.claude/skills/`, Claude Code only). `sdlc-new-issue`, `sdlc-start-issue`, `sdlc-land-issue`, and `sdlc-release` each walk one stage of the issue lifecycle described above (draft and get accepted, set up a worktree, land through the Definition of Done, cut a release) and ask the maintainer the same gate questions this file and AGENTS.md describe, rather than leaving an agent to infer when to stop and ask.
+- **Agents** (`.claude/agents/`, launched by `sdlc-land-issue`). `documentation` checks whether `README.md` or `docs/example.md` need updating for a user-facing change (not just `CHANGELOG.md`) and edits them directly if so. `peer-reviewer` performs the Definition of Done's independent review — always a fresh agent, never a fork of the implementing session, with no `Edit`/`Write` tools, so its pass can't be the implementer grading its own work.
+
+None of this replaces the maintainer's own sign-off — see "Working with agents" above.
+
 ## Landing the change
 
 Once implemented, tests are green, and the change has been peer-reviewed, show the diff to the
