@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.54.1] — 2026-08-26
+
+- **Fix `./tools.sh worktree add`'s wrong path to `install_hooks.sh`** (VIEWMD-0110, bug): the `worktree add` subcommand called `install_hooks.sh` directly under the repo root instead of its actual location under `tools/`, failing with "No such file or directory" and silently leaving the new worktree's pre-push hook uninstalled. A regression test now pins the referenced path to a real file so this class of path drift is caught without a live worktree creation.
+
 ## [1.54.0] — 2026-08-26
 
 - **Namespace SDLC skills under `dev:`, add a documentation agent** (VIEWMD-0109, feature): the four issue-lifecycle skills (`new-issue`, `start-issue`, `land-issue`, `release`) now live under `.claude/skills/dev/`, listing as `dev:new-issue`, `dev:start-issue`, `dev:land-issue`, `dev:release` so they group together as more skills accumulate. `land-issue` also now launches a new `documentation` subagent right after the green gate and before the peer review, checking whether `README.md`/`docs/example.md` need updating for a user-facing change — VIEWMD-0108's own changes had landed reflected only in this changelog, not the README. No change to the underlying Definition of Ready/Done gates themselves.

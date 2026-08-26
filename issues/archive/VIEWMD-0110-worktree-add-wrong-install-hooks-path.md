@@ -1,7 +1,7 @@
 ---
 id: VIEWMD-0110
 title: Fix `./tools.sh worktree add` wrong path to install_hooks.sh
-status: in-progress          # proposed | in-progress | implemented | superseded | rejected
+status: implemented          # proposed | in-progress | implemented | superseded | rejected
 area: [tools]                  # free-form tags, e.g. render, pager, cli, tools, docs
 effort: low                    # low | medium | high; required from in-progress onward
 created: 2026-08-26
@@ -9,10 +9,10 @@ updated: 2026-08-26
 accepted_by: George Moses               # who explicitly accepted this issue (Definition of Ready, AGILE.md);
                           # blank while status: proposed, required from in-progress onward
 accepted_at: 2026-08-26               # YYYY-MM-DD the acceptance above was given; set together with accepted_by
-commits: []               # short SHAs, filled on implementation
+commits: [e772bae]               # short SHAs, filled on implementation
 related: [VIEWMD-0109]
 supersedes: []            # VIEWMD ids this replaces, if any
-changelog:                # CHANGELOG.md anchor, filled on release
+changelog: "[1.54.1]"                # CHANGELOG.md anchor, filled on release
 reason:                   # optional; why a rejected issue was turned down
 ---
 
