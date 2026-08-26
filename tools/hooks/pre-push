@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# git pre-push hook: block the push if ./run-tests.sh (the whole dev gate -- pytest, ruff incl.
+# security rules, pip-audit, issues/ check, completions check) isn't green. Activated repo-wide by
+# ./tools.sh install_hooks (see tools/install_hooks.sh); git runs this with cwd at the pushing
+# worktree's own top-level directory, so a relative ./run-tests.sh always resolves correctly.
+set -uo pipefail
+
+echo "pre-push: running ./run-tests.sh before allowing the push..." >&2
+./run-tests.sh
+status=$?
+
+if [[ "$status" -ne 0 ]]; then
+    echo "pre-push: ./run-tests.sh failed, push blocked" >&2
+    echo "  fix the failures above, or 'git push --no-verify' to bypass (not recommended)" >&2
+fi
+
+exit "$status"
