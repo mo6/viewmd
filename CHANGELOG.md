@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.54.2] — 2026-08-26
+
+- **Record VIEWMD-0110's key finding in `AGENTS.md`** (VIEWMD-0111, docs): documents the lesson from the `worktree add` `install_hooks.sh` path bug — a hardcoded relative path in a maintainer-tooling script can silently drift from where the referenced file actually lives, and the failure can masquerade as a full command crash rather than a specific fixable typo.
+
 ## [1.54.1] — 2026-08-26
 
 - **Fix `./tools.sh worktree add`'s wrong path to `install_hooks.sh`** (VIEWMD-0110, bug): the `worktree add` subcommand called `install_hooks.sh` directly under the repo root instead of its actual location under `tools/`, failing with "No such file or directory" and silently leaving the new worktree's pre-push hook uninstalled. A regression test now pins the referenced path to a real file so this class of path drift is caught without a live worktree creation.
