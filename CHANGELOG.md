@@ -4,6 +4,10 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.54.0] — 2026-08-26
+
+- **Namespace SDLC skills under `dev:`, add a documentation agent** (VIEWMD-0109, feature): the four issue-lifecycle skills (`new-issue`, `start-issue`, `land-issue`, `release`) now live under `.claude/skills/dev/`, listing as `dev:new-issue`, `dev:start-issue`, `dev:land-issue`, `dev:release` so they group together as more skills accumulate. `land-issue` also now launches a new `documentation` subagent right after the green gate and before the peer review, checking whether `README.md`/`docs/example.md` need updating for a user-facing change — VIEWMD-0108's own changes had landed reflected only in this changelog, not the README. No change to the underlying Definition of Ready/Done gates themselves.
+
 ## [1.53.0] — 2026-08-26
 
 - **Formalize the SDLC as Claude Code skills/agent plus real CI/CD gates** (VIEWMD-0108, feature): the issue lifecycle described in `AGENTS.md`/`issues/AGILE.md` is now also encoded as Claude Code skills — `new-issue`, `start-issue`, `land-issue`, `release` — each walking one stage and asking the same gate questions the prose describes. `land-issue` launches a new `peer-reviewer` subagent (fresh, non-forked, no `Edit`/`Write` tools) for the Definition of Done's independent reviewing pass, so that step is a technically separate agent invocation rather than the implementing session grading its own work. Two backstops don't depend on any of this being followed: a GitHub Actions workflow (`.github/workflows/ci.yml`) runs `./run-tests.sh` on every push/PR to `develop`/`main`, and a pre-push git hook (`tools/hooks/pre-push`, installed via `./tools.sh install_hooks`, wired into every new worktree automatically) runs it before any push leaves the machine. No change to the underlying DoR/DoD policy itself.
