@@ -134,12 +134,15 @@ approval carrying forward to a later, unrelated change; ask each time the way `a
 and close this out?" are already asked each time. When in doubt, use the worktree.
 
 **The issue lifecycle above is also encoded as Claude Code skills, not just this prose.**
-`.claude/skills/new-issue`, `start-issue`, `land-issue`, and `release` each walk one stage of it
-(draft+accept, worktree, Definition-of-Done landing, `main` release) and ask the same gate
-questions this file describes. `land-issue` launches `.claude/agents/peer-reviewer` — a fresh,
-non-forked agent with no `Edit`/`Write` tools — for the Definition of Done's independent reviewing
-pass, so that step is a technically separate agent invocation, not the implementing session
-grading its own work. Two backstops don't depend on any of this being followed at all:
+`.claude/skills/dev/{new-issue,start-issue,land-issue,release}` (listed as `dev:new-issue`,
+`dev:start-issue`, `dev:land-issue`, `dev:release`) each walk one stage of it (draft+accept,
+worktree, Definition-of-Done landing, `main` release) and ask the same gate questions this file
+describes. `dev:land-issue` launches `.claude/agents/documentation` — checking whether `README.md`
+or `docs/example.md` need updating for the change, not just `CHANGELOG.md` — and then
+`.claude/agents/peer-reviewer` — a fresh, non-forked agent with no `Edit`/`Write` tools — for the
+Definition of Done's independent reviewing pass, so that step is a technically separate agent
+invocation, not the implementing session grading its own work. Two backstops don't depend on any
+of this being followed at all:
 `.github/workflows/ci.yml` runs `./run-tests.sh` on every push/PR to `develop`/`main`, and a
 pre-push git hook (`tools/hooks/pre-push`, installed via `./tools.sh install_hooks`, wired into
 every new worktree automatically) runs it before any push leaves the machine.
