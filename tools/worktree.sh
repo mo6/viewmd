@@ -87,6 +87,8 @@ case "$cmd" in
             "$venv/bin/pip" install -q -e "$worktree_dir[dev]"
         fi
 
+        "$here/tools/install_hooks.sh"
+
         echo "worktree add: ready at $worktree_dir on branch $branch" >&2
         echo "  cd '$worktree_dir' && ./run-tests.sh" >&2
         ;;

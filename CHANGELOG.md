@@ -4,6 +4,22 @@ All notable changes to viewmd, newest first. Dates are the release date.
 
 Ordinary semver (`MAJOR.MINOR.PATCH`).
 
+## [1.54.2] — 2026-08-26
+
+- **Record VIEWMD-0110's key finding in `AGENTS.md`** (VIEWMD-0111, docs): documents the lesson from the `worktree add` `install_hooks.sh` path bug — a hardcoded relative path in a maintainer-tooling script can silently drift from where the referenced file actually lives, and the failure can masquerade as a full command crash rather than a specific fixable typo.
+
+## [1.54.1] — 2026-08-26
+
+- **Fix `./tools.sh worktree add`'s wrong path to `install_hooks.sh`** (VIEWMD-0110, bug): the `worktree add` subcommand called `install_hooks.sh` directly under the repo root instead of its actual location under `tools/`, failing with "No such file or directory" and silently leaving the new worktree's pre-push hook uninstalled. A regression test now pins the referenced path to a real file so this class of path drift is caught without a live worktree creation.
+
+## [1.54.0] — 2026-08-26
+
+- **Namespace SDLC skills under `dev:`, add a documentation agent** (VIEWMD-0109, feature): the four issue-lifecycle skills (`new-issue`, `start-issue`, `land-issue`, `release`) now live under `.claude/skills/dev/`, listing as `dev:new-issue`, `dev:start-issue`, `dev:land-issue`, `dev:release` so they group together as more skills accumulate. `land-issue` also now launches a new `documentation` subagent right after the green gate and before the peer review, checking whether `README.md`/`docs/example.md` need updating for a user-facing change — VIEWMD-0108's own changes had landed reflected only in this changelog, not the README. No change to the underlying Definition of Ready/Done gates themselves.
+
+## [1.53.0] — 2026-08-26
+
+- **Formalize the SDLC as Claude Code skills/agent plus real CI/CD gates** (VIEWMD-0108, feature): the issue lifecycle described in `AGENTS.md`/`issues/AGILE.md` is now also encoded as Claude Code skills — `new-issue`, `start-issue`, `land-issue`, `release` — each walking one stage and asking the same gate questions the prose describes. `land-issue` launches a new `peer-reviewer` subagent (fresh, non-forked, no `Edit`/`Write` tools) for the Definition of Done's independent reviewing pass, so that step is a technically separate agent invocation rather than the implementing session grading its own work. Two backstops don't depend on any of this being followed: a GitHub Actions workflow (`.github/workflows/ci.yml`) runs `./run-tests.sh` on every push/PR to `develop`/`main`, and a pre-push git hook (`tools/hooks/pre-push`, installed via `./tools.sh install_hooks`, wired into every new worktree automatically) runs it before any push leaves the machine. No change to the underlying DoR/DoD policy itself.
+
 ## [1.52.0] — 2026-08-24
 
 - **Strip all standalone HTML comments, not just `viewmd:mark` sentinels** (VIEWMD-0107, feature): the blank-line-doubling bug VIEWMD-0104 fixed only for mark sentinels — `rich.markdown.Markdown` treating an unrecognized standalone HTML comment as its own block element — is now fixed for any standalone comment (single-line, or spanning several per CommonMark's own comment-block rule), stripped from the source the same way before Rich ever parses it. An inline comment embedded in running text, and one inside a fenced code block, stay untouched. An unterminated comment now warns to stderr instead of silently dropping the rest of the document with no trace. Also documents `viewmd:mark` sentinel highlighting in `README.md` for the first time.
